@@ -1,0 +1,25 @@
+# ---- WinMon：让 git **不碰**任何文件的字节 ---------------------------------
+#
+# 这不是"风格偏好"，而是本项目的硬约束。
+#
+# 为什么必须显式写死（`-text` = 不做任何换行 / 编码转换）：
+#
+#   1. 测试是**逐字节**核对源文件的：`tests/test_a1_syntax_encoding.py` 会检查
+#      UTF-8 无 BOM、没有乱码、没有把汉字替换成 `?`。只要 git 在 checkout 时
+#      改了换行，文件就不再是"同一份字节"，"换台机器跑出同样的结果"就失去意义。
+#   2. 本仓库现有文件**全部是纯 LF**（`winmon_core.py` / `winmon.py` / `README.md`
+#      / `HANDOFF.md` … 一个 CRLF 都没有）。而 Windows 上 git 的
+#      `core.autocrlf=true` 会把它们在工作区里变成 CRLF —— 于是"clone 下来"
+#      和"原样拷过去"得到的不是同一棵树。
+#   3. `media_session.ps1` 更敏感：必须**纯 ASCII 且无 BOM**，否则 Windows
+#      PowerShell 5.1 会按 ANSI 解码、把语法搞坏（HANDOFF 坑 1 那一类）。
+#
+# 所以第一行就是全部要点：把每个文件都按"内容原样"存取。
+# （diff / merge 照常可用，只是不做换行转换。）
+
+* -text
+
+# 下面两行只为 GitHub / 编辑器的**语法高亮与 diff 着色**，
+# 不改变任何字节（`python` / `markdown` 是 git 内置的 diff 驱动名）。
+*.py diff=python
+*.md diff=markdown

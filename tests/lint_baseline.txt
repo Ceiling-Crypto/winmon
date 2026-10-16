@@ -1,0 +1,10 @@
+# -*- coding: utf-8 -*-
+# 说明：这是 lint_check.py 的"已知且接受"清单。
+#
+# 每行格式：  相对路径::kind:名字   # 理由
+#   kind 取值：import / def / dup / tag / long / ws:tab / ws:trail
+# 只有**不在这里**的问题才会让 lint_check.py 以非 0 退出。
+# 加条目时必须写理由 —— 理由就是"为什么这段死代码/这条标记值得留下"。
+# 问题真的修掉之后，条目会自动被识别为"已失效"并提示删掉。
+
+winmon_core.py::def:resolve_shortcut   # IShellLinkW 方案：实测本机 Win11 上 GetPath 对任何快捷方式都返回 S_OK 却写回指针垃圾值，已改用 PowerShell WScript.Shell 解析（HANDOFF 坑 11）。函数连同注释保留，作为那条坑的参照实现；不参与运行。
