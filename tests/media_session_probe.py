@@ -13,13 +13,23 @@
 
 用法（在 X:\\winmon 目录下）：
 
-    py tests\\media_session_probe.py
+    py tests\\media_session_probe.py                :: 只读诊断（WinRT 类激活走到哪一步）
+    py tests\\media_session_probe.py --play-audio    :: **会启动浏览器**放一段在线音频，
+                                                       手动"造"一个媒体会话（开发时用）
 
-**本脚本只读**：不发媒体键、不切歌、不改设置。
+**默认只读**：不发媒体键、不切歌、不改设置。
+
+> `--play-audio` 是唯一的例外（2026-10-16 新增）：它真的会开一个 Edge/Chrome
+> 去放 `AUDIO_URL`，并等系统里出现「正在播放」的会话。
+> 这套流程原来放在全量测试里（`test_b4.TestMediaSessionLive`），等于把测试绑死在
+> "本机装了哪个浏览器 + 能联网 + 能出声"上（原始需求："脱离个人环境"）。
+> 现在它搬到这里 —— **开发时想验真实链路就跑一次**，
+> 全量测试那条改成"只观察本机已有的会话，没有就跳过"。
 """
 from __future__ import annotations
 
 import ctypes
+import os
 import sys
 from ctypes import wintypes as w
 
@@ -28,6 +38,12 @@ try:
     sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 except Exception:
     pass
+
+#: 让本脚本能 import 到项目本体（`--play-audio` 复用产品自己的读取实现，
+#: 免得在这里再抄一份"GBK 还是 UTF-8"的解码逻辑 —— 那种抄写正是坑 1 的来源）。
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+import winmon_core as core                                    # noqa: E402
 
 combase = ctypes.WinDLL("combase", use_last_error=True)
 ole32 = ctypes.WinDLL("ole32", use_last_error=True)
@@ -299,9 +315,87 @@ def HString(text: str):
     return buf
 
 
+#: 浏览器放得动的公开测试音频（够长，读一次不会放完）
+AUDIO_URL = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3"
+
+#: 常见浏览器安装位置（只用来"造一个会话"，找不到就如实说、不硬猜）
+BROWSER_CANDIDATES = (
+    r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
+    r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
+    r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+    r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe",
+)
+
+
+def _playing_apps() -> list:
+    """
+    问 WinMon 本体"现在有几个正在播放的会话"，返回 [(app, title), ...]。
+
+    走产品自己的实现（`core.collect_media_sessions`）而不是在这儿再写一遍：
+    · 读的是同一份快照/同一条桥接脚本，本脚本验的才是**产品真的那条路**；
+    · 编解码那套坑（PowerShell 管道是 GBK 不是 UTF-8）没必要抄第二遍。
+    `prefer_snapshot=False` 是为了拿到**此刻**的值，而不是几秒前的快照。
+    """
+    try:
+        got = core.collect_media_sessions(prefer_snapshot=False)
+    except Exception:
+        return []
+    if not got.get("ok"):
+        return []
+    return [(str(s.get("app") or ""), str(s.get("title") or ""))
+            for s in (got.get("sessions") or [])
+            if int(s.get("status") or 0) == 4]
+
+
+def play_audio_in_a_browser() -> int:
+    """
+    `--play-audio`：真的开一个浏览器放一段在线音频，把媒体会话"造"出来。
+
+    这是**手动**工具，不是测试的一部分（理由见文件头）。三条如实：
+      · 找不到浏览器就明说，不硬猜路径；
+      · 25 秒内没等到"正在播放"就明说，并把浏览器 PID 报出来（要关自己关）；
+      · 全程只"读"会话状态，不发任何媒体命令。
+    """
+    import subprocess
+    import time
+
+    browser = next((p for p in BROWSER_CANDIDATES if os.path.exists(p)), "")
+    if not browser:
+        print("本机没找到 Edge / Chrome —— 这条路造不出会话。")
+        print("可以手动打开任意播放器放点东西，然后再跑一次本脚本（不带参数）。")
+        return 1
+    print(f"启动浏览器放音频：{browser}")
+    print(f"  音频地址：{AUDIO_URL}")
+    try:
+        proc = subprocess.Popen(
+            [browser, "--new-window",
+             "--autoplay-policy=no-user-gesture-required", AUDIO_URL],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except Exception as exc:
+        print(f"  启动失败：{type(exc).__name__}: {exc}")
+        return 1
+    print(f"  PID {proc.pid}；等它注册媒体会话（最多 25 秒）…")
+    deadline = time.monotonic() + 25
+    while time.monotonic() < deadline:
+        time.sleep(2.0)
+        playing = _playing_apps()
+        if playing:
+            for app, title in playing:
+                print(f"  已出现「正在播放」：{app} —— {title or '（没有曲名）'}")
+            print("现在可以再跑一次本脚本（不带参数）看详情，或直接开 WinMon 看那一行。")
+            return 0
+    print("  25 秒内没等到「正在播放」的会话。")
+    print(f"  浏览器还开着（PID {proc.pid}）；要关掉：taskkill /PID {proc.pid}")
+    return 1
+
+
 def main(argv: list[str]) -> int:
-    print("=== WinMon 媒体会话诊断（只读） ===")
+    print("=== WinMon 媒体会话诊断（默认只读） ===")
     print(f"Python {sys.version.split()[0]}")
+
+    if "--play-audio" in argv:
+        # **会启动别的程序**：放在最前面，省得先跑一大段只读诊断再告诉你它改了环境
+        return play_audio_in_a_browser()
 
     hr = ole32.CoInitializeEx(None, 0)          # 0 = COINIT_MULTITHREADED
     print(f"[1/4] CoInitializeEx          -> {hr & 0xFFFFFFFF:#010x}"

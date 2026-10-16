@@ -209,7 +209,8 @@ class TestEncodingSafety(unittest.TestCase):
 
 class TestDocsEncoding(unittest.TestCase):
     """
-    文档（README / HANDOFF）也必须是不带 BOM 的合法 UTF-8，且中文没被损坏。
+    文档（README / HANDOFF / CHANGELOG）也必须是不带 BOM 的合法 UTF-8，
+    且中文没被损坏。
 
     这一组是**踩坑后补的**：用 PowerShell 的 `Set-Content -Encoding UTF8`
     批量替换文档里的数字时，内容没坏但被加了 BOM，而项目约定是不带 BOM。

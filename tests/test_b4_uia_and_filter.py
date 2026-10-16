@@ -711,10 +711,15 @@ class TestMediaSessionLogic(unittest.TestCase):
         self.assertTrue(app._app_has_session("msedge.exe"))
         self.assertFalse(app._app_has_session("cloudmusic.exe"))
 
-    def test_media_app_candidates_cover_players_and_browsers(self):
+    def test_candidates_are_a_name_map_not_a_gate(self):
         """
-        候选里必须**同时**有音乐播放器和浏览器 —— 约定
-        "可自行选择指定音乐 app 或 Edge 这类浏览器"。
+        候选表的职责变了（2026-10-16）：**只做显示名映射 + 唤醒补充**，
+        不再是"能不能被识别"的门槛 —— 覆盖范围改由系统媒体会话决定
+        （任何 app id 都能变成一条可选条目，完整矩阵见 `test_b12_media_discovery`）。
+
+        所以这里只钉两件事：
+          · 常见的播放器 / 浏览器仍然在表里（明确要"能指定 Edge 这类浏览器"）；
+          · **表里没有**的应用照样能被认出来 —— 这才是"基于所有可识别的媒体"。
         """
         exes = {exe.lower() for _l, exe, _b in core.MEDIA_APP_CANDIDATES}
         self.assertIn("cloudmusic.exe", exes)
@@ -722,6 +727,12 @@ class TestMediaSessionLogic(unittest.TestCase):
         self.assertIn("msedge.exe", exes)
         browsers = [exe for _l, exe, b in core.MEDIA_APP_CANDIDATES if b]
         self.assertTrue(browsers, "浏览器要能在下拉框里选到（网页端切歌就靠它）")
+        # 表里没有的应用：会话里一出现就得认出来（这条按老实现必红）
+        unknown = "SomePlayer_1a2b3c!App"
+        self.assertNotIn(unknown.lower(), exes)
+        app = core.media_app_from_session(unknown, set())
+        self.assertIsNotNone(app)
+        self.assertEqual(app.label, unknown)
 
     def test_media_app_key_is_the_exe_name(self):
         app = core.MediaApp("网易云音乐", "cloudmusic.exe")
@@ -1622,65 +1633,37 @@ class TestHistoryWindow(unittest.TestCase):
 
 class TestMediaSessionLive(unittest.TestCase):
     """
-    **真·端到端**：让浏览器真的放一段音频，然后从系统媒体会话里读回来。
+    **只观察、不造环境**：从系统媒体会话里读一份真实数据，核对字段是否可信。
 
-    为什么要真跑：媒体会话这条链路的每一环都可能断（WinRT 投影、PowerShell
-    版本、曲名编码、异步等待），替身测不出来。本机实测通过的那次是：
-    `sessions=1 app=MSEdge title=... status=Playing pos=1 dur=373`。
+    为什么改成这样（2026-10-16，原始需求"脱离个人环境"）：以前这个类会
+    **自己拉起本机的 Edge/Chrome** 去放一段在线音频来"造"一个会话 ——
+    等于把测试绑死在"这台机器装了哪个浏览器 + 能联网 + 能出声"上，
+    换台机器就完全测不出东西。现在把两件事分家：
 
-    环境不满足（没有 Edge / 没有图形会话 / 音频会话被系统挡住）时**跳过**，
-    绝不假报成功。
+      · **这里**只做观察：本机此刻真有"正在播放"的会话，就核对它；
+        没有就 `skipTest` 并说明原因 —— **绝不为了测试去改这台机器的状态**；
+      · "自己造一个会话"那套流程移到**手动探针**
+        `tests/media_session_probe.py --play-audio`（开发时想验真实链路就跑它，
+        全量测试不再依赖它，也就不再依赖任何本机装着的东西）。
+
+    链路本身照样被覆盖：WinRT 投影 / PowerShell 版本 / 曲名编码 / 异步等待
+    在 `test_b4` 其余用例里用**替身字节流**逐环钉住（GBK 解码、快照回退…），
+    那些用例一个外部依赖都没有；`test_b12` 则用**替身会话行**覆盖任意 app id。
     """
-
-    #: 浏览器放得动的公开测试音频（够长，读一次不会放完）
-    AUDIO_URL = "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3"
-
-    @classmethod
-    def setUpClass(cls):
-        cls.browser = ""
-        for cand in (r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe",
-                     r"C:\Program Files\Microsoft\Edge\Application\msedge.exe",
-                     r"C:\Program Files\Google\Chrome\Application\chrome.exe",
-                     r"C:\Program Files (x86)\Google\Chrome\Application\chrome.exe"):
-            if os.path.exists(cand):
-                cls.browser = cand
-                break
-        cls.proc = None
 
     def _sessions(self):
         return core.collect_media_sessions()
 
     def test_reads_a_real_media_session(self):
-        if not self.browser:
-            self.skipTest("本机没有 Edge/Chrome")
         got = self._sessions()
         if not got.get("ok"):
             # 拿不到就如实跳过（多为沙箱/策略限制），并说明原因
             self.skipTest(f"读不到媒体会话：{got.get('error')}")
 
-        # 先看现在有没有；没有就自己起一个浏览器放音频
-        before = got.get("sessions") or []
-        started = False
-        if not any(int(s.get("status") or 0) == 4 for s in before):
-            self.__class__.proc = subprocess.Popen(
-                [self.browser, "--new-window", "--autoplay-policy=no-user-gesture-required",
-                 self.AUDIO_URL], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-            started = True
-            deadline = time.monotonic() + 25
-            while time.monotonic() < deadline:
-                time.sleep(1.0)
-                got = self._sessions()
-                rows = got.get("sessions") or []
-                if any(int(s.get("status") or 0) == 4 for s in rows):
-                    break
-            else:
-                if started and self.proc:
-                    self.proc.terminate()
-                self.skipTest("浏览器起来了，但系统里没有出现「正在播放」的媒体会话")
-
         rows = got.get("sessions") or []
         playing = [s for s in rows if int(s.get("status") or 0) == 4]
-        self.assertTrue(playing, f"没有正在播放的会话：{rows}")
+        if not playing:
+            self.skipTest("现在没有正在播放的媒体会话（本用例只观察，不替你造一个）")
         # 曲名必须读得到（这一条就是用户说的"只能看到标题"的解药）
         with_title = [s for s in playing if str(s.get("title") or "").strip()]
         self.assertTrue(with_title, f"会话里没有曲名：{rows}")
@@ -1690,6 +1673,36 @@ class TestMediaSessionLive(unittest.TestCase):
                 self.assertIn(int(s.get("status") or 0), (0, 1, 2, 3, 4, 5))
                 self.assertGreaterEqual(int(s.get("position") or 0), 0)
                 self.assertGreaterEqual(int(s.get("duration") or 0), 0)
+
+    def test_every_real_session_becomes_a_selectable_media_app(self):
+        """
+        真实会话 → 下拉框清单：**每一个**会话里的 app id 都要能变成一条可选条目。
+
+        这是"基于所有可识别的媒体"落在**真数据**上的那一步：不再要求它出现在
+        写死的候选表里，也不再要求它就装在本机 —— 只要能发布会话就该认得出来。
+        """
+        got = self._sessions()
+        if not got.get("ok"):
+            self.skipTest(f"读不到媒体会话：{got.get('error')}")
+        rows = got.get("sessions") or []
+        ids = core.session_app_ids(rows)
+        if not ids:
+            self.skipTest("现在没有任何媒体会话")
+
+        labels, mapping = winmon.build_media_app_entries(
+            running={str(i.get("name") or "").lower()
+                     for i in core.snapshot_processes().values()},
+            available=lambda exe: bool(core.media_app_path(exe)),
+            found=[], sessions=ids)
+        self.assertEqual(labels[0], winmon.MEDIA_APP_ANY)
+        for app_id in ids:
+            with self.subTest(app=app_id):
+                hit = [lbl for lbl in labels if mapping.get(lbl) is not None
+                       and core.media_app_stems_match(
+                           mapping[lbl].exe or mapping[lbl].label, app_id)]
+                self.assertTrue(hit, f"{app_id} 没进清单：{labels}")
+                self.assertTrue(mapping[hit[0]].exe,
+                                "清单里的条目必须带得上 exe（空 exe 会让命令发错人）")
 
     def test_summary_picks_the_playing_one(self):
         got = self._sessions()
@@ -1703,13 +1716,7 @@ class TestMediaSessionLive(unittest.TestCase):
         self.assertTrue(info["text"].strip())
         self.assertGreaterEqual(info["playing"], 1)
 
-    @classmethod
-    def tearDownClass(cls):
-        if cls.proc is not None:
-            try:
-                cls.proc.terminate()
-            except Exception:
-                pass
+
 class TestBrowserNotMistakenForPlayer(unittest.TestCase):
     """
     `find_video_window` 不能把浏览器窗口当成播放器。

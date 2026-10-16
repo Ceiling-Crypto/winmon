@@ -3735,6 +3735,42 @@ def media_session_snapshot() -> dict:
             "status": int(pick.get("status") or 0)}
 
 
+def session_app_ids(rows) -> list[str]:
+    """
+    会话行 → **去重后的 app id 列表**（正在播放的排前面）。**纯逻辑**，不碰系统。
+
+    与 `media_session_app_ids()` 的区别：这个吃**已经读到的那份行**。
+    界面本来每 4 秒就有一份（`collect_media_sessions()`），算"有哪些媒体应用"
+    时不该为了同一件事再付一次 290ms（起一次 PowerShell）。
+    坏行（不是 dict / status 不是数字）一律跳过，绝不抛异常。
+    """
+    def _status(row) -> int:
+        try:
+            return int(row.get("status") or 0)
+        except (TypeError, ValueError):
+            return 0
+
+    def _play_order(row) -> tuple:
+        """
+        排序键：**正在播放的排最前面**，其余按状态数值倒序。
+
+        为什么不能直接写 `-status`（2026-10-16 发现的老 bug）：状态是
+        `4 = 正在播放 / 5 = 已暂停`，倒序会把**已暂停**排在**正在播放**前面 ——
+        与"正在播放的排前面"这句承诺正好相反。这条顺序现在真的会被用户看到
+        （下拉框里会话条目就按它排），所以先按"是不是 4"分组。
+        """
+        status = _status(row)
+        return (0 if status == 4 else 1, -status)
+
+    clean = [r for r in (rows or []) if isinstance(r, dict)]
+    ids: list[str] = []
+    for row in sorted(clean, key=_play_order):
+        app = str(row.get("app") or "").strip()
+        if app and app not in ids:
+            ids.append(app)
+    return ids
+
+
 def media_session_app_ids() -> list[str]:
     """
     现在**有哪些会话**（按 app id 去重，正在播放的排前面）。
@@ -3742,15 +3778,11 @@ def media_session_app_ids() -> list[str]:
     用途：`smart_media_command()` 逐个会话试命令（A.3）—— 第一个会话
     "没有下一首"时，可以接着试下一个播放器，而不是直接报失败。
     读不到就返回空列表（调用方会退回"不指定应用"的那次调用）。
+
+    自己读一次会话；手上已经有会话行时请直接用 `session_app_ids()`。
     """
     got = collect_media_sessions()
-    rows = [s for s in (got.get("sessions") or []) if isinstance(s, dict)]
-    ids: list[str] = []
-    for row in sorted(rows, key=lambda r: -int(r.get("status") or 0)):
-        app = str(row.get("app") or "").strip()
-        if app and app not in ids:
-            ids.append(app)
-    return ids
+    return session_app_ids(got.get("sessions") or [])
 
 
 def smart_media_command(key: str, timeout: float = 8.0,
@@ -4231,7 +4263,16 @@ MEDIA_STATUS_NAMES = {0: "已关闭", 1: "已打开", 2: "正在切换",
 MEDIA_COMMANDS = {"play": "play", "pause": "pause",
                   "next": "next", "previous": "previous"}
 
-#: 走这套接口的"媒体应用"候选：(显示名, 进程名, 是否浏览器)
+#: 「媒体应用」的**显示名映射 + 唤醒补充**：(显示名, 进程名, 是否浏览器)。
+#:
+#: ⚠ 这张表**不是准入门槛**（2026-10-16 改）。以前下拉框里只列这张表里的程序，
+#: 于是"用户装了个表里没有的播放器"或"换一台机器"就认不出来 —— 范围被个人环境框死了。
+#: 现在的**第一真源是系统媒体会话（GSMTC）**：任何应用只要发布了会话，
+#: `media_app_from_session()` 就会把它变成一条可选的媒体应用，与这张表无关。
+#:
+#: 这张表现在只干两件事：
+#:   · 把会话里报的**家族名**换成用户看得懂的名字（`MSEdge` → `Microsoft Edge`）；
+#:   · 当会话**不在**（此刻没在放东西）时，让用户仍能唤醒这些常见播放器。
 #: 浏览器也列在里面 —— 明确要"可以指定 Edge 这类浏览器"，
 #: 因为网页播放器（YouTube / 哔哩哔哩网页版）同样会注册媒体会话。
 MEDIA_APP_CANDIDATES: tuple[tuple[str, str, bool], ...] = (
@@ -4253,14 +4294,18 @@ MEDIA_APP_CANDIDATES: tuple[tuple[str, str, bool], ...] = (
 class MediaApp:
     """一个"可以被 WinMon 唤醒/控制"的媒体应用。"""
 
-    __slots__ = ("label", "exe", "browser", "path")
+    __slots__ = ("label", "exe", "browser", "path", "kind")
 
     def __init__(self, label: str, exe: str, browser: bool = False,
-                 path: str = "") -> None:
+                 path: str = "", kind: str = "") -> None:
         self.label = str(label)
         self.exe = str(exe)
         self.browser = bool(browser)
         self.path = str(path)
+        #: 下拉框里那个括号里的词。空串 = 按 `browser` 推断成「浏览器 / 播放器」；
+        #: 非空 = **我们确实知道它是从哪来的**（现在只有从会话发现的，
+        #: 见 `MEDIA_KIND_SESSION`）—— 用来避免把会话里认不出来的应用**假称**成播放器。
+        self.kind = str(kind)
 
     @property
     def key(self) -> str:
@@ -4270,20 +4315,27 @@ class MediaApp:
     @property
     def title(self) -> str:
         """下拉框里显示的文字。"""
-        return f"{self.label}（{'浏览器' if self.browser else '播放器'}）"
+        return f"{self.label}（{self.kind or ('浏览器' if self.browser else '播放器')}）"
 
     def __repr__(self) -> str:  # pragma: no cover - 调试用
         return f"MediaApp({self.label!r}, {self.exe!r}, browser={self.browser})"
 
 
+#: `MediaApp.kind` 的取值：这一条是**从活的媒体会话里发现的**（不是候选表、
+#: 也不是开始菜单）。用它而不是「播放器」，是因为"它能发布会话"这件事我们确定，
+#: "它是不是播放器"我们并不知道 —— 宁可说得少，也不编造。
+MEDIA_KIND_SESSION = "媒体会话"
+
 #: 媒体应用名字里那些**会变**的后缀。
-#:   · `（浏览器）/（播放器）` 由 `MediaApp.title` 拼；
+#:   · `（浏览器）/（播放器）/（媒体会话）` 由 `MediaApp.title` 拼；
 #:   · `（运行中）/（菜单）` 由界面拼（取决于"此刻在不在跑"和"这条是从哪来的"）。
 #: 比对"用户上次选的是哪一个"之前**必须先去干净**，否则会出现：
 #: 选的时候 Edge 在跑（标签带「（运行中）」）、下次启动时没跑（不带）→ 直接比字符串
 #: 就对不上 → 选择被静默退回「自动」（2026-10-13 复现并修掉，见 `resolve_media_pin`）。
+#: 同理：同一个程序可能这次是**从会话**发现的（带「（媒体会话）」）、
+#: 下次是从开始菜单发现的（带「（播放器）（菜单）」）—— 主干一比就还是同一个。
 MEDIA_NAME_SUFFIXES: tuple[str, ...] = ("（运行中）", "（菜单）",
-                                       "（浏览器）", "（播放器）")
+                                       "（浏览器）", "（播放器）", "（媒体会话）")
 
 
 def media_app_stem(text: str) -> str:
@@ -4497,6 +4549,60 @@ def media_app_stems_match(a: str, b: str) -> bool:
     if x == y:
         return True
     return len(x) >= 5 and len(y) >= 5 and (x in y or y in x)
+
+
+def media_app_running(exe: str, running) -> bool:
+    """
+    这个应用**此刻在不在跑**（`running` 是一个"小写进程名"的可迭代对象）。
+
+    为什么不能直接比字符串（2026-10-16 改）：会话里报的 app id 常常**不是进程名**
+    —— Edge 报家族名 `MSEdge`，UWP 报 `包名_哈希!App`。以前用
+    `exe.lower() in running` 判，这两种都会被判成"没在跑"，后果是用户点
+    「播放/暂停」时 WinMon 以为要先唤醒它（甚至去 startfile 一个不存在的路径），
+    或者干脆说"它没在运行"—— 而它正在放歌。
+    改走 `media_app_stems_match`：精确优先，包含匹配要求两边都 ≥5 字符
+    （防 `QQ` 命中 `QQMusic` 那种"选了 A、控的却是 B"）。
+    """
+    want = str(exe or "").strip()
+    if not want:
+        return False
+    return any(media_app_stems_match(want, str(name)) for name in (running or ()))
+
+
+def media_app_from_session(app_id: str, running=None) -> "MediaApp | None":
+    """
+    把一个**活的媒体会话**里的 `SourceAppUserModelId` 变成一条可选的媒体应用。
+
+    这是"基于**所有**可识别的媒体"的落地（2026-10-16）。以前下拉框只列
+    `MEDIA_APP_CANDIDATES` ＋ 开始菜单里媒体/浏览器两类的条目 —— 范围被"这台机器
+    装了什么"和"表里写了什么"双重框死。现在**会话本身就是第一真源**：
+    谁能发布会话，谁就自动出现在清单里，并且能被精确控制（与候选表无关）。
+
+    三条约定：
+      · **名字**：候选表里认得出就用显示名（`MSEdge` → `Microsoft Edge`），
+        认不出就**原样用会话里的 id** —— 不编造一个好听的名字；
+      · **进程名**：会话报的多半不是进程名。能对上"正在跑的进程"就换成真进程名
+        （这样 `media_app_path()` 也找得到它、`launch_media_app()` 才唤得醒），
+        对不上就原样留着 —— 命令照样能按 app id 精确下发（`media_session.ps1`
+        对 app id 是宽松匹配）；
+      · **类别**：候选表说它是浏览器就是浏览器；认不出来的**不假装**成播放器，
+        标成 `MEDIA_KIND_SESSION`（「媒体会话」）—— 用户一眼能看出这条是从
+        系统媒体会话里发现的。
+    """
+    raw = str(app_id or "").strip()
+    if not raw:
+        return None
+    label, exe, browser, known = raw, "", False, False
+    for cand_label, cand_exe, cand_browser in MEDIA_APP_CANDIDATES:
+        if media_app_stems_match(raw, cand_exe):
+            label, exe, browser, known = cand_label, cand_exe, cand_browser, True
+            break
+    if not known:
+        browser = any(media_app_stems_match(raw, b) for b in BROWSER_PROCESSES)
+    if not exe:
+        exe = next((str(name) for name in sorted(running or ())
+                    if media_app_stems_match(raw, str(name))), raw)
+    return MediaApp(label, exe, browser, "", "" if known else MEDIA_KIND_SESSION)
 
 
 def media_app_display_name(app_id: str) -> str:

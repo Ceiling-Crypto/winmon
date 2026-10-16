@@ -154,7 +154,7 @@ MEDIA_POLL_SECONDS = 4.0
 MEDIA_APP_ANY = "（自动：正在放的那个）"
 
 
-def build_media_app_entries(running, available, found,
+def build_media_app_entries(running, available, found, sessions=(),
                             any_label: str = MEDIA_APP_ANY):
     """
     组装「媒体应用」下拉框的清单 —— **纯逻辑**（不碰控件、不碰系统），便于单测。
@@ -163,44 +163,82 @@ def build_media_app_entries(running, available, found,
       · `running`   ：正在运行的进程名（小写）集合
       · `available` ：`callable(exe) -> bool`，这个 exe 在这台机器上找不找得到
       · `found`     ：`core.installed_media_apps()` 的结果（开始菜单里发现的那些）
+      · `sessions`  ：**此刻活着的媒体会话的 app id**（`core.session_app_ids()`）——
+                      第一真源，见下面规矩 ⓪。
 
     返回 `(labels, {label: MediaApp})`。
 
-    两条规矩（都是实测踩出来的）：
+    三条规矩（都是实测踩出来的）：
 
-      1. **同一个程序只列一条**：写死的候选表与开始菜单会撞车 —— 实测 Edge 出现过
+      ⓪ **有会话的程序一定在清单里**（2026-10-16 新增）：谁能发布系统媒体会话，
+         谁就自动出现在下拉框里并可被**精确控制** —— 与写死的候选表、与
+         "开始菜单里有没有它"都无关。这样"用户装了个表里没有的播放器"
+         "换一台机器"都不会漏（这就是用户要的"基于所有可识别的媒体"）。
+         会话条目**排在最前面**（此刻真在放东西的最该被看到），并且**先占住主干**，
+         后面两轮就不会再为同一个程序列出第二条。
+
+      ① **同一个程序只列一条**：写死的候选表与开始菜单会撞车 —— 实测 Edge 出现过
          两次（`Microsoft Edge（浏览器）（运行中）` 与 `…（菜单）`）。去重按
-         `core.media_app_stem()` 比**主干**，并且**优先保留候选表那条**：
+         `core.media_app_stem()` 比**主干**，并且**优先保留带 exe 名的那条**：
          它带着 exe 名，"按应用发命令"才真的发得出去。
          （原来拿 `MediaApp.key`（exe 名）与"菜单项的显示名"混在一个 `taken` 集合里比，
          两种东西根本不同源，于是永远去不掉重复。）
 
-      2. **开始菜单条目要补 exe**：它本身只有 `.lnk`（`MediaApp.exe` 是空串），
+      ② **开始菜单条目要补 exe**：它本身只有 `.lnk`（`MediaApp.exe` 是空串），
          按名字能在候选表里对上就补上 `core.media_app_exe_for_label()`，
          否则命令会发给"第一个会话"（用户选了 A、控的却是 B）。
     """
     labels: list[str] = [any_label]
     mapping: dict = {any_label: None}
     taken: set[str] = set()
+
+    # ⓪ 第一真源：此刻活着的媒体会话（与候选表、开始菜单都无关）
+    for app_id in sessions or ():
+        app = core.media_app_from_session(app_id, running)
+        if app is None:
+            continue
+        stem = core.media_app_stem(app.label)
+        if not stem or stem in taken:
+            continue
+        # 认得出候选表的（`kind` 为空）才叠「（运行中）」—— 与以前给 Edge/网易云
+        # 的标签完全一致；从会话发现的**陌生**应用，`app.title` 里那个「（媒体会话）」
+        # 已经把"它是活的、而且是从系统媒体会话里认出来的"说清楚了，不再叠第二个词。
+        mark = "（运行中）" if not app.kind else ""
+        text = f"{app.title}{mark}"
+        if text in mapping:
+            continue
+        labels.append(text)
+        mapping[text] = app
+        taken.add(stem)
+
+    # ① 候选表：装了或正在跑的那些（会话那一轮已经列过的会被 `taken` 挡掉）
     for label, exe, browser in core.MEDIA_APP_CANDIDATES:
         if not available(exe) and exe.lower() not in running:
             continue                      # 没装也没在跑：不列出来
+        stem = core.media_app_stem(label)
+        if stem in taken:
+            continue
         app = core.MediaApp(label, exe, browser)
         mark = "（运行中）" if exe.lower() in running else ""
         text = f"{app.title}{mark}"
+        if text in mapping:
+            continue
         labels.append(text)
         mapping[text] = app
-        taken.add(core.media_app_stem(label))
+        taken.add(stem)
+
+    # ② 开始菜单里发现的（媒体 / 浏览器两类）
     for app in found or []:
         stem = core.media_app_stem(app.label)
         if not stem or stem in taken:
-            continue                      # 候选表里已经列过同一个程序
+            continue                      # 前面已经列过同一个程序
         text = f"{app.title}（菜单）"
         if text in mapping:
             continue
         exe = app.exe or core.media_app_exe_for_label(app.label)
         labels.append(text)
-        mapping[text] = core.MediaApp(app.label, exe, app.browser, app.path)
+        mapping[text] = core.MediaApp(app.label, exe, app.browser, app.path,
+                                      getattr(app, "kind", ""))
         taken.add(stem)
     mapping[any_label] = None
     return labels, mapping
@@ -3037,6 +3075,9 @@ class WinMonApp:
         self._media_helper_check = 0.0
         #: 下拉框文本 → MediaApp（由 `_reload_media_app_list` 填）
         self._media_apps: dict = {}
+        #: 上一次读到的"有会话的 app id"（`core.session_app_ids()`）。它一变就重算
+        #: 下拉框清单 —— 这就是"新打开的播放器自动进清单"（2026-10-16 新增）。
+        self._media_session_apps: list[str] = []
         # ---- 工作区快照 ----
         #: `[{name, saved_at, entries:[{name,title,rect,iconic}]}]`，存在设置文件里
         self.workspaces: list[dict] = []
@@ -3446,15 +3487,22 @@ class WinMonApp:
         """
         把"可唤醒的媒体应用"清单填进下拉框。
 
-        清单 = **开始菜单里真装的**（音乐/浏览器两类，`core.installed_media_apps`）
-        ＋ 写死的常见候选里"系统上真找得到"的那些。
-        为什么两边都要：前者覆盖用户自己装的（QQ音乐、PotPlayer…），
-        后者能用**进程名**匹配媒体会话（开始菜单条目只有快捷方式，拿不到 exe 名）。
+        三个来源（**会话优先**，2026-10-16 改）：
+          1. **此刻活着的媒体会话**（`self._media_session_apps`）—— 第一真源：
+             与"这台机器装了什么""候选表里写了什么"都无关，凡能发布会话的都认得出来；
+          2. 开始菜单里真装的（音乐/浏览器两类，`core.installed_media_apps`）
+             —— 覆盖用户自己装的、此刻没在放的那些；
+          3. 写死的常见候选里"系统上真找得到"的那些 —— 它们带着**进程名**，
+             能用进程名匹配媒体会话（开始菜单条目只有快捷方式，拿不到 exe 名）。
 
         清单本身的组装（去重、补 exe）在**纯函数** `build_media_app_entries()` 里，
         这里只负责取数据、填控件、并把**设置里的选择对齐到清单里的真实标签**
         （理由见 `core.resolve_media_pin()`：标签里的「（运行中）」会随状态变，
         直接比字符串会把用户选好的播放器悄悄退回「自动」）。
+
+        **刻意不在这里读会话**：`_refresh_media()` 每 4 秒已经读回来一份，
+        会话集合一变就会回头调本函数（见 `_apply_media_result`）—— 于是
+        "新开一个播放器"会自动出现在清单里，而**不必为此多起一次 PowerShell**。
         """
         running = {(info.get("name") or "").lower()
                    for info in core.snapshot_processes().values()}
@@ -3467,7 +3515,9 @@ class WinMonApp:
         except Exception:
             found = []
         labels, mapping = build_media_app_entries(
-            running, lambda exe: bool(core.media_app_path(exe)), found)
+            running, lambda exe: bool(core.media_app_path(exe)), found,
+            sessions=getattr(self, "_media_session_apps", ()))
+        self._media_apps = mapping
         self._media_apps = mapping
         try:
             self.media_app_combo.configure(values=labels)
@@ -3511,6 +3561,31 @@ class WinMonApp:
             if app is not None:
                 return app
         return None
+
+    def _media_app_is_running(self, app: "core.MediaApp") -> bool:
+        """
+        这个媒体应用**此刻在不在跑**。两条判据（任一成立即可，2026-10-16 新增）：
+
+          · **进程名按主干对得上**（`core.media_app_running`）—— 会话里报的多半不是
+            进程名（Edge 报家族名 `MSEdge`、UWP 报 `包名_哈希!App`），直接比字符串
+            会把它判成"没在跑"，于是明明正在放歌、WinMon 却去走"唤醒"那条路；
+          · **它此刻有活的媒体会话** —— 会话存在本身就说明它在跑，这条兜住
+            "进程名压根解析不出来"的 UWP 包（那种情况下 `app.exe` 还是那个 PFN）。
+
+        为什么要单独一个方法：`media_command()` 用它决定"发命令"还是"先唤醒"，
+        这个判断以前是 `app.exe.lower() not in running` 一行，错得很隐蔽
+        （点「播放/暂停」没反应，还报"它没在运行"）。
+        """
+        try:
+            running = {i.get("name", "").lower()
+                       for i in core.snapshot_processes().values()}
+        except Exception:
+            running = set()
+        if core.media_app_running(app.exe, running):
+            return True
+        want = app.exe or app.label
+        return any(core.media_app_stems_match(want, sid)
+                   for sid in getattr(self, "_media_session_apps", ()))
 
     def _refresh_media(self) -> None:
         """
@@ -3583,6 +3658,28 @@ class WinMonApp:
         """
         self.media_text.set(fit_media_text(text, getattr(self, "MEDIA_TEXT_WIDTH", 64)))
 
+    def _sync_media_session_apps(self, rows) -> None:
+        """
+        记下"此刻有会话的 app id"；**变了才**重算「媒体应用」下拉框清单。
+
+        为什么单独一个方法：
+          · 让"什么时候会重建清单"这条规则只有一处（别在别处再写一遍判断）；
+          · 测试可以直接喂一份会话行来驱动它，不必真的起一次媒体会话读取。
+
+        代价与取舍：清单**只列此刻真有会话的**那些（不累积历史）。
+        这样"某个播放器放完歌就不在清单里"是对的 —— 它此刻确实不是可识别的媒体；
+        用户如果把它钉住过，`resolve_media_pin()` 会如实把这条丢掉的记录报出来
+        （启动那句状态栏会写"没找到"，不静默）。
+        """
+        apps = core.session_app_ids(rows)
+        if apps == list(getattr(self, "_media_session_apps", [])):
+            return
+        self._media_session_apps = apps
+        try:
+            self._reload_media_app_list()
+        except Exception as exc:
+            self._set_status(f"媒体应用清单刷新失败：{type(exc).__name__}: {exc}")
+
     def _apply_media_result(self, data: dict) -> None:
         """
         把后台读到的媒体会话结果画到界面上（**只跑在主线程**）。
@@ -3592,6 +3689,11 @@ class WinMonApp:
         进度条、时间、百分比全部删掉（`media_progress` 这个变量也没了）。
         """
         self._media_busy = False
+        # **会话集合一变就重算「媒体应用」清单**（2026-10-16）：新打开的播放器/浏览器
+        # 只要一发布会话就自动进下拉框 —— 这就是"基于所有可识别的媒体"。
+        # 在这儿做（而不是让 `_reload_media_app_list` 自己去读）是因为这份会话数据
+        # 已经到手了，重算清单不需要再起一次 PowerShell。
+        self._sync_media_session_apps((data or {}).get("sessions") or [])
         if not isinstance(data, dict) or not data.get("ok"):
             err = (data or {}).get("error") or "读取失败"
             self._set_media_line(f"媒体会话读取失败：{err}")
@@ -3679,9 +3781,7 @@ class WinMonApp:
         app_key = self._app_key_for_media()
         woke = False
         if app is not None:
-            running = {i.get("name", "").lower()
-                       for i in core.snapshot_processes().values()}
-            if app.exe.lower() not in running:
+            if not self._media_app_is_running(app):
                 if not self.media_auto_wake.get():
                     self._set_status(
                         f"{app.label} 没在运行 —— 想让它自动启动就勾上「自动唤醒」")

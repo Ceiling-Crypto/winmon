@@ -45,7 +45,10 @@ SOURCE_FILES = ["winmon_core.py", "winmon.py", "scan_windows.py", "close_others.
 #: `Get-Content -Raw | Set-Content -Encoding UTF8` 批量替换文档里的数字时，
 #: **内容没坏、但被加上了 UTF-8 BOM** —— 正是坑 1 说的那类操作。
 #: BOM 会让某些工具误判编码，项目约定是不带 BOM。
-DOC_FILES = ["README.md", "HANDOFF.md"]
+#:
+#: `CHANGELOG.md` 是 2026-10-16 加的：它同样是面向人的中文文档，
+#: 一样会被"批量改数字"这类操作碰到，所以一并纳入守卫。
+DOC_FILES = ["README.md", "HANDOFF.md", "CHANGELOG.md"]
 
 
 # ---------------------------------------------------------------------------
