@@ -193,7 +193,7 @@ class TestCleanableFiles(unittest.TestCase):
     def test_listing_reports_counts_sizes_and_defaults(self):
         root, tmp = _make_fake_project()
         self.addCleanup(tmp.cleanup)
-        items = {d["key"]: d for d in core.list_cleanable_files(root=root)}
+        items = {d["key"]: d for d in core.list_cleanable_files(root=root, app_root=root)}
         self.assertEqual(items["catalog_cache"]["count"], 1)
         self.assertTrue(items["catalog_cache"]["default"])
         self.assertEqual(items["pycache"]["count"], 1)
@@ -211,14 +211,14 @@ class TestCleanableFiles(unittest.TestCase):
         with open(os.path.abspath(outside), "w", encoding="utf-8") as fh:
             fh.write("keep me")
         self.addCleanup(lambda: os.path.exists(outside) and os.remove(outside))
-        listed = [p for d in core.list_cleanable_files(root=root) for p in d["paths"]]
+        listed = [p for d in core.list_cleanable_files(root=root, app_root=root) for p in d["paths"]]
         self.assertNotIn(os.path.abspath(outside), listed)
 
     def test_clean_defaults_removes_cache_but_keeps_settings(self):
         root, tmp = _make_fake_project()
         self.addCleanup(tmp.cleanup)
-        keys = [d["key"] for d in core.list_cleanable_files(root=root) if d["default"]]
-        removed, freed, failures = core.clean_files(keys, root=root)
+        keys = [d["key"] for d in core.list_cleanable_files(root=root, app_root=root) if d["default"]]
+        removed, freed, failures = core.clean_files(keys, root=root, app_root=root)
         self.assertEqual(failures, [])
         self.assertGreaterEqual(removed, 3)
         self.assertGreater(freed, 0)
@@ -230,7 +230,7 @@ class TestCleanableFiles(unittest.TestCase):
     def test_clean_settings_only_when_asked(self):
         root, tmp = _make_fake_project()
         self.addCleanup(tmp.cleanup)
-        removed, _freed, failures = core.clean_files(["settings"], root=root)
+        removed, _freed, failures = core.clean_files(["settings"], root=root, app_root=root)
         self.assertEqual(failures, [])
         self.assertEqual(removed, 1)
         self.assertFalse(os.path.exists(os.path.join(root, "winmon_settings.json")))
@@ -238,7 +238,7 @@ class TestCleanableFiles(unittest.TestCase):
     def test_unknown_key_is_reported_not_deleted(self):
         root, tmp = _make_fake_project()
         self.addCleanup(tmp.cleanup)
-        removed, freed, failures = core.clean_files(["../../etc/passwd"], root=root)
+        removed, freed, failures = core.clean_files(["../../etc/passwd"], root=root, app_root=root)
         self.assertEqual((removed, freed), (0, 0))
         self.assertTrue(failures, "未知清理项必须报出来")
         self.assertTrue(os.path.exists(os.path.join(root, "winmon_catalog.json")))
@@ -246,9 +246,9 @@ class TestCleanableFiles(unittest.TestCase):
     def test_second_clean_finds_nothing_to_do(self):
         root, tmp = _make_fake_project()
         self.addCleanup(tmp.cleanup)
-        keys = [d["key"] for d in core.list_cleanable_files(root=root) if d["default"]]
-        core.clean_files(keys, root=root)
-        removed, _freed, failures = core.clean_files(keys, root=root)
+        keys = [d["key"] for d in core.list_cleanable_files(root=root, app_root=root) if d["default"]]
+        core.clean_files(keys, root=root, app_root=root)
+        removed, _freed, failures = core.clean_files(keys, root=root, app_root=root)
         self.assertEqual(removed, 0)
         self.assertEqual(failures, [])
 

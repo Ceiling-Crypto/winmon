@@ -6555,6 +6555,15 @@ def main() -> int:
             stream.reconfigure(encoding="utf-8", errors="replace")
         except Exception:
             pass
+    # 运行时数据（设置 / 缓存 / 日志 / 媒体快照）都放在**用户数据目录**里，
+    # 不在程序目录里（见 `core.data_dir()`）。这里做两件事：
+    #   ① 把旧版本留在程序目录里的那些文件**一次性搬过去**
+    #      （先校验副本再删原件，搬不动就原样留着 —— 见 `core.migrate_legacy_data_files`）；
+    #   ② 确保数据目录存在。
+    # 为什么放在这么靠前：下面任何一个分支（--catalog / --clean / --selftest / 开界面）
+    # 都可能要写这些文件。
+    core.migrate_legacy_data_files()
+    core.ensure_data_dir()
     args = sys.argv[1:]
     #: 命令行认得的开关（下面"未知参数"与"漏值"两处都要用，所以先定义）。
     KNOWN = {"--version", "--selftest", "--smoke", "--scan", "--list", "--json", "--all",
@@ -6790,14 +6799,17 @@ def _settings_path() -> str:
     """
     设置文件位置。
 
+    默认在**运行时数据目录**（`core.data_dir()`）里 —— 不再写在程序目录里
+    （理由见 `core.data_dir()` 那一节：程序目录只留源与文档，
+    别人 clone 下来跑一次也不会把工作区弄脏）。
+
     支持用环境变量 `WINMON_SETTINGS` 覆盖 —— 测试要用临时文件验证
     "收藏 / 最近使用会被持久化"，不能去动用户真实的偏好文件。
     """
     override = os.environ.get("WINMON_SETTINGS")
     if override:
         return override
-    return os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                        "winmon_settings.json")
+    return core.data_file("winmon_settings.json")
 
 
 def _load_prefs() -> "core.CatalogPrefs":
@@ -6966,12 +6978,13 @@ if __name__ == "__main__":
     except SystemExit:
         raise
     except BaseException:
-        # 用 pythonw 启动时没有控制台，异常会静默消失；这里落盘一份日志便于排查
+        # 用 pythonw 启动时没有控制台，异常会静默消失；这里落盘一份日志便于排查。
+        # 放**运行时数据目录**（不是程序目录）：程序目录里不该出现这种运行痕迹。
         import traceback
         detail = traceback.format_exc()
         try:
-            log_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                    "winmon_error.log")
+            core.ensure_data_dir()          # 目录可能还没建（例如就崩在启动早期）
+            log_path = core.data_file("winmon_error.log")
             with open(log_path, "w", encoding="utf-8") as fh:
                 fh.write(f"{APP_NAME} {APP_VER}\n{time.strftime('%Y-%m-%d %H:%M:%S')}\n\n{detail}")
         except Exception:

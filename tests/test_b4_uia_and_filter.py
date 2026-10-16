@@ -1237,11 +1237,20 @@ class TestHistoryLog(unittest.TestCase):
         else:
             os.environ["WINMON_HISTORY_LOG"] = self._old_env
 
-    def test_log_path_defaults_into_the_project_dir(self):
-        """默认位置 = 程序目录（`X:\\winmon`），可用环境变量覆盖（测试用）。"""
+    def test_log_path_defaults_into_the_data_dir(self):
+        """
+        默认位置 = **运行时数据目录**（不再写在程序目录里），可用环境变量覆盖。
+
+        2026-10-16 改：程序目录只留源与文档 —— 别人 clone 下来跑一次，
+        `git status` 也该是干净的。便携模式（`WINMON_DATA_DIR`）另说。
+        """
         os.environ.pop("WINMON_HISTORY_LOG", None)
         self.assertEqual(core.history_log_path(),
-                         os.path.join(core.APP_DIR, core.HISTORY_LOG_NAME))
+                         core.data_file(core.HISTORY_LOG_NAME))
+        if not os.environ.get(core.DATA_DIR_ENV) and (
+                os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA")):
+            self.assertNotEqual(os.path.dirname(core.history_log_path()), core.APP_DIR,
+                                "日志不该再写回程序目录（那样 clone 下来跑一次就脏了）")
         os.environ["WINMON_HISTORY_LOG"] = self.log
         self.assertEqual(core.history_log_path(), self.log)
 

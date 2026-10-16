@@ -37,8 +37,122 @@ import threading
 import time
 from ctypes import wintypes as w
 
-#: 本程序所在目录（缓存 / 设置 / 日志都放这里；「清理」功能也只在这里动手）
+#: 本程序所在目录（**只有源与文档**；运行时的数据见 `data_dir()`）。
 APP_DIR = os.path.dirname(os.path.abspath(__file__))
+
+# ============================================================================
+# 零点五、运行时数据目录（设置 / 缓存 / 日志 / 媒体快照）
+# ============================================================================
+#
+# 为什么不再直接写在程序目录里（2026-10-16 改）：
+#   · 程序目录是**源**（+ 文档）。跑一下就在里面冒出缓存、日志、快照，
+#     对"只想试用一下"的人是纯粹的垃圾，也会把 git 工作区弄脏
+#     （clone 下来跑一次，`git status` 就有一堆没跟踪的文件）；
+#   · Windows 的标准位置是每个用户自己的 `%LOCALAPPDATA%`，这才是"用户数据"该待的地方。
+#
+# 但仍然要照顾"绿色程序"这条卖点（README 写着"整个文件夹拷过去就能跑"）：
+#   · 设 `WINMON_DATA_DIR=<某个目录>` 就回到**便携模式**，数据跟着那个目录走；
+#   · 旧的（写在程序目录里的）数据文件会被**一次性迁移**过去，见
+#     `migrate_legacy_data_files()` —— 用户不用手动搬。
+
+#: 运行时数据目录的覆盖变量（**便携模式** / 测试用）
+DATA_DIR_ENV = "WINMON_DATA_DIR"
+
+#: 旧版本写在**程序目录**里的那些文件名（迁移用）。
+#: 只搬这些已知名字 —— 迁移代码绝不去猜、也不碰别的文件。
+LEGACY_DATA_NAMES: tuple[str, ...] = (
+    "winmon_settings.json",
+    "winmon_catalog.json",
+    "winmon_history.log",
+    "winmon_history.log.1",
+    "winmon_history.log.bak",
+    "winmon_media.jsonl",
+    "winmon_media.jsonl.tmp",
+    "winmon_error.log",
+)
+
+
+def data_dir() -> str:
+    """
+    运行时数据目录（设置 / 程序目录缓存 / 操作历史日志 / 媒体快照 / 错误日志）。
+
+    优先级：
+      1. 环境变量 `WINMON_DATA_DIR`（**便携模式**：数据跟着你指定的目录走）；
+      2. `%LOCALAPPDATA%\\WinMon`（Windows 标准位置：程序目录保持干净）；
+      3. 退回程序目录（拿不到 LOCALAPPDATA 时的兜底，例如非 Windows 或精简环境）。
+
+    **只算路径，不建目录** —— 建目录由 `ensure_data_dir()` 负责，
+    这样"读不到就算了"的调用方（例如读快照）不会因为一次读取就创出目录来。
+    """
+    override = os.environ.get(DATA_DIR_ENV)
+    if override:
+        return os.path.abspath(override)
+    base = os.environ.get("LOCALAPPDATA") or os.environ.get("APPDATA") or ""
+    if base:
+        return os.path.join(base, "WinMon")
+    return APP_DIR
+
+
+def ensure_data_dir() -> str:
+    """确保数据目录存在（写文件之前调），返回它的路径；建不出来也不抛异常。"""
+    path = data_dir()
+    try:
+        os.makedirs(path, exist_ok=True)
+    except OSError:
+        # 建不出来（只读介质 / 权限）就退回程序目录 —— 宁可写在旁边，
+        # 也不要让"设置存不下来"变成静默的数据丢失。
+        return APP_DIR
+    return path
+
+
+def data_file(name: str) -> str:
+    """数据目录下某个文件的完整路径（**只拼路径，不建目录**）。"""
+    return os.path.join(data_dir(), str(name))
+
+
+def legacy_data_file(name: str) -> str:
+    """旧版本的位置：程序目录下的同名文件（迁移与兼容读取用）。"""
+    return os.path.join(APP_DIR, str(name))
+
+
+def migrate_legacy_data_files(src_dir: str = "", dst_dir: str = "") -> list[str]:
+    """
+    把旧版本留在**程序目录**里的数据文件搬到数据目录（一次性兼容迁移）。
+
+    三条安全约定：
+      · **只搬已知名字**（`LEGACY_DATA_NAMES`），不猜、不递归、不碰别的文件；
+      · 目标已存在就**跳过**（绝不覆盖新数据）；
+      · **先校验副本再删原件**（大小 + 逐字节比对），任何一步失败就原样留着，
+        并把失败原因回报给调用方 —— 宁可目录里多一个旧文件，也不能丢用户的数据。
+
+    返回"已搬过去"的文件名列表。失败的不在里面（调用方按需打印）。
+    搬完原文件就没了，程序目录恢复干净。
+    """
+    src = src_dir or APP_DIR
+    dst = dst_dir or data_dir()
+    if os.path.abspath(src) == os.path.abspath(dst):
+        return []                       # 便携模式：本来就在一处，没什么可搬
+    moved: list[str] = []
+    try:
+        os.makedirs(dst, exist_ok=True)
+    except OSError:
+        return moved
+    for name in LEGACY_DATA_NAMES:
+        old = os.path.join(src, name)
+        new = os.path.join(dst, name)
+        if not os.path.isfile(old) or os.path.exists(new):
+            continue
+        try:
+            shutil.copy2(old, new)
+            if (os.path.getsize(old) != os.path.getsize(new)
+                    or open(old, "rb").read() != open(new, "rb").read()):
+                continue                # 副本不对：留着原件，下次再说
+            os.remove(old)
+            moved.append(name)
+        except OSError:
+            continue
+    return moved
+
 
 # ============================================================================
 # 一、Win32 API 绑定
@@ -2337,13 +2451,14 @@ def build_program_catalog(use_cache: bool = True,
 
     use_cache 为真时，若缓存文件比所有快捷方式都新，就直接用缓存，
     避免每次启动都去解析 100 多个快捷方式。
-    cache_path 默认为本文件同目录下的 winmon_catalog.json。
+    cache_path 默认在**运行时数据目录**（`data_dir()`）下的 `winmon_catalog.json`
+    —— 不再写在程序目录里（理由见 `data_dir()` 那一节）。
     progress 是一个可调用对象，用于向界面回报进度文字。
     """
     import json
     if not cache_path:
-        cache_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                  "winmon_catalog.json")
+        cache_path = data_file("winmon_catalog.json")
+        ensure_data_dir()               # 默认位置：写之前确保数据目录在
 
     def say(msg):
         if progress:
@@ -2555,7 +2670,7 @@ def _looks_like_path_title(title: str) -> bool:
     """
     判断窗口标题其实是「一个文件路径」而不是软件名。
 
-    为什么需要：Electron 应用（哔哩哔哩、某个 AI 客户端 等）在窗口刚创建、
+    为什么需要：Electron 应用（哔哩哔哩客户端、某个 AI 客户端等）在窗口刚创建、
     标题还没设好时，会短暂把 exe 完整路径当标题；命令行 `start "标题" exe` 用错参数
     也会造成同样结果。若不识别，这类窗口会被当成一个新"程序"混进目录
     （实测出现过一条名为 "X:\\Program Files\\bilibili\\哔哩哔哩.exe" 的假程序）。
@@ -3035,7 +3150,7 @@ def video_title_strength(title: str) -> str:
         宽一点没关系，反正对象已经是播放器；
       · 判断"**某个陌生窗口**算不算视频来源"（`detect_video_sources`）：
         必须严，否则任何标题较长的中文窗口都会被算成视频来源。
-    实测踩到：`某个 AI 客户端` 的窗口标题「继续开发 winmon 监控工具 — …」
+    实测踩到：某个 AI 客户端的窗口标题「继续开发 winmon 监控工具 — …」
     只有 8 个汉字，就被那条"长中文标题"启发式判成了播放页，
     于是它成了"得分最高的视频来源"，弹窗里还写着"当前标题已是播放页" ——
     如果用户顺手点了「是，关闭窗口」，关掉的就是正在干活的编辑器。
@@ -4641,11 +4756,11 @@ _media_helper_proc = None
 
 
 def media_snapshot_path() -> str:
-    """常驻快照文件的完整路径（默认放程序目录，可用环境变量覆盖）。"""
+    """常驻快照文件的完整路径（默认在运行时数据目录；可用环境变量覆盖）。"""
     override = os.environ.get(MEDIA_SNAPSHOT_ENV)
     if override:
         return override
-    return os.path.join(APP_DIR, "winmon_media.jsonl")
+    return data_file("winmon_media.jsonl")
 
 
 def read_media_snapshot(max_age: float = MEDIA_SNAPSHOT_TTL) -> dict | None:
@@ -4699,6 +4814,13 @@ def start_media_snapshot_helper(watch_seconds: int = 1800,
         return True, "已经在跑"
     if read_media_snapshot() is not None:
         return True, "已有一个在写快照"
+    try:
+        # 助手要往 `-Snapshot` 那个路径写文件 —— 先确保它所在目录存在。
+        # 用**快照路径自己的目录**（而不是 `data_dir()`）：测试会把
+        # `WINMON_MEDIA_SNAPSHOT` 指到临时目录，那时不该去建真实的数据目录。
+        os.makedirs(os.path.dirname(os.path.abspath(media_snapshot_path())), exist_ok=True)
+    except OSError:
+        pass
     try:
         flags = getattr(subprocess, "CREATE_NO_WINDOW", 0)
         _media_helper_proc = subprocess.Popen(
@@ -5151,8 +5273,8 @@ def stop_video_in_window(wi: "WinInfo", mode: str = "smart") -> tuple[bool, str]
 #:   client   客户端   → 优先取它的卡片 href 交给浏览器；客户端内部点击做不到
 #:   local    本地播放器 → 需要文件路径，用 "播放器.exe 文件" 打开
 #:
-#: 为什么必须按**可执行文件路径**认，而不是窗口类名：本机的哔哩哔哩客户端与
-#: 某个 AI 客户端 都是 Electron、窗口类名都是 `Chrome_WidgetWin_1`（坑 39），
+#: 为什么必须按**可执行文件路径**认，而不是窗口类名：哔哩哔哩客户端与
+#: 某个 AI 客户端都是 Electron、窗口类名都是 `Chrome_WidgetWin_1`（坑 39），
 #: 只看类名会挑错窗口。
 VIDEO_APP_TABLE: dict[str, tuple[str, str]] = {
     "msedge.exe": ("Microsoft Edge", "browser"),
@@ -5425,56 +5547,68 @@ def restore_window(wi: "WinInfo", activate: bool = True) -> tuple[bool, str]:
 # `winmon_settings.json`（收藏 / 手动分类 / 最近使用 / 界面偏好）默认**不勾选**，
 # 并且在界面上写明风险；其余都是删了会自动重建、或本来就没用的东西。
 
-#: (key, 显示名, 相对路径, 默认勾选, 说明)
-CLEANABLE_ITEMS: tuple[tuple[str, str, str, bool, str], ...] = (
+#: (key, 显示名, 相对路径, 默认勾选, 说明, 去哪个目录找)
+#:
+#: 最后一项是 2026-10-16 加的：从那以后"运行时的数据"不再写在程序目录里
+#: （见 `data_dir()`），所以清理清单也得跟着分家：
+#:   · "data"  = 运行时数据目录（`data_dir()`）—— 缓存 / 日志 / 快照 / 设置；
+#:   · "app"   = 程序目录（`APP_DIR`）—— 字节码缓存必须待在源旁边，解释器认这个位置；
+#:   · "other" = 特殊来源（系统临时目录里的导出记录）。
+CLEANABLE_ITEMS: tuple[tuple[str, str, str, bool, str, str], ...] = (
     ("catalog_cache", "程序目录缓存", "winmon_catalog.json", True,
-     "删掉后下次重新扫描系统（约 0.4 秒）；不影响任何设置"),
+     "删掉后下次重新扫描系统（约 0.4 秒）；不影响任何设置", "data"),
     ("error_log", "错误日志", "winmon_error.log", True,
-     "只在启动失败时生成；删掉不影响运行"),
+     "只在启动失败时生成；删掉不影响运行", "data"),
     ("pycache", "字节码缓存（主程序）", "__pycache__", True,
-     "解释器会自动重建；删掉不影响运行"),
+     "解释器会自动重建；删掉不影响运行", "app"),
     ("tests_pycache", "字节码缓存（测试）", os.path.join("tests", "__pycache__"), True,
-     "解释器会自动重建；删掉不影响运行"),
+     "解释器会自动重建；删掉不影响运行", "app"),
     ("temp_exports", "导出的操作记录（系统临时目录）", "", True,
-     "「导出操作记录」生成的 winmon_history_*.txt"),
+     "「导出操作记录」生成的 winmon_history_*.txt", "other"),
     ("media_snapshot", "媒体会话快照", "winmon_media.jsonl", True,
-     "常驻媒体助手每 3 秒写一行的运行缓存（2026-10-12 起才有）；"
-     "删掉不影响运行，下一次写入会自动重建"),
+     "常驻媒体助手每 3 秒写一行的运行缓存；删掉不影响运行，下一次写入会自动重建",
+     "data"),
     ("history_log", "操作历史日志", "winmon_history.log", False,
      "**这是留痕记录**（谁在什么时候被关闭/结束了）：删掉就没了。"
-     "只想清掉界面上的列表请用「操作历史…」窗口里的「清空列表」"),
+     "只想清掉界面上的列表请用「操作历史…」窗口里的「清空列表」", "data"),
     ("settings", "界面偏好 + 收藏 / 最近使用", "winmon_settings.json", False,
-     "**这是你的用户数据**：删掉会丢收藏、手动分类、最近使用与界面偏好"),
+     "**这是你的用户数据**：删掉会丢收藏、手动分类、最近使用与界面偏好", "data"),
 )
 
 
-def list_cleanable_files(root: str = "") -> list[dict]:
+def list_cleanable_files(root: str = "", app_root: str = "") -> list[dict]:
     """
     列出程序产生的**可清理文件**（含实际大小、文件数与风险说明）。
+
+    两个只给测试用的覆盖参数（真实运行一律不传）：
+      · `root`     —— 覆盖"运行时数据目录"（缓存 / 日志 / 快照 / 设置在这里）；
+      · `app_root` —— 覆盖"程序目录"（字节码缓存那一项在这里；解释器只认
+        源旁边那个 `__pycache__`，所以它没跟着数据一起搬走）。
 
     返回 [{key, label, note, default, paths, count, bytes, exists}]。
     界面直接照着这份清单渲染，**不会删清单以外的东西**。
     """
     import glob
     import tempfile
-    root = root or APP_DIR
+    roots = {"data": root or data_dir(), "app": app_root or APP_DIR, "other": ""}
     out: list[dict] = []
-    for key, label, rel, default, note in CLEANABLE_ITEMS:
+    for key, label, rel, default, note, where in CLEANABLE_ITEMS:
+        base = roots.get(where, "")
         paths: list[str] = []
         if key == "temp_exports":
             paths = sorted(glob.glob(os.path.join(tempfile.gettempdir(),
                                                   "winmon_history_*.txt")))
         elif key == "history_log":
             # 日志 + 轮转出来的备份一起列（用户点这一项就是想清干净留痕）
-            for cand in (os.path.join(root, HISTORY_LOG_NAME),
-                         os.path.join(root, HISTORY_LOG_NAME + ".1")):
+            for cand in (os.path.join(base, HISTORY_LOG_NAME),
+                         os.path.join(base, HISTORY_LOG_NAME + ".1")):
                 if os.path.exists(cand):
                     paths.append(cand)
-        elif rel:
-            target = os.path.join(root, rel)
+        elif rel and base:
+            target = os.path.join(base, rel)
             if os.path.isdir(target):
-                for base, _dirs, files in os.walk(target):
-                    paths += [os.path.join(base, f) for f in files]
+                for base_dir, _dirs, files in os.walk(target):
+                    paths += [os.path.join(base_dir, f) for f in files]
             elif os.path.exists(target):
                 paths.append(target)
         size = 0
@@ -5489,15 +5623,16 @@ def list_cleanable_files(root: str = "") -> list[dict]:
     return out
 
 
-def clean_files(keys, root: str = "") -> tuple[int, int, list[str]]:
+def clean_files(keys, root: str = "", app_root: str = "") -> tuple[int, int, list[str]]:
     """
     清理指定的项（key 来自 `CLEANABLE_ITEMS`）。
 
     **只删清单里解析出来的路径** —— 不接受任意路径参数，避免"清理"变成删错东西。
+    `root` / `app_root` 与 `list_cleanable_files()` 同义（只给测试用）。
     返回 (删除的文件数, 释放的字节数, 失败说明列表)。
     """
     wanted = {str(k) for k in keys}
-    items = {d["key"]: d for d in list_cleanable_files(root)}
+    items = {d["key"]: d for d in list_cleanable_files(root, app_root)}
     removed = freed = 0
     failures: list[str] = []
     for key in wanted:
@@ -5516,10 +5651,12 @@ def clean_files(keys, root: str = "") -> tuple[int, int, list[str]]:
                 freed += size
             except OSError as exc:
                 failures.append(f"{os.path.basename(p)}：{exc}")
-        # 目录型（字节码缓存）：文件删完后把空目录也收掉
+        # 目录型（字节码缓存）：文件删完后把空目录也收掉。
+        # 它固定待在**程序目录**（解释器只认源旁边那个 `__pycache__`），
+        # 所以这里不能用 `root`（那是"运行时数据目录"的覆盖值）。
         if key in ("pycache", "tests_pycache"):
-            target = os.path.join(root or APP_DIR,
-                                  dict((k, r) for k, _l, r, _d, _n in CLEANABLE_ITEMS)[key])
+            rel = dict((k, r) for k, _l, r, _d, _n, _w in CLEANABLE_ITEMS)[key]
+            target = os.path.join(app_root or APP_DIR, rel)
             try:
                 if os.path.isdir(target):
                     for base, dirs, _files in os.walk(target, topdown=False):
@@ -6399,12 +6536,13 @@ def history_log_path() -> str:
     操作历史日志的完整路径。
 
     可用环境变量 `WINMON_HISTORY_LOG` 覆盖（**给测试用**：测试不该往用户真实的
-    历史日志里写东西）。默认就是程序目录下的 `winmon_history.log`。
+    历史日志里写东西）。默认在**运行时数据目录**（`data_dir()`）下的
+    `winmon_history.log` —— 不再写在程序目录里。
     """
     override = os.environ.get("WINMON_HISTORY_LOG")
     if override:
         return override
-    return os.path.join(APP_DIR, HISTORY_LOG_NAME)
+    return data_file(HISTORY_LOG_NAME)
 
 
 class ActionHistory:
@@ -6417,8 +6555,10 @@ class ActionHistory:
     **两条线**：
       · 内存里一份（`items`，给界面看，有上限）；
       · **磁盘上一份**（`winmon_history.log`，只追加、跨会话保留）——
-        用户要的是"独立的日志记录放在 D 盘的 winmon 里"，所以每次 `add()`
-        都会追加一行到日志文件，关掉程序也还在。
+        每次 `add()` 都会追加一行到日志文件，关掉程序也还在，
+        方便事后查"这是什么时候被谁关掉的"。
+      磁盘那份放在**运行时数据目录**里（见 `history_log_path()`），
+      不在程序目录里。
     """
 
     def __init__(self, limit: int = 500, log_path: str = "",

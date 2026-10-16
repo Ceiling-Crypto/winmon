@@ -48,7 +48,8 @@ SOURCE_FILES = ["winmon_core.py", "winmon.py", "scan_windows.py", "close_others.
 #:
 #: `CHANGELOG.md` 是 2026-10-16 加的：它同样是面向人的中文文档，
 #: 一样会被"批量改数字"这类操作碰到，所以一并纳入守卫。
-DOC_FILES = ["README.md", "HANDOFF.md", "CHANGELOG.md"]
+#: `MCP.md` 同理（它是方案文档，中文最多的一份）。
+DOC_FILES = ["README.md", "HANDOFF.md", "CHANGELOG.md", "MCP.md"]
 
 
 # ---------------------------------------------------------------------------

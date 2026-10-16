@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import os
 import sys
+import tempfile
 import unittest
 from unittest import mock
 
@@ -53,12 +54,15 @@ class TestMainWindowLayout(unittest.TestCase):
         cls.root.geometry(f"{APP_W}x{APP_H}+0+0")
         cls.app = winmon.WinMonApp.__new__(winmon.WinMonApp)
         cls.app.root = cls.root
-        cls.app._settings_path = os.path.join(
-            os.path.dirname(os.path.abspath(winmon.__file__)), "winmon_settings.json")
+        # 设置与历史日志都指到**临时目录**（2026-10-16）：既别碰用户真实的数据，
+        # 也别在程序目录里留下文件 —— 程序目录只留源与文档。
+        cls._data_tmp = tempfile.TemporaryDirectory(prefix="winmon-a5-")
+        cls.app._settings_path = os.path.join(cls._data_tmp.name, "winmon_settings.json")
         cls.app._settings_after_id = None
         # _build_ui 需要的最小状态
         app = cls.app
-        app.history = core.ActionHistory()
+        app.history = core.ActionHistory(
+            log_path=os.path.join(cls._data_tmp.name, "winmon_history.log"))
         app.show_hidden = tk.BooleanVar(value=False)
         app.show_no_window = tk.BooleanVar(value=False)
         app.only_windowed = tk.BooleanVar(value=True)
@@ -81,6 +85,10 @@ class TestMainWindowLayout(unittest.TestCase):
     def tearDownClass(cls):
         try:
             cls.root.destroy()
+        except Exception:
+            pass
+        try:
+            cls._data_tmp.cleanup()
         except Exception:
             pass
 
@@ -374,7 +382,10 @@ class TestTerminateSafety(unittest.TestCase):
         cls.app.selected_hwnd = None
         cls.app.win_by_hwnd = {}
         cls.app.proc_map = {}
-        cls.app.history = core.ActionHistory()
+        # 日志同样指到临时目录：这一组会真去结束进程，动作会入账
+        cls._data_tmp = tempfile.TemporaryDirectory(prefix="winmon-a5b-")
+        cls.app.history = core.ActionHistory(
+            log_path=os.path.join(cls._data_tmp.name, "winmon_history.log"))
         cls.app.status_text = tk.StringVar()
         cls.app._set_status = lambda text: cls.app.status_text.set(text)
         cls.app.log_action = lambda *a, **kw: None
@@ -383,6 +394,10 @@ class TestTerminateSafety(unittest.TestCase):
     def tearDownClass(cls):
         try:
             cls.root.destroy()
+        except Exception:
+            pass
+        try:
+            cls._data_tmp.cleanup()
         except Exception:
             pass
 

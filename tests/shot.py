@@ -23,6 +23,7 @@ import ctypes
 import os
 import struct
 import sys
+import tempfile
 import time
 import zlib
 
@@ -62,11 +63,13 @@ def build_app(width: int, height: int):
     root.geometry(f"{width}x{height}+0+0")
     app = winmon.WinMonApp.__new__(winmon.WinMonApp)
     app.root = root
-    app.history = core.ActionHistory()
+    # 设置与历史日志都写进临时目录：截图工具也不该碰用户真实数据、
+    # 更不该在程序目录里留下文件（程序目录只留源与文档，2026-10-16 起）
+    data_tmp = tempfile.mkdtemp(prefix="winmon-shot-")
+    app.history = core.ActionHistory(log_path=os.path.join(data_tmp, "winmon_history.log"))
     app.program_prefs = core.CatalogPrefs()
     app.icons = winmon.IconProvider(winmon.ICON_SIZE)
-    app._settings_path = os.path.join(os.path.dirname(os.path.abspath(winmon.__file__)),
-                                      "winmon_settings.json")
+    app._settings_path = os.path.join(data_tmp, "winmon_settings.json")
     app._settings_after_id = None
     app.show_hidden = tk.BooleanVar(value=False)
     app.show_no_window = tk.BooleanVar(value=False)

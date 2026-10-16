@@ -28,6 +28,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import _helpers as h                                # noqa: E402
 from _helpers import PROJECT_DIR, SOURCE_FILES      # noqa: E402
+import winmon_core as core                          # noqa: E402
 
 #: 自检的 8 个环节（顺序与 winmon.py 里的输出一致）
 #:
@@ -173,8 +174,13 @@ class TestSelftestPipeline(unittest.TestCase):
         self.assertIn("[OK]", line)
 
     def test_selftest_writes_no_error_log(self):
-        """自检正常结束时不应留下 winmon_error.log。"""
-        self.assertFalse(os.path.exists(os.path.join(PROJECT_DIR, "winmon_error.log")),
+        """
+        自检正常结束时不应留下 winmon_error.log。
+
+        注意**位置**：错误日志 2026-10-16 起写在运行时数据目录里
+        （`core.data_file()`，默认 `%LOCALAPPDATA%\\WinMon`），不在程序目录里。
+        """
+        self.assertFalse(os.path.exists(core.data_file("winmon_error.log")),
                          "自检留下了错误日志")
 
     def test_source_still_has_all_eight_stages(self):

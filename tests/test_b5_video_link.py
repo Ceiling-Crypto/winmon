@@ -166,7 +166,7 @@ class TestClassifyVideoApp(unittest.TestCase):
 
     def test_window_class_is_never_used(self):
         """
-        为什么必须看路径：本机哔哩哔哩客户端与 某个 AI 客户端 都是 Electron、
+        为什么必须看路径：哔哩哔哩客户端与某个 AI 客户端都是 Electron、
         窗口类名都是 `Chrome_WidgetWin_1`（HANDOFF 坑 39）。
         归类函数**根本不接受**类名参数，所以不可能靠它认错。
         """
