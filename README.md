@@ -31,8 +31,8 @@
 | **`README.md`**（本文） | **唯一的入口**：怎么用、能做什么、边界在哪、怎么验 | 第一次拿到 WinMon；想知道某个功能怎么操作 |
 | [`CHANGELOG.md`](CHANGELOG.md) | **改了什么**：按版本记功能与修复（含版本号怎么变的） | 想知道这版和上版的差别、某个改动是哪一版进的 |
 | [`HANDOFF.md`](HANDOFF.md) | **为什么是这样**：开发交接文档，2800 行，踩过的坑编号到 120+。**含内部设计讨论**（哪些方案试过、为什么放弃） | **改代码之前**（尤其别重复踩坑）；接手这个项目 |
-| [`MCP.md`](MCP.md) | 让 AI 客户端通过 **MCP** 接入 WinMon 的**方案**（**阶段 1.5 已实现三个只读工具**，其余阶段待做）；§十 是 2026-10-18 的「AI 工作伴侣」修订 | 想用 AI 操作/观察这台机器上的窗口与进程 |
-| [`tests/`](tests) | 可重复运行的验证用例（785 个，纯标准库） | 改完代码跑一遍；想知道某条规矩被谁钉住 |
+| [`MCP.md`](MCP.md) | 让 AI 客户端通过 **MCP** 接入 WinMon 的**方案**（**阶段 1.5–4 已实现**：只读工具 / 预算 / 直连 / 本地 HTTP）；§十 是 2026-10-18 的「AI 工作伴侣」修订 | 想用 AI 操作/观察这台机器上的窗口与进程 |
+| [`tests/`](tests) | 可重复运行的验证用例（825 个，纯标准库） | 改完代码跑一遍；想知道某条规矩被谁钉住 |
 | [`LICENSE`](LICENSE) | MIT 许可证 | 想用 / 改 / 分发这份代码 |
 
 一句话：**用**看 README，**对比**看 CHANGELOG，**改**看 HANDOFF，**接 AI** 看 MCP。
@@ -188,7 +188,7 @@ py winmon.py
 ### 跑测试（可选，纯标准库）
 
 ```bat
-py tests\run_tests.py            :: 全部用例（785 个，约 95 秒）
+py tests\run_tests.py            :: 全部用例（825 个，约 95 秒）
 py tests\run_tests.py -v         :: 详细输出
 py tests\run_tests.py -k capture :: 只跑名字里含 capture 的用例
 py tests\run_tests.py --list     :: 只列出会跑哪些用例
@@ -776,45 +776,74 @@ python close_others.py --keep 1234   :: 额外保留某个 PID
 - **什么都没做成时不写操作历史**（没在跑又没勾自动唤醒、或者三步都失败）：
   只在状态栏说一句，免得日志被"其实什么也没发生"的记录塞满。
 
-## AI 工作伴侣（阶段 1.5，只读）
+## AI 工作伴侣（阶段 1.5–4）
 
-WinMon 带一个**只读**的 AI 接入层：**不主动调模型、不联网、不花 token**。
-它只做两件事：
+WinMon 的 AI 接入层：**本地识别 + 本地事件 + 用量预算 + 可选直连 + 本地 HTTP / 剪贴板桥**。
+默认**不联网、不调模型、不花 token**；只有显式开启「直连」才会产生外部调用。
 
-1. **识别你正在用哪个 AI**（桌面客户端 / 网页标签），并给出置信度与判据；
+### 识别与本地事件（0 token）
+
+1. **识别你正在用哪个 AI**（桌面客户端 / 网页标签），给出置信度与判据；
 2. **把本地能确定的异常变成事件**（无响应窗口、系统盘告急、MCP 工具失败），
-   用托盘气泡提醒；AI 可以按需来读，不读就永远是 0 token。
-
-命令行看一眼（不需要任何 AI 客户端）：
+   用托盘气泡提醒；AI 按需来读，不读就永远是 0 token。
 
 ```bat
-py winmon.py --ai-sessions      :: 主 AI + 候选 + 判据（--json 出机器可读版）
+py winmon.py --ai-sessions      :: 主 AI + 候选 + 判据（--json 机器可读）
 py winmon.py --incidents        :: 本地事件（--json 同理）
-py winmon.py --mcp-selftest     :: MCP 协议与三个工具的自检（不需要客户端）
-py winmon.py --mcp-stdio        :: 以 MCP 服务器身份跑（给 AI 客户端挂）
+py winmon.py --ai-usage         :: 今日上下文用量 / 预算状态
+py winmon.py --ai-context       :: 生成给网页 AI 的上下文包
+py winmon.py --ai-context --copy :: 同上，并复制到剪贴板（剪贴板桥）
 ```
-
-挂到 Claude Desktop / Cursor（stdio，配置文件里加一段）：
-
-```json
-{"mcpServers":{"winmon":{"command":"python","args":["D:\\winmon\\winmon.py","--mcp-stdio"]}}}
-```
-
-三个工具：`winmon_ai_sessions`（主 AI）、`winmon_incidents`（本地事件）、
-`winmon_playbooks`（诊断剧本）。
 
 判据（与 MCP.md §10.3 一致）：
 **MCP 连接级实锤 > 前台时长 > 交互新鲜度 > 用户 pin > 资源占比**。
 资源占比只用于并列时打破平局；**网页端不可归因，恒为 0**。
 用环境变量 `WINMON_AI_PIN=Claude` 可指定主 AI。
 
-**这一阶段还没有的**（阶段 2.5 / 3.5 / 4）：token 用量账本与预算调节器
-（默认日预算已定为 **1000 万**（估算），调节器待实现）、直连模型 API、
-本地 HTTP / 网页端隧道。完整方案见 [`MCP.md`](MCP.md) §十。
+### MCP 接入（桌面 stdio / 本地 HTTP）
+
+```bat
+py winmon.py --mcp-selftest     :: 协议与工具自检（不需要客户端）
+py winmon.py --mcp-stdio        :: stdio 服务器（Claude Desktop / Cursor）
+py winmon.py --mcp-http         :: 本地 HTTP（默认 8765，只绑 127.0.0.1）
+```
+
+```json
+{"mcpServers":{"winmon":{"command":"python","args":["D:\\winmon\\winmon.py","--mcp-stdio"]}}}
+```
+
+工具：`winmon_ai_sessions`、`winmon_incidents`、`winmon_playbooks`、
+`winmon_budget_status`。HTTP 模式必须带 `Authorization: Bearer <token>`
+（token 在启动时打印到 **stderr**，只显示一次）；有 `Origin` 头时还要在白名单里。
+**网页端要实时调用**，需要用 cloudflared / ngrok 之类的隧道把 `127.0.0.1:8765`
+暴露成 HTTPS —— WinMon **不捆绑隧道**；不 tunnel 就用上面的剪贴板桥。
+
+### 用量预算（默认 1000 万 token/日，估算）
+
+- 用量账本 `winmon_ai_usage.jsonl`：精确（直连 API）与估算（MCP 上下文）**分栏**；
+- 80% 软提醒；100% 停止直连、MCP 降载（只回预算状态，不返回数据）；
+- **恢复只能在本机**：托盘右键 →「AI 用量…」或 `--ai-usage` 查看；
+  **MCP 没有任何修改预算的工具**（防止提示注入自己解锁）。
+
+### 可选：直连模型 API（默认关闭）
+
+```bat
+set WINMON_AI_DIRECT=1
+set WINMON_AI_API_KEY=...          :: 只从环境变量读，不写文件、不进日志
+set WINMON_AI_PROVIDER=openai      :: 或 anthropic
+py winmon.py --ai-ask "帮我看看刚刚为什么卡"
+py winmon.py --ai-explain          :: 解释最近一条本地事件
+```
+
+直连是**唯一能精确计量 token** 的模式（供应商响应里的 `usage`）；会先过预算。
+
+**目前仍没有的**：MCP 写工具（关窗/结束进程/截图，按安全边界暂不开放）、
+完整 Streamable HTTP 的 SSE / 订阅、`resources` / UIA 地址栏。
+完整方案与取舍见 [`MCP.md`](MCP.md) §十。
 
 ## 九、测试
 
-`tests/` 下是一套**可重复运行的验证用例**（785 个），只用 Python 标准库
+`tests/` 下是一套**可重复运行的验证用例**（825 个），只用 Python 标准库
 （`unittest`），与本体一样零依赖。它们把开发过程中一次性做过的验证固化了下来，
 以后改代码可以直接跑，不用重新手工试一遍。
 
@@ -939,8 +968,9 @@ py tests\lint_check.py             :: 代码复检（新增问题才退出码 1�
 | --- | --- |
 | `winmon.py` | 图形界面 + 命令行入口 |
 | `winmon_core.py` | 核心层（Win32 采集 / 捕获 / 终止 / 图标 / 程序目录 / 媒体会话 / 视频联动） |
-| `winmon_ai.py` | AI 工作伴侣（阶段 1.5）：识别正在用的 AI / 本地事件 / 诊断剧本（不联网、不调模型） |
-| `winmon_mcp.py` | MCP 服务器（stdio；三个只读工具，供 AI 客户端挂载） |
+| `winmon_ai.py` | AI 工作伴侣：识别正在用的 AI / 本地事件 / 诊断剧本 / 用量账本与预算（默认不联网） |
+| `winmon_mcp.py` | MCP 服务器（stdio + 本地 HTTP；四个只读工具，供 AI 客户端挂载） |
+| `winmon_ai_provider.py` | **可选**直连模型 API（默认关闭；key 只从环境变量读，精确计量 token） |
 | `media_session.ps1` | 系统媒体会话（GSMTC）桥接脚本。PowerShell + Windows 自带的 WinRT 投影，**必须纯 ASCII 无 BOM**（否则 PowerShell 5.1 会按 ANSI 解码、把语法搞坏） |
 | `启动WinMon.bat` | 启动器（菜单式，可自检） |
 | `winmon.ico` | 程序图标（`py tests\make_icon.py` 可重新生成） |
@@ -964,6 +994,9 @@ py tests\lint_check.py             :: 代码复检（新增问题才退出码 1�
 | `winmon_media.jsonl`（+ `.tmp`） | 用户数据目录 | 常驻媒体助手的快照，每几秒一行 |
 | `winmon_error.log` | 用户数据目录 | 仅在启动失败时生成，用于排查 |
 | `winmon_incidents.json` | 用户数据目录 | 本地事件状态（阶段 1.5；同一事件 10 分钟只提醒一次，已恢复的保留 24 小时） |
+| `winmon_ai_usage.jsonl`（+ `.1`） | 用户数据目录 | AI 上下文用量账本（精确/估算分栏；超过 2MB 轮转） |
+| `winmon_ai_budget.json` | 用户数据目录 | 预算配置与"今日已重置"时间点（不含任何 key） |
+| `winmon_ai_provider.json` | 用户数据目录 | **可选**的直连 API 配置（模型/地址；API key 只从环境变量读，不写这里） |
 | `__pycache__/` | 程序目录 | Python 字节码缓存（解释器自动重建；它必须待在源旁边） |
 
 **“用户数据目录”是哪**：默认 `%LOCALAPPDATA%\WinMon`；设环境变量 `WINMON_DATA_DIR`
@@ -1001,13 +1034,15 @@ Copyright (c) 2026 Ceiling-Crypto
 | 事实 | 说明 |
 | --- | --- |
 | 零第三方依赖 | 只用 Python 标准库与 Windows 自带组件（`test_a6` 会拦住任何新增的第三方 import） |
-| 不联网 | 程序本身**没有任何网络请求**（不发遥测、不回传任何东西）。唯一会联网的是开发辅助工具 `tests/media_session_probe.py --play-audio` —— 它手动开一个浏览器去放一段公开测试音频，属于**你主动运行**的开发工具，不是程序本体 |
-| 数据留在本机 | 窗口标题、进程路径、操作历史都只写进**你自己的**用户数据目录，不离开这台电脑 |
-| 屏幕画面 | 只有你**主动看**的时候才抓取，只显示在界面上，不落盘、不外发 |
+| 不联网 | **默认没有任何网络请求**（不发遥测、不回传）。只有两条**显式开启**的路径会联网：① `WINMON_AI_DIRECT=1` 的直连模型 API；② 你自己给 `--mcp-http` 配的隧道。两者默认关闭，不开就不存在 |
+| 数据留在本机 | 窗口标题、进程路径、操作历史都只写进**你自己的**用户数据目录，不离开这台电脑（除非你显式开上面两条） |
+| 屏幕画面 | 只有你**主动看**的时候才抓取，只显示在界面上，不落盘、不外发；**MCP 没有截图工具** |
 | 需要留意的 | `winmon_history.log` 里会记**窗口标题**（可能含文件名、网页标题）。要分享日志前先看一眼内容；它已经在 `.gitignore` 里，不会被误提交 |
 
-**关于 AI 接入**：[`MCP.md`](MCP.md) 里那套方案说明，一旦你真的把 WinMon 接到 AI 客户端，
-**屏幕画面与窗口标题就会离开本机**（交给模型）—— 所以那份方案把"默认只读、
-图像工具默认关、每次确认、不落盘"都设计成了前置条件，并单独写了一节讲
-**窗口标题是不可信输入**（提示注入）这件事。**现在还没有实现**，因此不存在这个暴露面。
+**关于 AI 接入**：MCP 层是**只读**的（四个工具：主 AI / 本地事件 / 剧本 / 预算状态），
+没有截图、没有键盘鼠标、没有结束进程。
+但只要你把上下文交给 AI（桌面 MCP、HTTP/隧道、或剪贴板），
+**窗口标题与事件证据就会离开本机**——所以设计上：默认不调模型、
+直连要显式设环境变量、HTTP 只绑回环并要 Bearer token、隧道按需开启、
+恢复预算只能在本机操作。窗口标题始终被当作**不可信输入**清洗（提示注入）。
 

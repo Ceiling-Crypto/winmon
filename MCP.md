@@ -1,11 +1,18 @@
-> # ⚠ 状态：**阶段 1.5 已实现，其余阶段未实现**
+> # ⚠ 状态：**阶段 1.5 / 2.5 / 3.5 / 4 已实现**
 >
-> 2026-10-18 已落地的部分：`winmon_ai.py`（AI 会话识别 / 本地事件 / 剧本库）与
-> `winmon_mcp.py`（双时代 stdio 服务器）—— 三个只读工具
-> `winmon_ai_sessions` / `winmon_incidents` / `winmon_playbooks`，
-> 以及 `--ai-sessions` / `--incidents` / `--mcp-selftest` / `--mcp-stdio` 四个命令行开关。
-> **没有**实现：token 用量账本与预算调节器（阶段 2.5）、直连模型 API（3.5）、
-> 本地 HTTP / 网页端隧道（4）。
+> 2026-10-18 已落地：
+> - **1.5**：`winmon_ai.py`（识别 / 事件 / 剧本）+ `winmon_mcp.py`（stdio 双时代）；
+> - **2.5**：用量账本（`winmon_ai_usage.jsonl`）、预算状态机（80%/100%/暂停）、
+>   「AI 用量」本地窗口、`winmon_budget_status` 工具；
+> - **3.5**：`winmon_ai_provider.py` 直连模型 API（**默认关闭**，`usage` 精确计量，
+>   key 只从环境变量读）；
+> - **4**：本地 HTTP MCP（只绑回环 + Bearer + Origin + 可选过期）、剪贴板上下文包；
+>   **隧道不捆绑**（用户自己用 cloudflared / ngrok），HTTP 是"单次 JSON POST"简化版，
+>   不含 SSE / 订阅。
+>
+> **仍未实现**：§五 的写工具（关窗 / 结束进程 / 媒体控制）与图像工具、
+> `resources` / `prompts` 能力、`winmon_window_text` / `winmon_browser_tab`、
+> 完整 Streamable HTTP 的 SSE 与订阅。
 >
 > 落地前请先读 **§三（安全与隐私）** 与 **§五（分阶段实施计划）**。
 > **2026-10-18 修订**：用户给出"AI 工作伴侣"框架（识别主 AI、桌面 + 网页接入、
@@ -1311,32 +1318,38 @@ MCP 模式没有实际值，就**只报估算并明确标注**。
 
 **明确不新增**：改预算、改设置、改 pin、开关公网暴露 —— 这些只能本地 UI 操作。
 
-> **实现状态（2026-10-18）**：阶段 1.5 只落地了 **三个 tools**
-> （`winmon_ai_sessions` / `winmon_incidents` / `winmon_playbooks`）；
-> 上表里的 `resources`、`winmon_window_text`、`winmon_browser_tab`、
-> `winmon_budget_status` 属于后续阶段，**尚未注册**。
+> **实现状态（2026-10-18）**：已注册 **四个 tools**
+> （`winmon_ai_sessions` / `winmon_incidents` / `winmon_playbooks` / `winmon_budget_status`）；
+> 上表里的 `resources`、`winmon_window_text`、`winmon_browser_tab` **尚未注册**。
 
 ### 10.9 分阶段（插进 §五 的既有阶段之间）
 
 | 阶段 | 内容 | 验收（可执行） |
 | --- | --- | --- |
 | **1.5 ✅** | AI 会话识别 + 事件引擎 + 本地气泡 + `winmon_ai_sessions` / `winmon_incidents` / `winmon_playbooks` | 喂固定快照：主 AI 判定正确；同事件 10 分钟不重复提醒；检测器 0 误报假数据集 |
-| **2.5** | 用量账本 + 预算器 + 「AI 用量」界面 + 80/100% 两级 | 假时钟跑 24h：80% 触发软提醒、100% 停止直连、恢复只能从本地；`est_tokens` 误差在 ±25% 内（对照样例） |
-| **3.5** | 直连模型 API（可选，精确计量） | 没有 key 时功能不可见；有 key 时 `provider` 用量入账；断网 / 超时 / 预算不足都有可读错误 |
-| **4** | 本地 HTTP（B）+ 隧道（C）+ 剪贴板桥（D） | 令牌错 / Origin 错 / 非回环绑定 → 拒绝；关闭后端口立即不可用；C 形态默认只读且 30 分钟过期 |
+| **2.5 ✅** | 用量账本 + 预算器 + 「AI 用量」界面 + 80/100% 两级 | 假时钟跑 24h：80% 触发软提醒、100% 停止直连、恢复只能从本地；`est_tokens` 误差在 ±25% 内（对照样例） |
+| **3.5 ✅** | 直连模型 API（可选，精确计量） | 没有 key 时功能不可见；有 key 时 `provider` 用量入账；断网 / 超时 / 预算不足都有可读错误 |
+| **4 ✅（简化）** | 本地 HTTP（B）+ 剪贴板桥（D）+ 隧道说明（C，不捆绑） | 令牌错 / Origin 错 / 非回环绑定 → 拒绝；关闭后端口立即不可用；C 形态默认只读且 30 分钟过期 |
 
-> **阶段 1.5 实际交付（2026-10-18）**：
-> - 新模块 `winmon_ai.py`：AI 识别（桌面进程 / 浏览器标题 / 可选 URL）、
->   前台累计器、Incident 检测与状态机、剧本库、token 估算；
-> - 新模块 `winmon_mcp.py`：双时代 stdio、`server/discover`、三个只读工具、
->   `--mcp-selftest`；
-> - `winmon.py`：`--ai-sessions` / `--incidents` / `--mcp-stdio` / `--mcp-selftest`，
->   GUI 每 2 秒跑一次本地事件、托盘气泡提醒；
-> - `winmon_core.TrayIcon.notify()`（`NIF_INFO` 气泡）；
-> - 测试：`test_b22_ai_identity.py`（23）、`test_b23_incidents.py`（15）、
->   `test_b24_mcp_ai_tools.py`（18），全量 **785 用例**；
-> - 每日 token 预算默认值已定为 **1000 万**（`winmon_ai.DEFAULT_DAILY_TOKEN_BUDGET`），
->   调节器在阶段 2.5 实现。
+> **实际交付（2026-10-18）**：
+> - **1.5**：`winmon_ai.py`（识别 / 前台累计 / Incident / 剧本 / token 估算）、
+>   `winmon_mcp.py`（双时代 stdio、`server/discover`）、三个工具、
+>   `--ai-sessions` / `--incidents` / `--mcp-stdio` / `--mcp-selftest`、
+>   GUI 每 2 秒本地事件 + 托盘气泡、`TrayIcon.notify()`；
+> - **2.5**：`UsageLedger` / `Budget`（80% warn、100% exhausted、暂停、小时上限、
+>   04:00 重置）、`winmon_ai_usage.jsonl`、`winmon_ai_budget.json`、
+>   `winmon_budget_status` 工具、MCP 调用前闸门 + 调用后记账 + 单事件截断、
+>   托盘「AI 用量…」窗口（恢复只能在这里）、`--ai-usage`；
+> - **3.5**：`winmon_ai_provider.py`（OpenAI 兼容 / Anthropic 两种请求形状，
+>   `usage` 精确入账；默认关闭；key 只从 `WINMON_AI_API_KEY` 读）、
+>   `--ai-ask` / `--ai-explain`；测试通过假 transport，不联网；
+> - **4**：`--mcp-http`（只绑 127.0.0.1、Bearer token、Origin 白名单、
+>   可选 `--expire-minutes`）、`--ai-context [--copy]` 剪贴板桥；
+>   **HTTP 是单次 JSON POST 简化版**（不含 SSE / 订阅），隧道需用户自己配；
+> - 测试：`test_b22`（23）、`test_b23`（15）、`test_b24`（22）、
+>   `test_b25`（15）、`test_b26`（10）、`test_b27`（9）、`test_b28`（2）；
+>   全量 **825 用例**。
+> - 每日 token 预算默认 **1000 万**（`winmon_ai.DEFAULT_DAILY_TOKEN_BUDGET`）。
 
 ### 10.10 测试策略（不接真 AI 也能测）
 

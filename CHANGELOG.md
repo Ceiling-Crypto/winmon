@@ -13,36 +13,51 @@
 
 ## [未发布] — 2026-10-18
 
-**AI 工作伴侣（阶段 1.5，只读）**：不主动调模型、不联网、不花 token；
-本地识别"正在用哪个 AI"，把本地能确定的异常变成事件并用托盘气泡提醒。
+**AI 工作伴侣（阶段 1.5–4）**：本地识别"正在用哪个 AI"、把本地异常变成事件、
+按需交给 AI（默认不调模型、不联网），并提供用量预算、可选直连与本地 HTTP /
+剪贴板桥。
 
 ### 新增
 
 - `winmon_ai.py`：AI 会话识别（桌面客户端 / 网页标签）、前台时长累计、Incident
-  检测与状态机、诊断剧本库、token 估算、MCP 父进程识别。
-- `winmon_mcp.py`：MCP stdio 服务器（同时支持 `initialize` 旧时代与
-  `2026-07-28` 新时代），三个只读工具：
-  `winmon_ai_sessions` / `winmon_incidents` / `winmon_playbooks`。
-- 命令行：`--ai-sessions`、`--incidents`、`--mcp-stdio`、`--mcp-selftest`。
-- 界面：每 2 秒跑一次本地事件检测（0 token）；托盘气泡提醒（`TrayIcon.notify`）。
-- 每日 token 预算默认值定为 **1000 万**（估算）；计量与调节器在阶段 2.5。
-- 测试：`test_b22_ai_identity.py`（23）、`test_b23_incidents.py`（15）、
-  `test_b24_mcp_ai_tools.py`（18）；全量 **785 用例**。
+  检测与状态机、诊断剧本库、token 估算、MCP 父进程识别；**用量账本 `UsageLedger`
+  与预算状态机 `Budget`**（80% 提醒 / 100% 停止 / 暂停 / 小时上限 / 04:00 重置）；
+  上下文包与剪贴板复制。
+- `winmon_mcp.py`：MCP 服务器（旧 `initialize` + `2026-07-28` 新时代），
+  四个只读工具：`winmon_ai_sessions` / `winmon_incidents` / `winmon_playbooks` /
+  `winmon_budget_status`；预算闸门、调用后记账、单事件截断；
+  **本地 HTTP**（只绑 `127.0.0.1`、Bearer token、Origin 白名单、可选过期）。
+- `winmon_ai_provider.py`：**可选直连模型 API**（OpenAI 兼容 / Anthropic），
+  `usage` 精确入账；默认关闭，key 只从 `WINMON_AI_API_KEY` 读。
+- 命令行：`--ai-sessions`、`--incidents`、`--ai-usage`、`--ai-context [--copy]`、
+  `--ai-ask`、`--ai-explain`、`--mcp-stdio`、`--mcp-selftest`、`--mcp-http`
+  （`--port` / `--expire-minutes`）。
+- 界面：每 2 秒跑一次本地事件检测（0 token）；托盘气泡提醒；托盘「AI 用量…」
+  窗口（暂停 / 恢复 / 重置 / 上限×2；**恢复只能在这里操作**）。
+- 每日 token 预算默认值定为 **1000 万**（估算）。
+- 测试：`test_b22`（23）、`test_b23`（15）、`test_b24`（22）、`test_b25`（15）、
+  `test_b26`（10）、`test_b27`（9）、`test_b28`（2）；全量 **825 用例**。
 
 ### 说明
 
 - 主 AI 判据：**MCP 连接 > 前台时长 > 交互新鲜度 > 用户 pin > 资源占比**；
   资源占比只用于平局，网页端不可归因、恒为 0。
 - 提醒是**本地**行为：MCP 服务器不能主动推消息，AI 只能按需来读。
-- 仍然只读：没有写工具，也不通过 MCP 修改预算 / 设置 / pin。
+- 预算约束的是"WinMon 交出去的上下文"，不是客户端账单；精确与估算分栏。
+- 仍然只读：没有写工具、没有截图，也不通过 MCP 修改预算 / 设置 / pin。
+- HTTP 是**单次 JSON POST 简化版**（不含 SSE / 订阅）；网页端实时调用需用户
+  自己配隧道，WinMon 不捆绑。
+- 直连默认关闭；不开就不存在网络请求。
 
 ### 验证
 
 | 项目 | 结果 |
 | --- | --- |
-| `py tests\run_tests.py` | 785 用例，失败 0 / 错误 0 / 跳过 7（约 95 秒） |
-| `py winmon.py --mcp-selftest` | 12/12 OK，退出 0 |
+| `py tests\run_tests.py` | 825 用例，失败 0 / 错误 0 / 跳过 7（约 99 秒，stderr 0 行） |
+| `py winmon.py --mcp-selftest` | 13/13 OK，退出 0 |
 | `py winmon.py --smoke` | 退出 0，stderr 0 |
+| `--ai-usage` / `--ai-context --copy` | 正常；中文剪贴板实测通过 |
+| `--ai-ask`（未配置） | 退出 2，明确提示，不发请求 |
 
 ---
 

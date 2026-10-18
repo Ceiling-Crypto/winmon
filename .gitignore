@@ -28,6 +28,12 @@ winmon_error.log
 # 本地事件状态（AI 工作伴侣，阶段 1.5）
 winmon_incidents.json
 winmon_incidents.json.tmp
+# AI 用量账本 / 预算 / 直连配置（阶段 2.5 / 3.5；配置里不含 key）
+winmon_ai_usage.jsonl
+winmon_ai_usage.jsonl.1
+winmon_ai_budget.json
+winmon_ai_budget.json.tmp
+winmon_ai_provider.json
 
 # ---- 你的用户数据：收藏 / 手动分类 / 最近使用 / 界面偏好 ----
 winmon_settings.json

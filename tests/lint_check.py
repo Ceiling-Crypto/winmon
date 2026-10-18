@@ -39,7 +39,7 @@ from collections import Counter
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 TOP_FILES = ("winmon_core.py", "winmon.py", "winmon_ai.py", "winmon_mcp.py",
-             "scan_windows.py", "close_others.py")
+             "winmon_ai_provider.py", "scan_windows.py", "close_others.py")
 BASELINE_REL = os.path.join("tests", "lint_baseline.txt")
 #: 别检查"检查器自己"：它里面的 TODO/FIXME 字面量与检查名会造成自指误报
 SELF_NAME = "lint_check.py"

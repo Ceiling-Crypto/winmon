@@ -46,6 +46,7 @@ import tkinter as tk
 from tkinter import messagebox, ttk
 
 import winmon_ai as ai
+import winmon_ai_provider as provider
 import winmon_core as core
 import winmon_mcp as mcp
 
@@ -2588,6 +2589,105 @@ class _HistoryWindow:
             self.app._history_window = None
 
 
+class _AiUsageWindow:
+    """
+    「AI 用量」独立窗口（阶段 2.5）。
+
+    只读展示 + **本地**恢复手段：暂停 / 恢复、重置今日、上限翻倍。
+    按设计，**MCP 没有任何改预算的工具** —— 钥匙只在人手里。
+    """
+
+    def __init__(self, parent: tk.Misc, app) -> None:
+        self.app = app
+        self.top = tk.Toplevel(parent)
+        self.top.title("WinMon AI 用量")
+        self.top.geometry("860x560")
+        self.top.minsize(680, 420)
+        self.top.protocol("WM_DELETE_WINDOW", self.close)
+        self.budget = ai.Budget()
+
+        wrap = ttk.Frame(self.top, padding=(10, 8))
+        wrap.pack(fill="both", expand=True)
+        head = ttk.Frame(wrap)
+        head.pack(fill="x")
+        ttk.Label(head, text="AI 上下文用量与预算", font=BOLD_FONT).pack(side="left")
+        self.state_text = tk.StringVar(value="")
+        ttk.Label(head, textvariable=self.state_text, font=UI_FONT,
+                  foreground="#555").pack(side="right")
+
+        self.body = tk.Text(wrap, height=18, wrap="word", font=MONO_FONT,
+                            relief="solid", borderwidth=1)
+        scroll = ttk.Scrollbar(wrap, orient="vertical", command=self.body.yview)
+        self.body.configure(yscrollcommand=scroll.set)
+        self.body.pack(side="left", fill="both", expand=True, pady=(8, 8))
+        scroll.pack(side="left", fill="y", pady=(8, 8))
+        self.body.configure(state="disabled")
+
+        bar = ttk.Frame(wrap)
+        bar.pack(fill="x")
+        self.pause_btn = ttk.Button(bar, text="暂停 AI 接入", width=14,
+                                    command=self.toggle_pause)
+        self.pause_btn.pack(side="left", padx=2)
+        ttk.Button(bar, text="重置今日用量", width=14,
+                   command=self.reset_today).pack(side="left", padx=2)
+        ttk.Button(bar, text="上限 ×2", width=10,
+                   command=self.raise_limit).pack(side="left", padx=2)
+        ttk.Button(bar, text="刷新", width=8,
+                   command=self.refresh).pack(side="left", padx=2)
+        ttk.Button(bar, text="打开数据目录", width=14,
+                   command=self.reveal).pack(side="right", padx=2)
+        ttk.Label(bar, text="恢复预算只能在这里操作；MCP 没有改预算的工具",
+                  font=UI_FONT, foreground="#777").pack(side="right", padx=8)
+        self.refresh()
+
+    def refresh(self) -> None:
+        status = self.budget.status()
+        label = {"ok": "正常", "warn": "接近上限", "exhausted": "已用尽",
+                 "paused": "已暂停", "disabled": "已关闭"}.get(
+                     status.get("state"), status.get("state"))
+        self.state_text.set(f"当前：{label}")
+        self.pause_btn.configure(
+            text="恢复 AI 接入" if status.get("paused") else "暂停 AI 接入")
+        lines = [ai.format_usage_text(status), "", "最近记录（最多 5 条）："]
+        recent = status.get("recent") or []
+        if not recent:
+            lines.append("（还没有记录）")
+        for row in recent[-5:]:
+            lines.append(
+                f"{row.get('ts', '')}  {row.get('client') or '?'}  "
+                f"{row.get('tool') or '-'}  {row.get('tokens', 0)} token "
+                f"（{row.get('token_source', '?')}）")
+        self.body.configure(state="normal")
+        self.body.delete("1.0", "end")
+        self.body.insert("1.0", "\n".join(lines))
+        self.body.configure(state="disabled")
+
+    def toggle_pause(self) -> None:
+        current = bool(self.budget.status().get("paused"))
+        self.budget.pause(not current)
+        self.refresh()
+
+    def reset_today(self) -> None:
+        self.budget.reset_today()
+        self.refresh()
+
+    def raise_limit(self) -> None:
+        self.budget.raise_limit(2.0)
+        self.refresh()
+
+    def reveal(self) -> None:
+        try:
+            os.startfile(core.data_dir())
+        except Exception as exc:
+            self.app._set_status(f"打不开数据目录：{type(exc).__name__}: {exc}")
+
+    def close(self) -> None:
+        try:
+            self.top.destroy()
+        finally:
+            self.app._ai_usage_window = None
+
+
 class _IdleDialog:
     """
     「闲置程序」清单：列出"开着不用"的程序，勾选后**优雅关闭**。
@@ -2957,6 +3057,7 @@ class WinMonApp:
         self._ai_tracker = ai.AiTracker()
         self._ai_incidents = ai.IncidentStore(path=ai.incidents_path())
         self._ai_primary = None
+        self._ai_usage_window = None
         # 测试里把 WINMON_AI_NOTIFY 设为 0，避免弹系统通知打扰
         self._ai_notify_enabled = os.environ.get("WINMON_AI_NOTIFY", "1") not in (
             "", "0", "false", "False")
@@ -3981,6 +4082,22 @@ class WinMonApp:
             except Exception:
                 pass
         self._set_status(msg)
+
+    def action_ai_usage(self) -> None:
+        """打开「AI 用量」窗口（已经开着就提到前台）。"""
+        win = getattr(self, "_ai_usage_window", None)
+        if win is not None:
+            try:
+                win.top.deiconify()
+                win.top.lift()
+                win.refresh()
+                return
+            except Exception:
+                self._ai_usage_window = None
+        try:
+            self._ai_usage_window = _AiUsageWindow(self.root, self)
+        except Exception as exc:
+            self._set_status(f"打不开「AI 用量」：{type(exc).__name__}: {exc}")
 
     def action_history(self) -> None:
         """
@@ -6189,6 +6306,8 @@ class WinMonApp:
                     return
                 if cmd == core.IDM_TRAY_SHOW:
                     self.restore_from_tray()
+                elif cmd == core.IDM_TRAY_AI_USAGE:
+                    self.action_ai_usage()
         except Exception as exc:
             self._set_status(f"托盘消息处理失败：{type(exc).__name__}: {exc}")
         if self._tray_polling:
@@ -6691,6 +6810,80 @@ def incidents_cli(as_json: bool = False, limit: int = 20) -> int:
     return 0
 
 
+def ai_usage_cli(as_json: bool = False) -> int:
+    """命令行：AI 上下文用量与预算（只读）。"""
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+    status = ai.Budget().status()
+    if as_json:
+        print(json.dumps(status, ensure_ascii=False, indent=2))
+    else:
+        print(ai.format_usage_text(status))
+        print("\n（恢复预算只能在 WinMon 界面里操作；MCP 没有改预算的工具）")
+    return 0
+
+
+def ai_context_cli(copy_to_clip: bool = False) -> int:
+    """命令行：生成一段给网页端 AI 的上下文包（剪贴板桥）。"""
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+    text = ai.build_context_pack()
+    if copy_to_clip:
+        ok = ai.copy_to_clipboard(text)
+        print("已复制到剪贴板。" if ok else "复制失败（内容仍会打印在下面）。",
+              file=sys.stderr)
+    print(text)
+    return 0
+
+
+def ai_ask_cli(prompt: str) -> int:
+    """命令行：直连模型 API（可选，默认关闭；会先过预算）。"""
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+    if not (prompt or "").strip():
+        print("用法：py winmon.py --ai-ask \"你的问题\"", file=sys.stderr)
+        return 2
+    out = provider.call_model(prompt, budget=ai.Budget(),
+                              purpose="cli")
+    if not out.get("ok"):
+        print(f"直连 AI 不可用：{out.get('error')}", file=sys.stderr)
+        if out.get("code") == "config":
+            print("需要：WINMON_AI_DIRECT=1、WINMON_AI_API_KEY；"
+                  "可选 WINMON_AI_PROVIDER=openai|anthropic、WINMON_AI_MODEL。",
+                  file=sys.stderr)
+        return 3 if out.get("code") == "budget" else 2
+    print(out.get("text") or "")
+    print(f"\n[用量] 输入 {out.get('tokens_in', 0)} / 输出 {out.get('tokens_out', 0)}"
+          f" token（精确）· {out.get('model')}")
+    return 0
+
+
+def ai_explain_cli() -> int:
+    """命令行：让直连模型解释最近一条本地事件。"""
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+    incidents = ai.collect_incidents(limit=5).get("incidents") or []
+    if not incidents:
+        print("当前没有打开的本地事件，不需要解释。")
+        return 0
+    out = provider.explain_incident(incidents[0], budget=ai.Budget())
+    if not out.get("ok"):
+        print(f"直连 AI 不可用：{out.get('error')}", file=sys.stderr)
+        return 3 if out.get("code") == "budget" else 2
+    print(out.get("text") or "")
+    print(f"\n[用量] 输入 {out.get('tokens_in', 0)} / 输出 {out.get('tokens_out', 0)}"
+          f" token（精确）· 事件 {out.get('incident_id')}")
+    return 0
+
+
 USAGE_TEXT = """WinMon 1.0 —— 桌面程序实时监控与终止（纯 ctypes + tkinter，零第三方依赖）
 
 用法：python winmon.py [选项]
@@ -6723,12 +6916,19 @@ USAGE_TEXT = """WinMon 1.0 —— 桌面程序实时监控与终止（纯 ctypes
   --version             打印版本
   -h, --help, /?        显示这份说明
 
-AI / MCP（阶段 1.5，只读）：
+AI / MCP（只读；直连 API 默认关闭）：
   --ai-sessions         识别现在在用哪个 AI（桌面客户端 / 网页端）
   --incidents           列出本地事件（无响应窗口 / 磁盘告急 / MCP 工具失败）
+  --ai-usage            AI 上下文用量与预算（恢复只能在本窗口里操作）
+  --ai-context          生成给网页 AI 的上下文包（--copy 复制到剪贴板）
+  --ai-ask <问题>       直连模型 API（需 WINMON_AI_DIRECT=1 + API key）
+  --ai-explain          让直连模型解释最近一条本地事件
   --mcp-stdio           以 MCP 服务器身份跑在 stdio 上（给 AI 客户端挂）
-  --mcp-selftest        MCP 协议与三个工具的自检（不需要客户端）
-      WINMON_AI_PIN=名字  指定主 AI（环境变量；设置界面在阶段 2.5 接）
+  --mcp-selftest        MCP 协议与工具的自检（不需要客户端）
+  --mcp-http            本地 HTTP MCP（只绑 127.0.0.1；给网页端/HTTP 客户端）
+      --port N            端口（默认 8765）
+      --expire-minutes N  token 过期分钟数（默认不过期；公网建议 30）
+      WINMON_AI_PIN=名字  指定主 AI（环境变量）
 
 示例：
   python winmon.py                     启动界面
@@ -6768,7 +6968,9 @@ def main() -> int:
              "--dry-run", "--yes", "--idle", "--idle-minutes", "--minutes", "--find",
              "--open", "--admin", "--help", "-h", "/?", "-?", "help",
              "--settings", "--clean-all",
-             "--ai-sessions", "--incidents", "--mcp-stdio", "--mcp-selftest"}
+             "--ai-sessions", "--incidents", "--mcp-stdio", "--mcp-selftest",
+             "--mcp-http", "--port", "--expire-minutes",
+             "--ai-usage", "--ai-context", "--copy", "--ai-ask", "--ai-explain"}
 
     def _looks_like_flag(a: str) -> bool:
         """像个开关吗？（`-5` 这种**数字**不算 —— 它是 `--idle-minutes -5` 的值。）"""
@@ -6835,10 +7037,28 @@ def main() -> int:
         return mcp.selftest()
     if "--mcp-stdio" in args:
         return mcp.stdio_main()
+    if "--mcp-http" in args:
+        try:
+            port = int(_arg_value(args, "--port") or 8765)
+            expire = int(_arg_value(args, "--expire-minutes") or 0)
+        except ValueError:
+            print("--port / --expire-minutes 需要一个整数", file=sys.stderr)
+            return 2
+        return mcp.http_main(port=port, expire_minutes=max(0, expire))
     if _has_flag("--ai-sessions"):
         return ai_sessions_cli(as_json=("--json" in args))
     if _has_flag("--incidents"):
         return incidents_cli(as_json=("--json" in args))
+    if _has_flag("--ai-usage"):
+        return ai_usage_cli(as_json=("--json" in args))
+    if _has_flag("--ai-context"):
+        return ai_context_cli(copy_to_clip=("--copy" in args))
+    if _has_flag("--ai-ask"):
+        if _need_value("--ai-ask"):
+            return 2
+        return ai_ask_cli(_arg_value(args, "--ai-ask"))
+    if "--ai-explain" in args:
+        return ai_explain_cli()
     # `--all` 单独用时也走清单（以前只有 --scan/--json/--list 才算，`--all` 会掉进界面）
     if any(a in args for a in ("--scan", "--json", "--list", "--all")):
         return scan_windows(as_json=("--json" in args), show_hidden=("--all" in args))

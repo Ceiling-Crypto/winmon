@@ -3,7 +3,7 @@
 > 用途：在新的对话里快速恢复上下文。读这一份即可继续开发。
 > **正式发布名 `winmon1.0`**（`APP_VER = "1.0"`，查版本：`py winmon.py --version`）。
 > **先读 §一点五「WinMon 的定位与能力边界」** —— 输入注入已明确不再投入。
-> 代码状态：**785 个测试用例全绿**（约 95 秒）+ 代码复检 0 新增问题（基线为空）、
+> 代码状态：**825 个测试用例全绿**（约 99 秒）+ 代码复检 0 新增问题（基线为空）、
 > 自检 8/8、界面冒烟通过、
 > 桌面快捷方式可用、程序目录端到端可用、
 > 视频联动 = **监视当前窗口 / 停止监视 / 直接关闭视频**（自动识别与「用链接打开」已删掉）、
@@ -20,7 +20,7 @@
 
 | | |
 | --- | --- |
-| 测试 | **785 用例全绿**（`py tests\run_tests.py`，约 95 秒；含 7 条按环境 skip） |
+| 测试 | **825 用例全绿**（`py tests\run_tests.py`，约 99 秒；含 7 条按环境 skip） |
 | 代码复检 | `py tests\lint_check.py` → **新增问题 0**（基线已清空，见 §四） |
 | 自检 / 冒烟 | `py winmon.py --selftest` 8/8 通过；`--smoke` 通过 |
 | 规模 | `winmon_core.py` ~6700 行 / `winmon.py` ~7000 行 / 测试 34 个文件（21 个测试模块） |
@@ -70,7 +70,7 @@
 1. **把媒体那一行做精**：常驻快照已经有了，可以顺手把"播放速率/时间线"接进来
    （当初删掉的进度显示，明确说过"以后再说" —— **动手前先确认**）；
 2. **托盘右键加播放控制**（上一首/播放暂停/下一首）+ 显示当前曲名，不用切回主窗口；
-3. **测试提速**：785 用例 95 秒里，`test_b5`/`test_b6` 的"真开窗+真抓画面"占大头，
+3. **测试提速**：825 用例 99 秒里，`test_b5`/`test_b6` 的"真开窗+真抓画面"占大头，
    可给它们打标记 + `run_tests.py --fast`；
 4. **GUI 拆分**：`winmon.py` 已 7000 行，可按标签页拆包（注意 §§布局不变量与 lint 的 200 行阈值）。
 
@@ -99,11 +99,12 @@
 | 文件 | 行数级 | 作用 |
 | --- | --- | --- |
 | `winmon_core.py` | ~6750 | **核心层**：Win32 采集/捕获/终止/图标/程序目录/媒体会话/视频来源与视频操作/可清理文件。不依赖 tkinter，可当库用 |
-| `winmon.py` | ~7200 | GUI（5 个标签页）+ 命令行入口 |
-| `winmon_ai.py` | ~930 | **AI 工作伴侣**（阶段 1.5）：AI 会话识别 / 本地事件 / 剧本库 / token 估算。不依赖 tkinter |
-| `winmon_mcp.py` | ~550 | **MCP 服务器**（阶段 1.5）：双时代 stdio + 三个只读工具 |
+| `winmon.py` | ~7400 | GUI（5 个标签页）+ 命令行入口 |
+| `winmon_ai.py` | ~1300 | **AI 工作伴侣**：识别 / 本地事件 / 剧本 / 用量账本与预算 / token 估算。不依赖 tkinter |
+| `winmon_mcp.py` | ~800 | **MCP 服务器**：双时代 stdio + 本地 HTTP + 四个只读工具 |
+| `winmon_ai_provider.py` | ~250 | **可选**直连模型 API（默认关；精确 usage；key 只从环境变量读） |
 | `media_session.ps1` | ~230 | 系统媒体会话（GSMTC）桥接脚本（PowerShell + Windows 自带 WinRT 投影；**必须纯 ASCII 无 BOM**） |
-| `tests/` | 37 个 .py | **可重复运行的测试**（785 用例，纯 unittest） + 开发辅助工具 + `lint_check.py` / `lint_baseline.txt` |
+| `tests/` | 41 个 .py | **可重复运行的测试**（825 用例，纯 unittest） + 开发辅助工具 + `lint_check.py` / `lint_baseline.txt` |
 | `启动WinMon.bat` | — | 菜单式启动器（纯 ASCII，避免批处理编码问题） |
 | `scan_windows.py` | — | 命令行窗口清单 |
 | `close_others.py` | — | 批量关闭除当前窗口外的窗口 |
@@ -156,7 +157,7 @@ python winmon.py --videos --open 3 --watch --close-window   :: 完整视频链�
 python winmon.py --version          :: 打印版本（winmon1.0）
 python winmon.py --idle             :: 列出"长期开着、没人用"的程序（只看，不关任何东西）
 python winmon.py --idle --idle-minutes 5   :: 换个闲置阈值（分钟）
-py tests\run_tests.py               :: 全部测试（785 用例，约 95 秒）
+py tests\run_tests.py               :: 全部测试（825 用例，约 99 秒）
 ```
 
 ---
@@ -1658,6 +1659,80 @@ AI 接进来时只是**按需读取**这些结果。
      `%LOCALAPPDATA%\WinMon`。→ 提供 `WINMON_AI_INCIDENTS` 覆盖路径，
      `tests/_helpers.py` 默认指到系统临时目录；通知用 `WINMON_AI_NOTIFY=0` 关掉。
 
+### 9.22 阶段 2.5 / 3.5 / 4 实现记录（**2026-10-18 第五轮**）
+
+用户要求：**完成所有阶段 → 跑一次测试 → 防死代码 / 保运行 → 能简化就简化 →
+清理 17 日之前的日志文件**。
+
+#### 一、落地内容
+
+| 阶段 | 实现 |
+| --- | --- |
+| **2.5** | `winmon_ai.UsageLedger` + `Budget`（80% warn / 100% exhausted / paused / 小时上限 / 04:00 重置）；`winmon_ai_usage.jsonl`、`winmon_ai_budget.json`；MCP 调用前闸门 + 调用后记账 + 单事件截断；`winmon_budget_status` 工具；托盘「AI 用量…」窗口（暂停/恢复/重置/上限×2）；`--ai-usage` |
+| **3.5** | `winmon_ai_provider.py`：OpenAI 兼容 / Anthropic 两种请求形状；`usage` 精确入账；预算不足不发请求；key 只从 `WINMON_AI_API_KEY` 读；默认关闭；`--ai-ask` / `--ai-explain` |
+| **4** | `--mcp-http`：只绑 `127.0.0.1`、Bearer token（启动时打到 stderr）、Origin 白名单、`--port` / `--expire-minutes`；`--ai-context [--copy]` 剪贴板桥（`clip.exe` + UTF-16LE，实测中文正常）；隧道不捆绑 |
+
+#### 二、预算与计量的硬规则
+
+- **恢复只能本地**：`winmon_budget_status` 是只读工具，MCP **没有**任何
+  pause/resume/reset/raise 工具；钥匙在托盘窗口里。
+- **精确 vs 估算**：直连 API 记 `token_source="provider"`；MCP 只记
+  `estimated`（按返回内容估算），界面/日志分栏，不写"账单"。
+- **预算口径**：约束的是"WinMon 交出去的上下文"，不是客户端全部消耗
+  （客户端自己的推理与历史，WinMon 看不到）。
+- **默认值**：日 1000 万 token、单事件 2k、每小时 60 次（用户 2026-10-18 指定）。
+
+#### 三、HTTP 的边界（别在文档里吹成完整规范）
+
+`--mcp-http` 是**单次 JSON POST 简化版**：没有 SSE、没有 `subscriptions/listen`、
+没有强制 `Mcp-Method`/`Mcp-Name` 头。它够用于"桌面 HTTP 客户端 + 自己配隧道"，
+但**不等于**完整的 Streamable HTTP。网页端实时调用仍需要用户自己
+cloudflared / ngrok；不 tunnel 就用 `--ai-context --copy`。
+
+#### 四、顺带删掉的死代码
+
+- `TrayIcon.popup_menu()`（约 23 行）：菜单早已由 `TrayMessageWindow._menu()` 接管，
+  它是重复实现且全项目无调用点。托盘菜单现在只在**一处**维护，并新增「AI 用量…」。
+  `TrayIcon` 的 docstring 同步改成"菜单由 TrayMessageWindow 接管"。
+
+#### 五、清理 17 日之前的日志（实测清单）
+
+| 文件 | 时间 | 大小 |
+| --- | --- | --- |
+| `D:\winmon-single\_before_port_reds.log` | 10-16 16:50 | 2,922,336 |
+| `D:\winmon-single\_after_port_green.log` | 10-16 16:59 | 16,414 |
+| `D:\winmon-single\_patched_test_result.txt` | 10-16 14:49 | 10,129 |
+| `D:\winmon-single\winmon_history.log` | 10-16 14:49 | 484 |
+| `D:\winmon-single\winmon_media.jsonl` | 10-16 14:46 | 188 |
+
+共 **2.81 MB**，已删除。`%LOCALAPPDATA%\WinMon\winmon_history.log` 的最早一条是
+**2026-10-17 00:48**，没有更早的条目，所以没有裁剪。
+
+#### 六、验收（本轮实测）
+
+| 项 | 结果 |
+| --- | --- |
+| `py tests\run_tests.py` | **825 用例，失败 0 / 错误 0 / 跳过 7**（98.9 秒，stderr **0 行**） |
+| `py winmon.py --mcp-selftest` | **13/13 OK**（两代协议 + 四个工具 + 错误路径 + 分帧） |
+| `--ai-usage` | 正常显示 0 / 10,000,000（估算） |
+| `--ai-context --copy` | 生成上下文包并复制成功（中文实测） |
+| `--ai-ask`（未配置） | 退出 2，明确提示需要 `WINMON_AI_DIRECT=1` + key，**不发请求** |
+| `--mcp-http` | 只绑回环；无 token 401、坏 Origin 403、通知 202、批处理正常 |
+| 死代码 / lint | `lint_check.py` 新增问题 0；删掉重复的托盘菜单方法 |
+
+#### 七、本轮新增的坑
+
+126. **预算闸门要在"生成内容前"查**：如果先把大结果生成出来再拒绝，CPU 与上下文
+     都已经花了。MCP 层现在是"先按工具估算闸门、允许后再执行、执行完按实际记账"。
+127. **不要把估算写成账单**：协议里没有客户端 token 字段；MCP 侧只能估算，
+     日志/界面必须标 `estimated`，否则就是假数据。
+128. **"本地 HTTP"不等于"完整 Streamable HTTP"**：没有 SSE / 订阅 / 强制头，
+     文档必须写清"简化版"，否则接网页端时会误判成"服务器实现错了"。
+129. **API key 只能从环境变量读**：写进配置文件会被 git / 备份 / 日志带走；
+     错误信息里也不能带 key（测试专门断言了这一点）。
+130. **`clip.exe` 要喂 UTF-16LE**：用 UTF-8 字节管道过去，中文会变乱码；
+     `text.encode("utf-16le")` 实测正常（本机验证过）。
+
 ## 三、踩过的坑（**最重要，别重复踩**）
 
 ### 编码类（最容易毁掉成果）
@@ -2210,7 +2285,7 @@ AI 接进来时只是**按需读取**这些结果。
 ## 四、测试体系（**改代码后先跑这个**）
 
 ```bat
-py tests\run_tests.py            :: 785 用例，约 95 秒
+py tests\run_tests.py            :: 825 用例，约 99 秒
 py tests\run_tests.py -v         :: 逐个看
 py tests\run_tests.py -k capture :: 只跑关心的
 py tests\lint_check.py           :: 代码复检（退出码 1 = 有新增问题）
@@ -2368,7 +2443,7 @@ py tests\lint_check.py           :: 代码复检（退出码 1 = 有新增问题
    把 `WinMonApp` 瘦成协调者。拆分时注意那些布局不变量（见坑 21~24），
    以及 `lint_check.py` 的"函数过长"（>200 行）阈值 —— `_build_ui` 已经贴着线走了，
    当时就是靠把视频联动那三行拆成 `_build_video_bars()` 才压下去的。
-5. **测试提速**：~~244 用例 17 秒~~ → 现在 **785 用例约 95 秒**。
+5. **测试提速**：~~244 用例 17 秒~~ → 现在 **825 用例约 99 秒**。
    变慢的是 `test_b5`/`test_b6` 里"真开窗、真抓画面、真关窗"的端到端用例
    （每次要采 2 秒画面，这是必要的 —— 播放判定本来就靠画面变化）。
    想快可以给它们打 `slow` 标记，`run_tests.py` 加 `--fast` 跳过
@@ -2891,7 +2966,7 @@ C 盘那份**保持原样、一字未改**（用户 2026-10-11 确认：暂不�
 
 > 继续开发 **WinMon 1.0（`winmon1.0`）** —— Windows 程序监控与终止工具，纯标准库，在 `项目根目录\`。
 > 请先读 `HANDOFF.md` 和 `README.md`，然后跑 `py tests\run_tests.py`
-> 确认基线是 **785 用例全绿**（需要哔哩哔哩/UIA 页面的用例会按需 skip）、
+> 确认基线是 **825 用例全绿**（需要哔哩哔哩/UIA 页面的用例会按需 skip）、
 > `py tests\lint_check.py` 退出码 0（无新增问题）。
 > **版式要另眼验收**：测试进程没有开 DPI 感知，布局检查看不到"真实 DPI 下控件被挤没"，
 > 所以改动界面后还要跑一次 `py winmon.py --smoke` 看截图（见 §9.15 第 14 条）。

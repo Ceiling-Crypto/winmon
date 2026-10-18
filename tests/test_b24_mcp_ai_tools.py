@@ -38,12 +38,41 @@ def fake_state():
         },
         "incidents": {"incidents": [], "count": 0, "source": "fake"},
         "playbooks": {"playbooks": ai.get_playbooks()},
+        "budget_status": {
+            "state": "ok", "reason": "", "enabled": True, "paused": False,
+            "daily_tokens": ai.DEFAULT_DAILY_TOKEN_BUDGET, "used_tokens": 0,
+            "ratio": 0.0, "hourly_calls": 0, "hourly_limit": 60,
+            "per_incident_tokens": 2000, "warn_ratio": 0.8,
+            "reset_at": "2026-10-18T04:00:00", "day_calls": 0,
+            "by_client": {}, "recent": [], "note": "假数据",
+        },
     }
 
 
 def req(req_id, method, params=None):
     return {"jsonrpc": "2.0", "id": req_id, "method": method,
             "params": {} if params is None else params}
+
+
+class FakeBudget:
+    """测试用预算替身：只关心"闸门 + 记账"是否被调用。"""
+
+    def __init__(self, allowed: bool = True):
+        self.allowed = allowed
+        self.recorded: list = []
+        self.settings = {"per_incident_tokens": 2000}
+
+    def check(self, estimated: int = 0, now=None):
+        status = {"state": "ok" if self.allowed else "exhausted",
+                  "used_tokens": 0, "daily_tokens": 100, "ratio": 0.0,
+                  "reason": "" if self.allowed else "今日预算已用尽"}
+        return {"allowed": self.allowed, "state": status["state"],
+                "reason": status["reason"], "status": status}
+
+    def record(self, tokens: int, **kw):
+        self.recorded.append((tokens, kw))
+        return {"state": "ok", "used_tokens": tokens, "daily_tokens": 100,
+                "ratio": round(tokens / 100, 3), "reason": ""}
 
 
 class TestProtocol(unittest.TestCase):
@@ -160,6 +189,40 @@ class TestTools(unittest.TestCase):
                                               {"name": name, "arguments": {}}))
                 self.assertIn("result", resp)
                 self.assertIn("content", resp["result"])
+
+    def test_budget_status_tool(self):
+        resp = mcp.handle_request(req(6, "tools/call", {
+            "name": "winmon_budget_status", "arguments": {}}), fake_state())
+        self.assertFalse(resp["result"]["isError"])
+        budget = resp["result"]["structuredContent"]["budget"]
+        self.assertEqual(budget["daily_tokens"], ai.DEFAULT_DAILY_TOKEN_BUDGET)
+
+    def test_budget_gate_degrades_without_data(self):
+        state = dict(fake_state())
+        state["budget"] = FakeBudget(False)
+        resp = mcp.handle_request(req(7, "tools/call", {
+            "name": "winmon_ai_sessions", "arguments": {}}), state)
+        result = resp["result"]
+        self.assertFalse(result["isError"])
+        self.assertTrue(result["structuredContent"]["degraded"])
+        self.assertIn("预算", result["content"][0]["text"])
+        self.assertNotIn("Claude Desktop", result["content"][0]["text"])
+
+    def test_budget_records_estimated_usage(self):
+        state = dict(fake_state())
+        budget = FakeBudget(True)
+        state["budget"] = budget
+        resp = mcp.handle_request(req(8, "tools/call", {
+            "name": "winmon_ai_sessions", "arguments": {}}), state)
+        self.assertFalse(resp["result"]["isError"])
+        self.assertTrue(budget.recorded, "成功返回后必须记一条用量")
+        self.assertIn("budget", resp["result"]["structuredContent"])
+
+    def test_no_tool_can_change_budget(self):
+        names = " ".join(mcp.TOOL_NAMES).lower()
+        for word in ("pause", "resume", "reset", "raise", "set_budget"):
+            with self.subTest(word=word):
+                self.assertNotIn(word, names, "预算钥匙不能交给 MCP")
 
 
 class TestStdioProcess(unittest.TestCase):

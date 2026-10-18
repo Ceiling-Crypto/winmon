@@ -24,7 +24,10 @@ from __future__ import annotations
 
 import json
 import os
+import secrets
 import sys
+import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import winmon_ai as ai
 
@@ -92,9 +95,30 @@ TOOLS = [
             "additionalProperties": False,
         },
     },
+    {
+        "name": "winmon_budget_status",
+        "title": "AI 上下文预算状态",
+        "description": (
+            "返回今日上下文用量（精确/估算分栏）、预算上限、是否暂停或已用尽。"
+            "用尽时其它工具会降载；**恢复预算只能在 WinMon 本地界面操作**，"
+            "本服务器没有任何修改预算的工具。"),
+        "inputSchema": {
+            "type": "object",
+            "properties": {},
+            "additionalProperties": False,
+        },
+    },
 ]
 
 TOOL_NAMES = tuple(t["name"] for t in TOOLS)
+
+#: 每个工具的保守 token 估算（用于"调用前"预算闸门）
+TOOL_ESTIMATES = {
+    "winmon_ai_sessions": 500,
+    "winmon_incidents": 800,
+    "winmon_playbooks": 1800,
+    "winmon_budget_status": 150,
+}
 
 
 # ============================================================================
@@ -221,11 +245,33 @@ def _tool_playbooks(args: dict, state: dict) -> dict:
     return {"text": text, "structured": {"playbooks": books}}
 
 
+def _tool_budget_status(args: dict, state: dict) -> dict:
+    if isinstance(state.get("budget_status"), dict):
+        status = state["budget_status"]
+    else:
+        budget = state.get("budget")
+        if isinstance(budget, dict):
+            status = budget
+        elif budget is not None:
+            status = budget.status()
+        else:
+            status = ai.Budget().status()
+    return {"text": ai.format_usage_text(status), "structured": {"budget": status}}
+
+
 _HANDLERS = {
     "winmon_ai_sessions": _tool_ai_sessions,
     "winmon_incidents": _tool_incidents,
     "winmon_playbooks": _tool_playbooks,
+    "winmon_budget_status": _tool_budget_status,
 }
+
+
+def _budget_compact(status: dict) -> dict:
+    """塞进 structuredContent 的预算摘要（别把完整账本塞给模型）。"""
+    return {"state": status.get("state"), "used_tokens": status.get("used_tokens"),
+            "daily_tokens": status.get("daily_tokens"), "ratio": status.get("ratio"),
+            "reason": status.get("reason", "")}
 
 
 def call_tool(name: str, args: dict, state: dict | None = None) -> dict:
@@ -237,6 +283,22 @@ def call_tool(name: str, args: dict, state: dict | None = None) -> dict:
     bad = _validate(tool, args)
     if bad:
         return {"content": [{"type": "text", "text": bad}], "isError": True}
+
+    budget = state.get("budget")
+    client = str(state.get("client_label") or state.get("client") or "MCP 客户端")
+    if budget is not None and name != "winmon_budget_status":
+        gate = budget.check(TOOL_ESTIMATES.get(name, 500))
+        if not gate.get("allowed"):
+            return {
+                "content": [{"type": "text", "text":
+                             f"AI 上下文预算不可用：{gate.get('reason')}。"
+                             "为了不继续消耗，本工具没有返回数据；"
+                             "请在 WinMon 本地界面查看「AI 用量」并决定是否恢复。"}],
+                "structuredContent": {"degraded": True,
+                                      "budget": _budget_compact(gate.get("status") or {})},
+                "isError": False,
+            }
+
     try:
         out = _HANDLERS[name](args, state)
     except Exception as exc:                       # 工具内部失败：如实回报
@@ -246,6 +308,26 @@ def call_tool(name: str, args: dict, state: dict | None = None) -> dict:
     text = out.get("text") or ""
     structured = out.get("structured")
     result = {"content": [{"type": "text", "text": text}], "isError": bool(out.get("is_error"))}
+
+    if budget is not None and name != "winmon_budget_status":
+        payload = text + (json.dumps(structured, ensure_ascii=False) if structured is not None else "")
+        est = ai.estimate_tokens(payload)
+        per_incident = int(getattr(budget, "settings", {}).get("per_incident_tokens", 2000))
+        if est > max(200, per_incident):
+            # 单事件超限：只留可读文本，丢掉大结构化数据（并如实标注）
+            text = text[: max(200, int(per_incident * 1.6))] + "\n…（已按单事件预算截断）"
+            result["content"] = [{"type": "text", "text": text}]
+            structured = {"truncated": True}
+            est = ai.estimate_tokens(text)
+        status = budget.record(est, client=client, tool=name,
+                               token_source="estimated", mode="mcp",
+                               context_bytes=len(payload.encode("utf-8")))
+        if structured is None:
+            structured = {}
+        if isinstance(structured, dict):
+            structured = dict(structured)
+            structured["budget"] = _budget_compact(status)
+
     if structured is not None:
         result["structuredContent"] = structured
     return result
@@ -273,6 +355,16 @@ def handle_request(req, state: dict | None = None):
         params = {}
     if not isinstance(params, dict):
         return _err(req_id, -32602, "Invalid params: params 必须是对象")
+
+    # 客户端自称（clientInfo）只用于日志/归因；真正的身份靠父进程（stdio）
+    if isinstance(state, dict):
+        ci = params.get("clientInfo")
+        if not isinstance(ci, dict):
+            meta = params.get("_meta")
+            if isinstance(meta, dict):
+                ci = meta.get("io.modelcontextprotocol/clientInfo")
+        if isinstance(ci, dict) and ci.get("name"):
+            state["client_label"] = str(ci["name"])[:80]
 
     modern, meta_error = _modern_meta(params)
     if meta_error is not None:
@@ -398,6 +490,14 @@ def stdio_main() -> int:
     stdin = getattr(sys.stdin, "buffer", None) or getattr(sys.__stdin__, "buffer", None)
     if stdin is None:
         return 2
+    # 预算与客户端归因：整个连接共用一份（stdio 的生命周期就是一个客户端）
+    state: dict = {"budget": ai.Budget()}
+    try:
+        client = ai.detect_connected_client()
+        if client:
+            state["client_label"] = client.get("name") or client.get("exe") or ""
+    except Exception:
+        pass
     while True:
         raw = stdin.readline()
         if not raw:
@@ -414,7 +514,7 @@ def stdio_main() -> int:
                 real_stderr.flush()
             except Exception:
                 pass
-        reply = handle_line(line)
+        reply = handle_line(line, state)
         if reply:
             try:
                 out.write(reply.encode("ascii") + b"\n")
@@ -424,7 +524,158 @@ def stdio_main() -> int:
 
 
 # ============================================================================
-# 六、自检（不需要 AI 客户端）
+# 六、本地 HTTP（阶段 4：给网页端 / 只支持 HTTP 的客户端）
+# ============================================================================
+
+DEFAULT_HTTP_ORIGINS = ("http://127.0.0.1", "http://localhost")
+
+
+def make_http_server(host: str = "127.0.0.1", port: int = 0, token: str = "",
+                     origins=None, state: dict | None = None,
+                     expire_minutes: int = 0):
+    """
+    起一个**只绑回环**的 MCP HTTP 服务器，返回 `(server, token)`。
+
+    安全约束（MCP.md §10.6）：
+      · 必须带 `Authorization: Bearer <token>`；
+      · 有 `Origin` 头时必须在白名单里（默认只允许本机）；
+      · 只接受 POST `/mcp`，请求体上限 2MB；
+      · token 每次启动重新生成，可选 N 分钟过期。
+    """
+    token = token or secrets.token_urlsafe(24)
+    allowed = set(origins or DEFAULT_HTTP_ORIGINS)
+    expires_at = (time.time() + expire_minutes * 60) if expire_minutes else 0.0
+    state = state if state is not None else {"budget": ai.Budget()}
+
+    class Handler(BaseHTTPRequestHandler):
+        server_version = "WinMonMCP/1.0"
+        protocol_version = "HTTP/1.1"
+
+        def log_message(self, fmt, *args):
+            # 默认不打印每条请求（测试与日常都安静）；排错时设 WINMON_MCP_HTTP_DEBUG=1
+            if os.environ.get("WINMON_MCP_HTTP_DEBUG", "") not in ("", "0"):
+                try:
+                    sys.stderr.write("[winmon-mcp-http] " + (fmt % args) + "\n")
+                except Exception:
+                    pass
+
+        def _send(self, code: int, body: bytes = b"", ctype: str = "application/json"):
+            try:
+                self.send_response(code)
+                self.send_header("Content-Type", ctype)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                if body:
+                    self.wfile.write(body)
+            except Exception:
+                pass
+
+        def _json(self, code: int, obj):
+            self._send(code, json.dumps(obj, ensure_ascii=True,
+                                        separators=(",", ":")).encode("utf-8"))
+
+        def _fail(self, code: int, message: str):
+            self._json(code, {"error": message})
+
+        def _authorized(self) -> bool:
+            if expires_at and time.time() > expires_at:
+                self._fail(401, "token expired")
+                return False
+            auth = self.headers.get("Authorization", "")
+            if not auth.startswith("Bearer ") or not secrets.compare_digest(
+                    auth[len("Bearer "):].strip(), token):
+                self._fail(401, "unauthorized")
+                return False
+            origin = self.headers.get("Origin")
+            if origin and origin not in allowed:
+                self._fail(403, "origin not allowed")
+                return False
+            return True
+
+        def do_GET(self):
+            if self.path.split("?")[0] == "/health":
+                self._json(200, {"ok": True, "server": "winmon-mcp"})
+                return
+            self._fail(404, "not found")
+
+        def do_POST(self):
+            if self.path.split("?")[0] not in ("/mcp", "/mcp/"):
+                self._fail(404, "not found")
+                return
+            if not self._authorized():
+                return
+            try:
+                length = int(self.headers.get("Content-Length") or 0)
+            except ValueError:
+                length = 0
+            if length <= 0 or length > 2 * 1024 * 1024:
+                self._fail(400, "bad content length")
+                return
+            try:
+                payload = json.loads(self.rfile.read(length).decode("utf-8"))
+            except Exception:
+                self._json(200, _err(None, -32700, "Parse error"))
+                return
+            if isinstance(payload, list):
+                out = []
+                for item in payload:
+                    resp = handle_request(item, state)
+                    if resp is not None:
+                        out.append(resp)
+                self._json(200, out)
+                return
+            resp = handle_request(payload, state)
+            if resp is None:
+                self._send(202)
+            else:
+                self._json(200, resp)
+
+    server = ThreadingHTTPServer((host, int(port)), Handler)
+    server.daemon_threads = True
+    return server, token
+
+
+def http_main(port: int = 8765, expire_minutes: int = 0) -> int:
+    """
+    前台跑本地 HTTP MCP 服务器；token 打到 **stderr**（stdout 保持干净）。
+
+    网页端要访问时，用户自己用隧道（cloudflared / ngrok）把 127.0.0.1:port
+    暴露成 HTTPS，并在客户端里配 Bearer token；WinMon **不捆绑**隧道工具。
+    """
+    origins = os.environ.get("WINMON_MCP_ORIGINS", "")
+    allowed = [o.strip() for o in origins.split(",") if o.strip()] or list(DEFAULT_HTTP_ORIGINS)
+    state: dict = {"budget": ai.Budget()}
+    try:
+        client = ai.detect_connected_client()
+        if client:
+            state["client_label"] = client.get("name") or client.get("exe") or ""
+    except Exception:
+        pass
+    server, token = make_http_server(
+        "127.0.0.1", port, os.environ.get("WINMON_MCP_TOKEN", "").strip(),
+        allowed, state,
+        expire_minutes=expire_minutes)
+    real = server.server_address
+    try:
+        sys.stderr.write(
+            f"[winmon-mcp-http] 监听 http://127.0.0.1:{real[1]}/mcp\n"
+            f"[winmon-mcp-http] Bearer token（只显示这一次）：{token}\n"
+            f"[winmon-mcp-http] 允许的 Origin：{', '.join(allowed)}\n"
+            f"[winmon-mcp-http] 过期：{'从不' if not expire_minutes else str(expire_minutes) + ' 分钟'}\n")
+        sys.stderr.flush()
+    except Exception:
+        pass
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.server_close()
+    return 0
+
+
+# ============================================================================
+# 七、自检（不需要 AI 客户端）
 # ============================================================================
 
 def _fake_state() -> dict:
@@ -448,11 +699,21 @@ def _fake_state() -> dict:
             "opened_at": "2026-10-18T22:00:00", "updated_at": "2026-10-18T22:00:00",
             "resolved_at": ""}], "count": 1, "source": "selftest"},
         "playbooks": {"playbooks": ai.get_playbooks()},
+        "budget_status": {
+            "state": "ok", "reason": "", "enabled": True, "paused": False,
+            "daily_tokens": ai.DEFAULT_DAILY_TOKEN_BUDGET, "used_tokens": 1234,
+            "ratio": 0.0001, "hourly_calls": 2, "hourly_limit": 60,
+            "per_incident_tokens": 2000, "warn_ratio": 0.8,
+            "reset_at": "2026-10-18T04:00:00", "day_calls": 2,
+            "by_client": {"selftest": {"tokens": 1234, "calls": 2,
+                                       "provider": 0, "estimated": 1234}},
+            "recent": [], "note": "自检用的假数据",
+        },
     }
 
 
 def selftest() -> int:
-    """一条命令验完"协议层 + 三个工具 + 分帧"；退出 0 = 全通过。"""
+    """一条命令验完"协议层 + 四个工具 + 分帧"；退出 0 = 全通过。"""
     state = _fake_state()
     checks = []
 
@@ -471,7 +732,7 @@ def selftest() -> int:
     # 2) tools/list（旧时代）
     lst = handle_request({"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}})
     names = [t["name"] for t in ((lst or {}).get("result") or {}).get("tools", [])]
-    check("tools/list 三个工具", tuple(names) == TOOL_NAMES, str(names))
+    check("tools/list 四个工具", tuple(names) == TOOL_NAMES, str(names))
 
     # 3) 新时代 tools/list（resultType + 缓存字段）
     meta = {"io.modelcontextprotocol/protocolVersion": MODERN_VERSION,

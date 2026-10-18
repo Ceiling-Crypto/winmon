@@ -3959,6 +3959,8 @@ WM_LBUTTONUP, WM_RBUTTONUP, WM_LBUTTONDBLCLK = 0x0202, 0x0205, 0x0203
 WM_CLOSE, WM_DESTROY = 0x0010, 0x0002
 #: 菜单命令
 IDM_TRAY_SHOW, IDM_TRAY_EXIT = 40001, 40002
+#: 托盘菜单里的「AI 用量…」（阶段 2.5；只读窗口）
+IDM_TRAY_AI_USAGE = 40003
 
 #: 窗口过程的原型（x64 上 LRESULT/WPARAM/LPARAM 都是 64 位；回调里拿到的是**无符号**值，
 #: 所以别把它原样再传给需要**有符号**参数的 API —— 会 OverflowError）
@@ -4048,6 +4050,7 @@ class TrayMessageWindow:
         try:
             hmenu = user32.CreatePopupMenu()
             user32.AppendMenuW(hmenu, 0x0000, IDM_TRAY_SHOW, "显示 WinMon")
+            user32.AppendMenuW(hmenu, 0x0000, IDM_TRAY_AI_USAGE, "AI 用量…")
             user32.AppendMenuW(hmenu, 0x0800, 0, None)          # MF_SEPARATOR
             user32.AppendMenuW(hmenu, 0x0000, IDM_TRAY_EXIT, "退出")
             pt = w.POINT()
@@ -4113,7 +4116,8 @@ class TrayIcon:
     用法（必须在**有消息循环的线程**里创建）：
         tray = TrayIcon(hwnd, icon_path, "WinMon")
         tray.add()
-        ... 收到 WM_TRAY 时调 tray.popup_menu() ...
+        ... 菜单由 TrayMessageWindow 接管（它知道该弹哪几项）...
+        tray.notify("标题", "正文")      # 可选的托盘气泡
         tray.remove()
     """
 
@@ -4208,29 +4212,6 @@ class TrayIcon:
             self.ok = False
         except Exception:
             pass
-
-    def popup_menu(self) -> int:
-        """
-        在鼠标位置弹菜单，返回用户选中的命令号（0 = 没选/取消）。
-
-        用 `TrackPopupMenu` 的**阻塞**形式：菜单必须由创建它的线程跑，
-        而且返回值直接就是命令号 —— 比塞一个回调进消息循环简单得多。
-        """
-        try:
-            hmenu = user32.CreatePopupMenu()
-            user32.AppendMenuW(hmenu, 0x0000, IDM_TRAY_SHOW, "显示 WinMon")
-            user32.AppendMenuW(hmenu, 0x0800, 0, None)          # MF_SEPARATOR
-            user32.AppendMenuW(hmenu, 0x0000, IDM_TRAY_EXIT, "退出")
-            pt = w.POINT()
-            user32.GetCursorPos(ctypes.byref(pt))
-            # 必须 SetForegroundWindow，否则菜单点外面不会关
-            user32.SetForegroundWindow(w.HWND(self.hwnd))
-            cmd = user32.TrackPopupMenu(hmenu, 0x0100 | 0x0002,  # TPM_RETURNCMD|TPM_RIGHTBUTTON
-                                        pt.x, pt.y, 0, w.HWND(self.hwnd), None)
-            user32.DestroyMenu(hmenu)
-            return int(cmd or 0)
-        except Exception:
-            return 0
 
 
 
