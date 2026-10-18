@@ -27,8 +27,10 @@
   四个只读工具：`winmon_ai_sessions` / `winmon_incidents` / `winmon_playbooks` /
   `winmon_budget_status`；预算闸门、调用后记账、单事件截断；
   **本地 HTTP**（只绑 `127.0.0.1`、Bearer token、Origin 白名单、可选过期）。
-- `winmon_ai_provider.py`：**可选直连模型 API**（OpenAI 兼容 / Anthropic），
+- `winmon_ai_provider.py`：**可选直连模型 API**（OpenAI 兼容 / Anthropic / **智谱 GLM-5.3**），
   `usage` 精确入账；默认关闭，key 只从 `WINMON_AI_API_KEY` 读。
+  智谱端点 `/api/paas/v4/chat/completions`，`glm-5.3` 已实测（`thinking` 始终开启，
+  `reasoning_effort=low/high/max`）。
 - 命令行：`--ai-sessions`、`--incidents`、`--ai-usage`、`--ai-context [--copy]`、
   `--ai-ask`、`--ai-explain`、`--mcp-stdio`、`--mcp-selftest`、`--mcp-http`
   （`--port` / `--expire-minutes`）。
@@ -36,7 +38,7 @@
   窗口（暂停 / 恢复 / 重置 / 上限×2；**恢复只能在这里操作**）。
 - 每日 token 预算默认值定为 **1000 万**（估算）。
 - 测试：`test_b22`（23）、`test_b23`（15）、`test_b24`（22）、`test_b25`（15）、
-  `test_b26`（10）、`test_b27`（9）、`test_b28`（2）；全量 **825 用例**。
+  `test_b26`（12）、`test_b27`（9）、`test_b28`（2）；全量 **827 用例**。
 
 ### 说明
 
@@ -53,7 +55,7 @@
 
 | 项目 | 结果 |
 | --- | --- |
-| `py tests\run_tests.py` | 825 用例，失败 0 / 错误 0 / 跳过 7（约 99 秒，stderr 0 行） |
+| `py tests\run_tests.py` | 827 用例，失败 0 / 错误 0 / 跳过 7（约 101 秒，stderr 0 行） |
 | `py winmon.py --mcp-selftest` | 13/13 OK，退出 0 |
 | `py winmon.py --smoke` | 退出 0，stderr 0 |
 | `--ai-usage` / `--ai-context --copy` | 正常；中文剪贴板实测通过 |

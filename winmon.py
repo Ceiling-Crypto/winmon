@@ -6855,7 +6855,8 @@ def ai_ask_cli(prompt: str) -> int:
         print(f"直连 AI 不可用：{out.get('error')}", file=sys.stderr)
         if out.get("code") == "config":
             print("需要：WINMON_AI_DIRECT=1、WINMON_AI_API_KEY；"
-                  "可选 WINMON_AI_PROVIDER=openai|anthropic、WINMON_AI_MODEL。",
+                  "可选 WINMON_AI_PROVIDER=openai|anthropic|zhipu、WINMON_AI_MODEL"
+                  "（智谱默认 glm-5.3）、WINMON_AI_REASONING_EFFORT=low|high|max。",
                   file=sys.stderr)
         return 3 if out.get("code") == "budget" else 2
     print(out.get("text") or "")
@@ -6923,6 +6924,8 @@ AI / MCP（只读；直连 API 默认关闭）：
   --ai-context          生成给网页 AI 的上下文包（--copy 复制到剪贴板）
   --ai-ask <问题>       直连模型 API（需 WINMON_AI_DIRECT=1 + API key）
   --ai-explain          让直连模型解释最近一条本地事件
+      WINMON_AI_PROVIDER   openai（默认）/ anthropic / zhipu（GLM-5.3）
+      WINMON_AI_MODEL      覆盖模型名（智谱默认 glm-5.3）
   --mcp-stdio           以 MCP 服务器身份跑在 stdio 上（给 AI 客户端挂）
   --mcp-selftest        MCP 协议与工具的自检（不需要客户端）
   --mcp-http            本地 HTTP MCP（只绑 127.0.0.1；给网页端/HTTP 客户端）

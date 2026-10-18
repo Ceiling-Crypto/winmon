@@ -32,7 +32,7 @@
 | [`CHANGELOG.md`](CHANGELOG.md) | **改了什么**：按版本记功能与修复（含版本号怎么变的） | 想知道这版和上版的差别、某个改动是哪一版进的 |
 | [`HANDOFF.md`](HANDOFF.md) | **为什么是这样**：开发交接文档，2800 行，踩过的坑编号到 120+。**含内部设计讨论**（哪些方案试过、为什么放弃） | **改代码之前**（尤其别重复踩坑）；接手这个项目 |
 | [`MCP.md`](MCP.md) | 让 AI 客户端通过 **MCP** 接入 WinMon 的**方案**（**阶段 1.5–4 已实现**：只读工具 / 预算 / 直连 / 本地 HTTP）；§十 是 2026-10-18 的「AI 工作伴侣」修订 | 想用 AI 操作/观察这台机器上的窗口与进程 |
-| [`tests/`](tests) | 可重复运行的验证用例（825 个，纯标准库） | 改完代码跑一遍；想知道某条规矩被谁钉住 |
+| [`tests/`](tests) | 可重复运行的验证用例（827 个，纯标准库） | 改完代码跑一遍；想知道某条规矩被谁钉住 |
 | [`LICENSE`](LICENSE) | MIT 许可证 | 想用 / 改 / 分发这份代码 |
 
 一句话：**用**看 README，**对比**看 CHANGELOG，**改**看 HANDOFF，**接 AI** 看 MCP。
@@ -188,7 +188,7 @@ py winmon.py
 ### 跑测试（可选，纯标准库）
 
 ```bat
-py tests\run_tests.py            :: 全部用例（825 个，约 95 秒）
+py tests\run_tests.py            :: 全部用例（827 个，约 101 秒）
 py tests\run_tests.py -v         :: 详细输出
 py tests\run_tests.py -k capture :: 只跑名字里含 capture 的用例
 py tests\run_tests.py --list     :: 只列出会跑哪些用例
@@ -830,12 +830,22 @@ py winmon.py --mcp-http         :: 本地 HTTP（默认 8765，只绑 127.0.0.1�
 ```bat
 set WINMON_AI_DIRECT=1
 set WINMON_AI_API_KEY=...          :: 只从环境变量读，不写文件、不进日志
-set WINMON_AI_PROVIDER=openai      :: 或 anthropic
+set WINMON_AI_PROVIDER=zhipu       :: openai / anthropic / zhipu（GLM-5.3）
+set WINMON_AI_MODEL=glm-5.3        :: 智谱默认就是 glm-5.3，可省略
+set WINMON_AI_REASONING_EFFORT=low :: GLM-5.3：low / high / max（默认 low）
 py winmon.py --ai-ask "帮我看看刚刚为什么卡"
 py winmon.py --ai-explain          :: 解释最近一条本地事件
 ```
 
+也可以在用户数据目录放 `winmon_ai_provider.json`（**不要放 key**）：
+
+```json
+{"kind":"zhipu","model":"glm-5.3","reasoning_effort":"low","enabled":true,"timeout":60}
+```
+
 直连是**唯一能精确计量 token** 的模式（供应商响应里的 `usage`）；会先过预算。
+智谱走 OpenAI 兼容端点 `https://open.bigmodel.cn/api/paas/v4/chat/completions`，
+已实测 `prompt_tokens / completion_tokens` 与正文都正确。
 
 **目前仍没有的**：MCP 写工具（关窗/结束进程/截图，按安全边界暂不开放）、
 完整 Streamable HTTP 的 SSE / 订阅、`resources` / UIA 地址栏。
@@ -843,7 +853,7 @@ py winmon.py --ai-explain          :: 解释最近一条本地事件
 
 ## 九、测试
 
-`tests/` 下是一套**可重复运行的验证用例**（825 个），只用 Python 标准库
+`tests/` 下是一套**可重复运行的验证用例**（827 个），只用 Python 标准库
 （`unittest`），与本体一样零依赖。它们把开发过程中一次性做过的验证固化了下来，
 以后改代码可以直接跑，不用重新手工试一遍。
 

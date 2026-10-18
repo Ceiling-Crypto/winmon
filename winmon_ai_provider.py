@@ -2,6 +2,11 @@
 """
 WinMon 直连模型 API（阶段 3.5，**默认关闭**）。
 
+支持三种 provider：
+  · `openai`    —— OpenAI 兼容 `/chat/completions`
+  · `anthropic` —— Anthropic Messages API
+  · `zhipu`     —— 智谱 BigModel（GLM-5.3，OpenAI 兼容形状 + thinking）
+
 为什么单列一个模块：这是整个项目里**唯一**会主动花钱、主动联网的路径。
 所以它有三条硬边界：
 
@@ -26,8 +31,21 @@ import winmon_core as core
 
 DEFAULT_OPENAI_BASE = "https://api.openai.com/v1"
 DEFAULT_ANTHROPIC_BASE = "https://api.anthropic.com"
+DEFAULT_ZHIPU_BASE = "https://open.bigmodel.cn/api/paas/v4"
 DEFAULT_OPENAI_MODEL = "gpt-4o-mini"
 DEFAULT_ANTHROPIC_MODEL = "claude-3-5-haiku-latest"
+DEFAULT_ZHIPU_MODEL = "glm-5.3"
+PROVIDER_KINDS = ("openai", "anthropic", "zhipu")
+
+
+def _default_base(kind: str) -> str:
+    return {"anthropic": DEFAULT_ANTHROPIC_BASE,
+            "zhipu": DEFAULT_ZHIPU_BASE}.get(kind, DEFAULT_OPENAI_BASE)
+
+
+def _default_model(kind: str) -> str:
+    return {"anthropic": DEFAULT_ANTHROPIC_MODEL,
+            "zhipu": DEFAULT_ZHIPU_MODEL}.get(kind, DEFAULT_OPENAI_MODEL)
 
 
 def provider_path() -> str:
@@ -41,16 +59,20 @@ class ProviderConfig:
 
     def __init__(self, kind: str = "openai", base_url: str = "", model: str = "",
                  api_key_env: str = "WINMON_AI_API_KEY", enabled: bool = False,
-                 timeout: float = 30.0, max_tokens: int = 500) -> None:
-        self.kind = "anthropic" if str(kind).lower() == "anthropic" else "openai"
-        self.base_url = base_url or (
-            DEFAULT_ANTHROPIC_BASE if self.kind == "anthropic" else DEFAULT_OPENAI_BASE)
-        self.model = model or (
-            DEFAULT_ANTHROPIC_MODEL if self.kind == "anthropic" else DEFAULT_OPENAI_MODEL)
+                 timeout: float = 30.0, max_tokens: int = 500,
+                 reasoning_effort: str = "low") -> None:
+        k = str(kind or "openai").lower()
+        self.kind = k if k in PROVIDER_KINDS else "openai"
+        self.base_url = base_url or _default_base(self.kind)
+        self.model = model or _default_model(self.kind)
         self.api_key_env = api_key_env or "WINMON_AI_API_KEY"
         self.enabled = bool(enabled)
         self.timeout = float(timeout or 30)
         self.max_tokens = int(max_tokens or 500)
+        #: 仅 GLM-5.3 使用：low / high / max（它始终开启思考，不支持关闭）
+        self.reasoning_effort = (reasoning_effort or "low").lower()
+        if self.reasoning_effort not in ("low", "high", "max"):
+            self.reasoning_effort = "low"
 
     @classmethod
     def load(cls, path: str = "") -> "ProviderConfig":
@@ -71,16 +93,16 @@ class ProviderConfig:
             enabled=bool(data.get("enabled", False)),
             timeout=float(data.get("timeout", 30)),
             max_tokens=int(data.get("max_tokens", 500)),
+            reasoning_effort=str(data.get("reasoning_effort")
+                                 or os.environ.get("WINMON_AI_REASONING_EFFORT") or "low"),
         )
         if os.environ.get("WINMON_AI_DIRECT", "") == "1":
             cfg.enabled = True
         env_kind = os.environ.get("WINMON_AI_PROVIDER", "").strip().lower()
-        if env_kind in ("openai", "anthropic") and env_kind != cfg.kind:
+        if env_kind in PROVIDER_KINDS and env_kind != cfg.kind:
             cfg.kind = env_kind
-            cfg.base_url = os.environ.get("WINMON_AI_BASE_URL") or (
-                DEFAULT_ANTHROPIC_BASE if env_kind == "anthropic" else DEFAULT_OPENAI_BASE)
-            cfg.model = os.environ.get("WINMON_AI_MODEL") or (
-                DEFAULT_ANTHROPIC_MODEL if env_kind == "anthropic" else DEFAULT_OPENAI_MODEL)
+            cfg.base_url = os.environ.get("WINMON_AI_BASE_URL") or _default_base(env_kind)
+            cfg.model = os.environ.get("WINMON_AI_MODEL") or _default_model(env_kind)
         return cfg
 
     def api_key(self) -> str:
@@ -90,7 +112,8 @@ class ProviderConfig:
         return {"kind": self.kind, "base_url": self.base_url, "model": self.model,
                 "api_key_env": self.api_key_env, "enabled": self.enabled,
                 "key_present": bool(self.api_key()), "timeout": self.timeout,
-                "max_tokens": self.max_tokens}
+                "max_tokens": self.max_tokens,
+                "reasoning_effort": self.reasoning_effort}
 
     def validate(self) -> str:
         """返回错误文字；空串表示可以调用。"""
@@ -140,11 +163,16 @@ def _build_request(config: ProviderConfig, prompt: str) -> tuple:
                "Authorization": f"Bearer {config.api_key()}"}
     payload = {"model": config.model, "max_tokens": config.max_tokens,
                "messages": [{"role": "user", "content": prompt}]}
+    if config.kind == "zhipu":
+        # GLM-5.3 始终开启思考，不支持关闭；low 最省 token
+        payload["thinking"] = {"type": "enabled"}
+        payload["reasoning_effort"] = config.reasoning_effort
     return url, headers, payload
 
 
 def _parse_response(config: ProviderConfig, data: dict) -> dict:
     """从供应商响应里取文本与**精确** usage。"""
+    reasoning = ""
     if config.kind == "anthropic":
         blocks = data.get("content") or []
         text = "".join(str(b.get("text") or "") for b in blocks if isinstance(b, dict))
@@ -158,10 +186,12 @@ def _parse_response(config: ProviderConfig, data: dict) -> dict:
         if isinstance(text, list):
             text = "".join(str(part.get("text") or "") for part in text
                            if isinstance(part, dict))
+        reasoning = str((message or {}).get("reasoning_content") or "")
         usage = data.get("usage") or {}
         tin = int(usage.get("prompt_tokens", 0) or 0)
         tout = int(usage.get("completion_tokens", 0) or 0)
-    return {"text": str(text), "tokens_in": tin, "tokens_out": tout}
+    return {"text": str(text), "tokens_in": tin, "tokens_out": tout,
+            "reasoning": reasoning}
 
 
 def call_model(prompt: str, config: ProviderConfig | None = None,
@@ -210,10 +240,14 @@ def call_model(prompt: str, config: ProviderConfig | None = None,
         budget.record(total, client="WinMon direct", tool="direct_api",
                       token_source="provider", model=config.model,
                       purpose=purpose, mode="direct", now=now)
-    return {"ok": True, "text": parsed["text"], "tokens_in": parsed["tokens_in"],
-            "tokens_out": parsed["tokens_out"], "tokens": total,
-            "token_source": "provider", "model": config.model,
-            "provider": config.kind}
+    reason = parsed.get("reasoning") or ""
+    result = {"ok": True, "text": parsed["text"], "tokens_in": parsed["tokens_in"],
+              "tokens_out": parsed["tokens_out"], "tokens": total,
+              "token_source": "provider", "model": config.model,
+              "provider": config.kind}
+    if reason:
+        result["reasoning"] = reason
+    return result
 
 
 def explain_incident(incident: dict, config: ProviderConfig | None = None,

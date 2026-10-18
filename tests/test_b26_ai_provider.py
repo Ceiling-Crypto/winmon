@@ -109,6 +109,41 @@ class TestCallModel(unittest.TestCase):
         self.assertEqual(payload["model"], "test-model")
         self.assertEqual(out["tokens_in"], 11)
 
+    def test_zhipu_glm_request_shape_and_usage(self):
+        """GLM-5.3：OpenAI 兼容形状 + thinking/reasoning_effort；usage 精确。"""
+        calls: list = []
+
+        def transport(url, headers, payload, timeout):
+            calls.append((url, headers, payload))
+            return 200, {"model": "glm-5.3",
+                         "choices": [{"message": {"content": "OK",
+                                                  "reasoning_content": "想一下"},
+                                      "finish_reason": "stop"}],
+                         "usage": {"prompt_tokens": 17, "completion_tokens": 3,
+                                   "total_tokens": 20}}
+
+        cfg = provider.ProviderConfig(kind="zhipu", enabled=True,
+                                      base_url=provider.DEFAULT_ZHIPU_BASE,
+                                      model="glm-5.3", reasoning_effort="low")
+        with mock.patch.dict(os.environ, {"WINMON_AI_API_KEY": "k"}, clear=True):
+            out = provider.call_model("你好", cfg, transport, budget=self.budget)
+        self.assertTrue(out["ok"], out.get("error"))
+        url, headers, payload = calls[0]
+        self.assertEqual(url, "https://open.bigmodel.cn/api/paas/v4/chat/completions")
+        self.assertEqual(headers["Authorization"], "Bearer k")
+        self.assertEqual(payload["model"], "glm-5.3")
+        self.assertEqual(payload["thinking"], {"type": "enabled"})
+        self.assertEqual(payload["reasoning_effort"], "low")
+        self.assertEqual((out["tokens_in"], out["tokens_out"], out["tokens"]), (17, 3, 20))
+        self.assertEqual(out["provider"], "zhipu")
+        self.assertEqual(out["reasoning"], "想一下")
+
+    def test_zhipu_defaults(self):
+        cfg = provider.ProviderConfig(kind="zhipu")
+        self.assertEqual(cfg.base_url, provider.DEFAULT_ZHIPU_BASE)
+        self.assertEqual(cfg.model, "glm-5.3")
+        self.assertEqual(cfg.reasoning_effort, "low")
+
     def test_budget_blocks_before_transport(self):
         calls: list = []
         self.budget.record(10_000, now=NOW)          # 用尽
