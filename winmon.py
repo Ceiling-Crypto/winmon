@@ -2591,36 +2591,46 @@ class _HistoryWindow:
 
 class _AiUsageWindow:
     """
-    「AI 用量」独立窗口（阶段 2.5）。
+    「AI 用量」独立窗口（阶段 2.5 / 阶段 5）。
 
     只读展示 + **本地**恢复手段：暂停 / 恢复、重置今日、上限翻倍。
     按设计，**MCP 没有任何改预算的工具** —— 钥匙只在人手里。
+
+    用户 2026-10-19 的要求：打开这个窗口必须一眼看见
+      · 现在识别到的是哪个 AI（以及依据）；
+      · 这个 token 数是谁的（真实 API 回执 / 精确分词 / 估算）；
+      · 直连 GLM 有没有就绪。
     """
 
     def __init__(self, parent: tk.Misc, app) -> None:
         self.app = app
         self.top = tk.Toplevel(parent)
-        self.top.title("WinMon AI 用量")
-        self.top.geometry("860x560")
-        self.top.minsize(680, 420)
+        self.top.title("WinMon AI 识别与用量")
+        scale = float(getattr(app, "dpi_scale", 1.0) or 1.0)
+        self.top.geometry(f"{int(920 * scale)}x{int(640 * scale)}")
+        self.top.minsize(int(720 * scale), int(480 * scale))
         self.top.protocol("WM_DELETE_WINDOW", self.close)
         self.budget = ai.Budget()
+        self._after_id = None
 
         wrap = ttk.Frame(self.top, padding=(10, 8))
         wrap.pack(fill="both", expand=True)
         head = ttk.Frame(wrap)
         head.pack(fill="x")
-        ttk.Label(head, text="AI 上下文用量与预算", font=BOLD_FONT).pack(side="left")
+        ttk.Label(head, text="AI 识别与用量（真实 / 精确 / 估算分栏）",
+                  font=BOLD_FONT).pack(side="left")
         self.state_text = tk.StringVar(value="")
         ttk.Label(head, textvariable=self.state_text, font=UI_FONT,
                   foreground="#555").pack(side="right")
 
-        self.body = tk.Text(wrap, height=18, wrap="word", font=MONO_FONT,
+        body_holder = ttk.Frame(wrap)
+        body_holder.pack(fill="both", expand=True, pady=(8, 8))
+        self.body = tk.Text(body_holder, height=20, wrap="word", font=MONO_FONT,
                             relief="solid", borderwidth=1)
-        scroll = ttk.Scrollbar(wrap, orient="vertical", command=self.body.yview)
+        scroll = ttk.Scrollbar(body_holder, orient="vertical", command=self.body.yview)
         self.body.configure(yscrollcommand=scroll.set)
-        self.body.pack(side="left", fill="both", expand=True, pady=(8, 8))
-        scroll.pack(side="left", fill="y", pady=(8, 8))
+        self.body.pack(side="left", fill="both", expand=True)
+        scroll.pack(side="left", fill="y")
         self.body.configure(state="disabled")
 
         bar = ttk.Frame(wrap)
@@ -2634,11 +2644,34 @@ class _AiUsageWindow:
                    command=self.raise_limit).pack(side="left", padx=2)
         ttk.Button(bar, text="刷新", width=8,
                    command=self.refresh).pack(side="left", padx=2)
+        #: 精确分词开关：把 MCP 工具结果发给智谱分词器计数（默认跟随配置文件）
+        self.exact_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(bar, text="MCP 结果精确分词",
+                        variable=self.exact_var,
+                        command=self.toggle_exact).pack(side="left", padx=(10, 2))
         ttk.Button(bar, text="打开数据目录", width=14,
                    command=self.reveal).pack(side="right", padx=2)
-        ttk.Label(bar, text="恢复预算只能在这里操作；MCP 没有改预算的工具",
-                  font=UI_FONT, foreground="#777").pack(side="right", padx=8)
+        ttk.Button(bar, text="AI 助手…", width=9,
+                   command=lambda: getattr(self.app, "action_ai_assistant",
+                                           lambda: None)()).pack(side="right", padx=2)
+        note = ttk.Frame(wrap)
+        note.pack(fill="x", pady=(4, 0))
+        ttk.Label(note, text="恢复预算只能在这里操作；MCP 没有改预算的工具。"
+                            "精确分词会把 MCP 工具结果发给智谱分词器。",
+                  font=UI_FONT, foreground="#777").pack(side="left")
         self.refresh()
+        self._auto_refresh()
+
+    def _auto_refresh(self) -> None:
+        """窗口开着时每 3 秒自刷新（关窗必须取消，否则会打 Tcl 噪音）。"""
+        self._after_id = None
+        try:
+            if not self.top.winfo_exists():
+                return
+            self.refresh()
+            self._after_id = self.top.after(3000, self._auto_refresh)
+        except tk.TclError:
+            self._after_id = None
 
     def refresh(self) -> None:
         status = self.budget.status()
@@ -2648,15 +2681,41 @@ class _AiUsageWindow:
         self.state_text.set(f"当前：{label}")
         self.pause_btn.configure(
             text="恢复 AI 接入" if status.get("paused") else "暂停 AI 接入")
-        lines = [ai.format_usage_text(status), "", "最近记录（最多 5 条）："]
+        info = provider.ProviderConfig.load().describe()
+        try:
+            self.exact_var.set(bool(info.get("exact_tokens")))
+        except Exception:
+            pass
+        if not info.get("enabled"):
+            direct = "未启用（默认关闭；配置文件里的 enabled 或 WINMON_AI_DIRECT=1）"
+        elif not info.get("key_present"):
+            direct = f"{info.get('model')} 缺 API key（环境变量 WINMON_AI_API_KEY）"
+        else:
+            direct = f"{info.get('model')} 已就绪（{info.get('kind')}）"
+        lines = [
+            "== 当前识别（这是“现在在用谁”的唯一判据）==",
+            ai.format_sessions_detail(getattr(self.app, "_ai_sessions", None)),
+            "",
+            "== 用量与预算 ==",
+            ai.format_usage_text(status),
+            "",
+            "== 直连模型 ==",
+            f"  {direct}",
+            "  精确分词：MCP 工具结果用目标模型分词器计数；"
+            "关掉后这一部分只能估算（协议不提供客户端账单）。",
+            "",
+            "== 最近记录（最多 5 条）==",
+        ]
+        source_label = {"provider": "真实 API", "tokenizer": "精确分词",
+                        "estimated": "估算"}
         recent = status.get("recent") or []
         if not recent:
             lines.append("（还没有记录）")
         for row in recent[-5:]:
+            src = source_label.get(str(row.get("token_source")), "?")
             lines.append(
                 f"{row.get('ts', '')}  {row.get('client') or '?'}  "
-                f"{row.get('tool') or '-'}  {row.get('tokens', 0)} token "
-                f"（{row.get('token_source', '?')}）")
+                f"{row.get('tool') or '-'}  {row.get('tokens', 0)} token（{src}）")
         self.body.configure(state="normal")
         self.body.delete("1.0", "end")
         self.body.insert("1.0", "\n".join(lines))
@@ -2675,6 +2734,17 @@ class _AiUsageWindow:
         self.budget.raise_limit(2.0)
         self.refresh()
 
+    def toggle_exact(self) -> None:
+        """切换"MCP 结果精确分词"（只改一个键，不动 API key / 模型）。"""
+        flag = bool(self.exact_var.get())
+        ok = provider.set_exact_tokens(flag)
+        if not ok:
+            self.exact_var.set(not flag)
+            self.app._set_status("精确分词需要先有直连配置（winmon_ai_provider.json）")
+        else:
+            self.app._set_status(f"MCP 结果精确分词已{'开启' if flag else '关闭'}")
+        self.refresh()
+
     def reveal(self) -> None:
         try:
             os.startfile(core.data_dir())
@@ -2682,10 +2752,165 @@ class _AiUsageWindow:
             self.app._set_status(f"打不开数据目录：{type(exc).__name__}: {exc}")
 
     def close(self) -> None:
+        if self._after_id is not None:
+            try:
+                self.top.after_cancel(self._after_id)
+            except Exception:
+                pass
+            self._after_id = None
         try:
             self.top.destroy()
         finally:
             self.app._ai_usage_window = None
+
+
+class _AiAssistantWindow:
+    """
+    「AI 助手」窗口（阶段 5）：让 GLM-5.3 **真的读取窗口现场**。
+
+    它不是聊天玩具：每次提问都先由 `winmon_ai.build_work_context()` 采集
+    "前台窗口 + 窗口清单 + 当前 AI + 本地事件"，再连同问题发给直连模型；
+    回答和**真实 token 用量**（API 回执）一起写进下面的记录区。
+
+    值守默认关闭（会联网、会花钱）；勾选后每隔 N 分钟、且**前台窗口变了**
+    才调用一次，不会按时间空烧 token。
+    """
+
+    def __init__(self, parent: tk.Misc, app) -> None:
+        self.app = app
+        self.top = tk.Toplevel(parent)
+        self.top.title("WinMon AI 助手（GLM-5.3）")
+        scale = float(getattr(app, "dpi_scale", 1.0) or 1.0)
+        self.top.geometry(f"{int(860 * scale)}x{int(640 * scale)}")
+        self.top.minsize(int(680 * scale), int(460 * scale))
+        self.top.protocol("WM_DELETE_WINDOW", self.close)
+
+        wrap = ttk.Frame(self.top, padding=(10, 8))
+        wrap.pack(fill="both", expand=True)
+        self.header = tk.StringVar(value="正在读取直连状态…")
+        ttk.Label(wrap, textvariable=self.header, font=UI_FONT,
+                  foreground="#2a4a66").pack(fill="x")
+
+        #: 没配 key 时给一个"只用于本次运行"的入口：不写盘、不进日志。
+        self.key_row = ttk.Frame(wrap)
+        self.key_var = tk.StringVar(value="")
+        _pinfo = provider.ProviderConfig.load().describe()
+        if _pinfo.get("enabled") and not _pinfo.get("key_present"):
+            self.key_row.pack(fill="x", pady=(4, 0))
+            ttk.Label(self.key_row, text="API key（仅本次运行）：",
+                      font=UI_FONT, foreground="#7a4a00").pack(side="left")
+            ttk.Entry(self.key_row, textvariable=self.key_var, show="*",
+                      width=36).pack(side="left", padx=4)
+            ttk.Button(self.key_row, text="用于本次运行", width=12,
+                       command=self.use_key).pack(side="left")
+            ttk.Label(self.key_row, text="（长期用环境变量 WINMON_AI_API_KEY）",
+                      font=UI_FONT, foreground="#777").pack(side="left", padx=6)
+
+        body_holder = ttk.Frame(wrap)
+        body_holder.pack(fill="both", expand=True, pady=(8, 6))
+        self.body = tk.Text(body_holder, height=18, wrap="word", font=MONO_FONT,
+                            relief="solid", borderwidth=1)
+        scroll = ttk.Scrollbar(body_holder, orient="vertical", command=self.body.yview)
+        self.body.configure(yscrollcommand=scroll.set)
+        self.body.pack(side="left", fill="both", expand=True)
+        scroll.pack(side="left", fill="y")
+        self.body.configure(state="disabled")
+
+        ask = ttk.Frame(wrap)
+        ask.pack(fill="x", pady=(0, 4))
+        self.question = tk.StringVar(value="")
+        entry = ttk.Entry(ask, textvariable=self.question, font=UI_FONT)
+        entry.pack(side="left", fill="x", expand=True, padx=(0, 4))
+        entry.bind("<Return>", lambda _e: self.send())
+        ttk.Button(ask, text="分析当前窗口", width=13,
+                   command=self.analyze).pack(side="right", padx=2)
+        ttk.Button(ask, text="发送", width=8,
+                   command=self.send).pack(side="right", padx=2)
+
+        opts = ttk.Frame(wrap)
+        opts.pack(fill="x")
+        assist = getattr(app, "_ai_assist", {}) or {}
+        self.watch_var = tk.BooleanVar(value=bool(assist.get("enabled")))
+        self.explain_var = tk.BooleanVar(value=bool(assist.get("auto_explain")))
+        ttk.Checkbutton(opts, text="值守（前台变化时检查）",
+                        variable=self.watch_var,
+                        command=self.toggle_watch).pack(side="left", padx=2)
+        ttk.Checkbutton(opts, text="出问题时自动解释",
+                        variable=self.explain_var,
+                        command=self.toggle_explain).pack(side="left", padx=8)
+        ttk.Button(opts, text="AI 用量…", width=9,
+                   command=self.app.action_ai_usage).pack(side="right", padx=2)
+        interval = int(assist.get("interval_seconds", 300) or 300)
+        ttk.Label(wrap, text=f"最快每 {max(1, interval // 60)} 分钟一次；"
+                            "只在前台窗口变化或出现新事件时调用，且受预算限制。",
+                  font=UI_FONT, foreground="#777").pack(fill="x", pady=(2, 0))
+
+        for line in list(getattr(app, "_ai_log_lines", []) or []):
+            self.append(line)
+        if not getattr(app, "_ai_log_lines", None):
+            self.append("[提示] 点「分析当前窗口」会读取前台窗口 + 窗口清单 + 本地事件，"
+                        "调用 GLM-5.3；每次调用都会显示真实 token。")
+        self.set_header(app._ai_header_text()
+                        if hasattr(app, "_ai_header_text") else "")
+
+    def append(self, text: str) -> None:
+        self.body.configure(state="normal")
+        self.body.insert("end", text + "\n\n")
+        self.body.see("end")
+        self.body.configure(state="disabled")
+
+    def set_header(self, text: str) -> None:
+        if text:
+            self.header.set(text)
+
+    def use_key(self) -> None:
+        """把用户粘进来的 key 放进**本进程**环境变量（不写任何文件）。"""
+        key = (self.key_var.get() or "").strip()
+        if not key:
+            self.append("[设置] key 为空，没有改动。")
+            return
+        os.environ["WINMON_AI_API_KEY"] = key
+        self.key_var.set("")
+        try:
+            self.key_row.pack_forget()
+        except Exception:
+            pass
+        try:
+            self.app._ai_provider_cache = (0.0, None)
+        except Exception:
+            pass
+        self.append("[设置] 已在本进程设置 API key（不写盘；重启后需重设或改用环境变量）。")
+        try:
+            self.set_header(self.app._ai_header_text())
+        except Exception:
+            pass
+
+    def analyze(self) -> None:
+        self.app.ai_assistant_request("")
+
+    def send(self) -> None:
+        question = (self.question.get() or "").strip()
+        if not question:
+            self.analyze()
+            return
+        if self.app.ai_assistant_request(question):
+            self.question.set("")
+
+    def toggle_watch(self) -> None:
+        data = self.app.set_assist(enabled=bool(self.watch_var.get()))
+        self.append(f"[设置] 值守：{'开' if data.get('enabled') else '关'}"
+                    f"（每 {max(1, int(data.get('interval_seconds', 300)) // 60)} 分钟，"
+                    "前台变化时才调用）")
+
+    def toggle_explain(self) -> None:
+        data = self.app.set_assist(auto_explain=bool(self.explain_var.get()))
+        self.append(f"[设置] 出问题时自动解释：{'开' if data.get('auto_explain') else '关'}")
+
+    def close(self) -> None:
+        try:
+            self.top.destroy()
+        finally:
+            self.app._ai_assistant_window = None
 
 
 class _IdleDialog:
@@ -3057,7 +3282,21 @@ class WinMonApp:
         self._ai_tracker = ai.AiTracker()
         self._ai_incidents = ai.IncidentStore(path=ai.incidents_path())
         self._ai_primary = None
+        self._ai_sessions = None
         self._ai_usage_window = None
+        self._ai_assistant_window = None
+        # AI 用量的界面缓存（2 秒一拍，不必每拍都扫账本 / 读配置）
+        self._ai_budget = ai.Budget()
+        self._ai_usage_cache = (0.0, None)
+        self._ai_provider_cache = (0.0, None)
+        # 直连 AI 助手：默认关闭；开启后会联网并产生**真实** token 费用
+        self._ai_assist = ai.load_assist()
+        self._ai_jobs: list = []
+        self._ai_busy = False
+        self._ai_log_lines: list = []
+        self._ai_last_watch = time.time()
+        self._ai_watch_sig = ""
+        self._ai_explained: dict = {}
         # 测试里把 WINMON_AI_NOTIFY 设为 0，避免弹系统通知打扰
         self._ai_notify_enabled = os.environ.get("WINMON_AI_NOTIFY", "1") not in (
             "", "0", "false", "False")
@@ -3274,6 +3513,8 @@ class WinMonApp:
 
         # ---- 视频联动 + 媒体（合成工具栏里的一行；拆成独立方法，免得 _build_ui 过长）----
         self._build_video_bars()
+        # ---- AI 状态条（识别到的 AI + 真实/估算用量 + 直连模型状态）----
+        self._build_ai_bar()
 
         for var in (self.show_hidden, self.show_no_window, self.only_windowed,
                     self.follow_selection, self.live_gallery, self.size_choice, self.fps_choice):
@@ -3526,6 +3767,27 @@ class WinMonApp:
             side="left", padx=(8, 0))
         # 清单要等控件建好才能填（`_reload_media_app_list` 会 configure 这个下拉框）
         self._reload_media_app_list()
+
+    def _build_ai_bar(self) -> None:
+        """
+        主界面「AI 状态条」：一行同时回答"现在是谁"和"这个用量是谁的"。
+
+        用户 2026-10-19 的原话：「界面 UI 并没有显示现在识别并正在使用的 AI，
+        我怎么知道你说的 AI 用量用的谁的」——所以这行必须常驻，不能藏在用量窗口里。
+
+        文案由 `ai.format_ai_bar()` 生成（纯函数，可单测）；这里只负责布局。
+        宽度约定：这一行只有"一个标签 + 两个按钮"，自然宽度远小于 1280，
+        `test_a5` 的挤压检查会守住它。
+        """
+        bar = ttk.Frame(self.root, padding=(8, 2))
+        bar.pack(fill="x")
+        self.ai_text = tk.StringVar(value="AI：正在识别…")
+        ttk.Label(bar, textvariable=self.ai_text, font=UI_FONT,
+                  foreground="#2a4a66").pack(side="left")
+        ttk.Button(bar, text="AI 助手…", width=9,
+                   command=self.action_ai_assistant).pack(side="right", padx=(2, 0))
+        ttk.Button(bar, text="AI 用量…", width=9,
+                   command=self.action_ai_usage).pack(side="right", padx=2)
 
 
     def _app_has_session(self, app_key: str) -> bool:
@@ -4609,10 +4871,10 @@ class WinMonApp:
 
     def _ai_tick(self) -> None:
         """
-        每 2 秒一拍：算主 AI、跑本地检测器、必要时弹本地提醒。
+        每 2 秒一拍：算主 AI、跑本地检测器、刷新 AI 状态条、必要时弹提醒。
 
-        刻意**不调用任何模型**：这一步是"稳定提醒"的来源，0 token、不联网。
-        AI 想看这些数据时，由它通过 MCP 来读（见 `winmon_mcp.py`）。
+        本地这一层**不调用任何模型**（0 token、不联网）；只有用户显式开启
+        「AI 助手 / 值守」时，才由 `_ai_assistant_tick` 发起直连调用。
         """
         if not getattr(self, "_ai_enabled", False):
             return
@@ -4622,15 +4884,275 @@ class WinMonApp:
                 self._ai_tracker, getattr(self, "_fg_hwnd", 0),
                 pin=getattr(self, "_ai_pin", ""))
             self._ai_primary = res.get("primary")
+            self._ai_sessions = res
+            self._update_ai_bar(res)
             candidates = ai.detect_incidents(
                 self.windows, getattr(self, "proc_map", {}) or {},
                 disk_usage=ai.disk_usage_for_data_dir())
             fresh = self._ai_incidents.observe(candidates)
             for inc in fresh:
                 self._ai_notify(inc)
+            self._ai_assistant_tick(res, fresh)
         except Exception:
             # 这一层坏了不能影响主界面：静默跳过，下一拍再试
             pass
+
+    # ------------------------------------------------------------------
+    # AI 状态条 / 直连助手（阶段 5：界面可见 + 真实用量）
+    # ------------------------------------------------------------------
+    def _ai_status_snapshot(self, force: bool = False) -> dict:
+        """预算与用量快照（2 秒一拍；账本很小，5 秒缓存足够）。"""
+        now = time.monotonic()
+        cached = getattr(self, "_ai_usage_cache", (0.0, None))
+        if not force and cached[1] is not None and now - cached[0] < 5.0:
+            return cached[1]
+        try:
+            status = self._ai_budget.status()
+        except Exception:
+            status = {}
+        self._ai_usage_cache = (now, status)
+        return status
+
+    def _ai_provider_snapshot(self, force: bool = False) -> dict:
+        """直连配置快照（不读 key 内容，只读"key 在不在"）。"""
+        now = time.monotonic()
+        cached = getattr(self, "_ai_provider_cache", (0.0, None))
+        if not force and cached[1] is not None and now - cached[0] < 15.0:
+            return cached[1]
+        try:
+            info = provider.ProviderConfig.load().describe()
+        except Exception:
+            info = {}
+        self._ai_provider_cache = (now, info)
+        return info
+
+    def _update_ai_bar(self, res=None) -> None:
+        """把"当前是谁 + 真实/估算用量 + 直连状态"写进主界面那一行。"""
+        if not hasattr(self, "ai_text"):
+            return
+        try:
+            if res is None:
+                res = getattr(self, "_ai_sessions", None)
+            text = ai.format_ai_bar((res or {}).get("primary"),
+                                    self._ai_status_snapshot(),
+                                    self._ai_provider_snapshot())
+            self.ai_text.set(text)
+        except Exception:
+            pass
+
+    def _ai_context(self) -> str:
+        """采集一份窗口现场（只在用户点「分析」或值守到点时调用）。"""
+        incidents = {"incidents": [inc.to_dict()
+                                   for inc in self._ai_incidents.open_incidents()[:5]]}
+        return ai.build_work_context(
+            getattr(self, "windows", []) or [], getattr(self, "proc_map", {}) or {},
+            getattr(self, "_fg_hwnd", 0), getattr(self, "_ai_sessions", None) or {},
+            incidents)
+
+    def _ai_log(self, text: str) -> None:
+        """AI 助手的运行记录：窗口开着就追加，没开也留在内存里（最多 200 条）。"""
+        line = f"[{time.strftime('%H:%M:%S')}] {text}"
+        try:
+            self._ai_log_lines.append(line)
+            if len(self._ai_log_lines) > 200:
+                del self._ai_log_lines[:50]
+        except Exception:
+            return
+        win = getattr(self, "_ai_assistant_window", None)
+        if win is not None:
+            try:
+                win.append(line)
+            except Exception:
+                pass
+
+    def _ai_notify_text(self, title: str, text: str, severity: str = "info") -> None:
+        """AI 助手的主动提醒：托盘气泡优先，退回状态栏。"""
+        if not getattr(self, "_ai_notify_enabled", True):
+            return
+        if getattr(self, "_tray_ok", False) and getattr(self, "_tray", None) is not None:
+            try:
+                if self._tray.notify(title, text, severity=severity):
+                    return
+            except Exception:
+                pass
+        try:
+            self._set_status(f"{title}：{text}")
+        except Exception:
+            pass
+
+    def _ai_foreground_signature(self) -> str:
+        """前台窗口签名：用它判断"值守"这一拍有没有必要再花 token。"""
+        hwnd = int(getattr(self, "_fg_hwnd", 0) or 0)
+        wi = None
+        try:
+            wi = self.win_by_hwnd.get(hwnd)
+        except Exception:
+            wi = None
+        title = (getattr(wi, "title", "") or "")[:80] if wi is not None else ""
+        return f"{hwnd}:{title}" if hwnd else ""
+
+    def _ai_enqueue_job(self, job: dict) -> None:
+        """把一次直连调用排队（同一时刻只跑一个，避免并发烧 token）。"""
+        if len(self._ai_jobs) >= 3:
+            return
+        self._ai_jobs.append(job)
+        self._ai_pump_jobs()
+
+    def _ai_pump_jobs(self) -> None:
+        if getattr(self, "_ai_busy", False) or not self._ai_jobs:
+            return
+        cfg = provider.ProviderConfig.load()
+        bad = cfg.validate()
+        if bad:
+            self._ai_jobs.clear()
+            self._ai_log(f"直连 AI 不可用：{bad}")
+            return
+        if not self._ai_budget.check(400).get("allowed"):
+            self._ai_jobs.clear()
+            self._ai_log("预算已暂停/用尽，本次 AI 助手调用没有发出。")
+            return
+        job = self._ai_jobs.pop(0)
+        self._ai_busy = True
+        threading.Thread(target=self._ai_worker, args=(job, cfg),
+                         daemon=True, name="winmon-ai-assist").start()
+
+    def _ai_worker(self, job: dict, cfg) -> None:
+        """后台线程：只做网络调用；结果一律交回主线程（不碰 tkinter）。"""
+        budget = ai.Budget()
+        try:
+            if job.get("kind") == "incident":
+                out = provider.explain_incident(job.get("incident") or {},
+                                                config=cfg, budget=budget)
+            else:
+                out = provider.call_model(job.get("prompt") or "", config=cfg,
+                                          budget=budget, purpose=str(job.get("kind") or "assist"))
+        except Exception as exc:
+            out = {"ok": False, "code": "worker",
+                   "error": f"{type(exc).__name__}: {exc}"}
+        self._ui_call(lambda: self._ai_job_done(job, out))
+
+    def _ai_job_done(self, job: dict, out: dict) -> None:
+        self._ai_busy = False
+        self._ai_usage_cache = (0.0, None)       # 账本刚变，下一拍重读
+        if not out.get("ok"):
+            self._ai_log(f"调用失败：{out.get('error')}")
+            self._set_status(f"AI 助手：{out.get('error')}")
+        else:
+            body = (out.get("text") or "").strip() or "（模型没有返回文字）"
+            total = int(out.get("tokens", 0) or 0)
+            usage = (f"{out.get('model') or '?'}：输入 {out.get('tokens_in', 0)} / "
+                     f"输出 {out.get('tokens_out', 0)} = {total} token（API 回执）")
+            self._ai_log(f"{body}\n— {usage}")
+            self._set_status(f"AI 助手：{body[:80]}")
+            if job.get("kind") in ("watch", "incident"):
+                self._ai_notify_text("WinMon AI 建议", body[:180], "info")
+            if job.get("kind") == "incident" and job.get("key"):
+                self._ai_explained[str(job["key"])] = time.time()
+        self._ai_pump_jobs()
+
+    def _ai_assistant_tick(self, res: dict, fresh: list) -> None:
+        """
+        值守 / 自动解释的调度（每 2 秒被 `_ai_tick` 调一次）。
+
+        花钱的规矩：
+          · 只有用户在「AI 助手」里勾了值守，才会自动调用；
+          · 前台窗口没变、没有新事件 → **不调用**（不按时间空烧 token）；
+          · 预算暂停/用尽 → 不调用。
+        """
+        win = getattr(self, "_ai_assistant_window", None)
+        if win is not None:
+            try:
+                win.set_header(self._ai_header_text())
+            except Exception:
+                pass
+        assist = getattr(self, "_ai_assist", {}) or {}
+        if fresh and assist.get("auto_explain"):
+            for inc in fresh:
+                key = inc.key
+                if key in self._ai_explained:
+                    continue
+                self._ai_enqueue_job({
+                    "kind": "incident", "key": key,
+                    "incident": inc.to_dict(),
+                })
+        if assist.get("enabled"):
+            now = time.time()
+            try:
+                interval = int(assist.get("interval_seconds", 300))
+            except (TypeError, ValueError):
+                interval = 300
+            sig = self._ai_foreground_signature()
+            if sig and sig != self._ai_watch_sig and now - self._ai_last_watch >= interval:
+                self._ai_last_watch = now
+                self._ai_watch_sig = sig
+                prompt = provider.assistant_prompt(
+                    self._ai_context(),
+                    "现在是自动值守：用一两句话指出此刻最值得注意的一件事；"
+                    "没有异常就回答“一切正常”。")
+                self._ai_enqueue_job({"kind": "watch", "prompt": prompt})
+        self._ai_pump_jobs()
+
+    def _ai_header_text(self) -> str:
+        info = self._ai_provider_snapshot()
+        status = self._ai_status_snapshot()
+        if not info.get("enabled"):
+            state = "直连未启用"
+        elif not info.get("key_present"):
+            state = "缺 API key"
+        else:
+            state = "已就绪"
+        return (f"{info.get('model') or '直连模型'} · {state} ｜ "
+                f"真实 {int(status.get('provider_tokens', 0) or 0):,} · "
+                f"精确 {int(status.get('tokenizer_tokens', 0) or 0):,} token")
+
+    def set_assist(self, enabled: bool | None = None,
+                   auto_explain: bool | None = None) -> dict:
+        """改值守开关（界面调用；只写本地设置文件）。"""
+        data = dict(getattr(self, "_ai_assist", {}) or {})
+        if enabled is not None:
+            data["enabled"] = bool(enabled)
+            if enabled:
+                self._ai_last_watch = time.time()
+                self._ai_watch_sig = ""
+        if auto_explain is not None:
+            data["auto_explain"] = bool(auto_explain)
+        self._ai_assist = ai.save_assist(data)
+        return self._ai_assist
+
+    def ai_assistant_request(self, question: str = "") -> bool:
+        """「AI 助手」的手动提问：采集现场 → 直连 GLM → 结果写回窗口。"""
+        cfg = provider.ProviderConfig.load()
+        bad = cfg.validate()
+        if bad:
+            self._ai_log(f"直连 AI 不可用：{bad}")
+            self._set_status(f"AI 助手不可用：{bad}")
+            return False
+        if getattr(self, "_ai_busy", False) or self._ai_jobs:
+            self._ai_log("上一条还在处理，等它回来再发（避免并发烧 token）。")
+            return False
+        prompt = provider.assistant_prompt(self._ai_context(), question)
+        self._ai_log(f"已发出（{cfg.model}）…")
+        self._ai_enqueue_job({"kind": "manual", "prompt": prompt})
+        return True
+
+    def action_ai_assistant(self) -> None:
+        """打开「AI 助手」窗口（已经开着就提到前台）。"""
+        win = getattr(self, "_ai_assistant_window", None)
+        if win is not None:
+            try:
+                win.top.deiconify()
+                win.top.lift()
+                win.top.focus_force()
+                win.set_header(self._ai_header_text())
+                return
+            except Exception:
+                self._ai_assistant_window = None
+        try:
+            self._ai_assistant_window = _AiAssistantWindow(self.root, self)
+            self._set_status("AI 助手已打开：点「分析当前窗口」读取现场；"
+                             "每次调用都会显示真实 token")
+        except Exception as exc:
+            self._set_status(f"打不开「AI 助手」：{type(exc).__name__}: {exc}")
 
     def _ai_notify(self, inc) -> None:
         """本地提醒：优先托盘气泡；托盘不可用就退回状态栏。"""
@@ -6811,15 +7333,19 @@ def incidents_cli(as_json: bool = False, limit: int = 20) -> int:
 
 
 def ai_usage_cli(as_json: bool = False) -> int:
-    """命令行：AI 上下文用量与预算（只读）。"""
+    """命令行：AI 识别与用量（真实 / 精确 / 估算分栏）。"""
     try:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     except Exception:
         pass
     status = ai.Budget().status()
+    sessions = ai.collect_ai_sessions(pin=os.environ.get("WINMON_AI_PIN", ""))
     if as_json:
-        print(json.dumps(status, ensure_ascii=False, indent=2))
+        print(json.dumps({"sessions": sessions, "budget": status},
+                         ensure_ascii=False, indent=2))
     else:
+        print(ai.format_sessions_detail(sessions))
+        print()
         print(ai.format_usage_text(status))
         print("\n（恢复预算只能在 WinMon 界面里操作；MCP 没有改预算的工具）")
     return 0
@@ -6862,6 +7388,46 @@ def ai_ask_cli(prompt: str) -> int:
     print(out.get("text") or "")
     print(f"\n[用量] 输入 {out.get('tokens_in', 0)} / 输出 {out.get('tokens_out', 0)}"
           f" token（精确）· {out.get('model')}")
+    return 0
+
+
+def ai_assist_cli(question: str = "", as_json: bool = False) -> int:
+    """
+    命令行：让直连模型读一遍当前桌面现场（窗口清单 + 当前 AI + 本地事件）。
+
+    这是 `--ai-ask` 的"带现场"版本：它会真的枚举窗口，但**不会**动任何窗口，
+    也不会发截图；发出的只有清洗后的标题/进程/CPU/内存与本地事件。
+    """
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+    wins = core.collect_desktop(include_cloaked=True, with_detail=True)
+    procs = core.snapshot_processes()
+    fg = core.get_foreground_hwnd()
+    sessions = ai.identify_ai_sessions(wins, procs, None, fg)
+    context = ai.build_work_context(wins, procs, fg, sessions,
+                                    ai.collect_incidents(limit=5))
+    prompt = provider.assistant_prompt(context, question)
+    out = provider.call_model(prompt, budget=ai.Budget(), purpose="assist_cli")
+    if as_json:
+        print(json.dumps({"ok": out.get("ok"), "error": out.get("error", ""),
+                          "text": out.get("text", ""), "context": context,
+                          "tokens_in": out.get("tokens_in", 0),
+                          "tokens_out": out.get("tokens_out", 0),
+                          "tokens": out.get("tokens", 0),
+                          "model": out.get("model", "")}, ensure_ascii=False, indent=2))
+        return 0 if out.get("ok") else (3 if out.get("code") == "budget" else 2)
+    if not out.get("ok"):
+        print(f"直连 AI 不可用：{out.get('error')}", file=sys.stderr)
+        if out.get("code") == "config":
+            print("需要：WINMON_AI_DIRECT=1（或配置 enabled）、WINMON_AI_API_KEY；"
+                  "智谱默认 glm-5.3。", file=sys.stderr)
+        return 3 if out.get("code") == "budget" else 2
+    print(out.get("text") or "")
+    print(f"\n[现场] 已读取 {len(wins)} 个窗口（含隐藏），发送的是清洗后的标题/进程/CPU/内存。")
+    print(f"[用量] 输入 {out.get('tokens_in', 0)} / 输出 {out.get('tokens_out', 0)}"
+          f" = {out.get('tokens', 0)} token（API 回执）· {out.get('model')}")
     return 0
 
 
@@ -6920,8 +7486,9 @@ USAGE_TEXT = """WinMon 1.0 —— 桌面程序实时监控与终止（纯 ctypes
 AI / MCP（只读；直连 API 默认关闭）：
   --ai-sessions         识别现在在用哪个 AI（桌面客户端 / 网页端）
   --incidents           列出本地事件（无响应窗口 / 磁盘告急 / MCP 工具失败）
-  --ai-usage            AI 上下文用量与预算（恢复只能在本窗口里操作）
+  --ai-usage            AI 识别与用量（真实 / 精确 / 估算分栏）
   --ai-context          生成给网页 AI 的上下文包（--copy 复制到剪贴板）
+  --ai-assist [问题]    直连模型读当前窗口现场并回答（会花真实 token）
   --ai-ask <问题>       直连模型 API（需 WINMON_AI_DIRECT=1 + API key）
   --ai-explain          让直连模型解释最近一条本地事件
       WINMON_AI_PROVIDER   openai（默认）/ anthropic / zhipu（GLM-5.3）
@@ -6973,7 +7540,8 @@ def main() -> int:
              "--settings", "--clean-all",
              "--ai-sessions", "--incidents", "--mcp-stdio", "--mcp-selftest",
              "--mcp-http", "--port", "--expire-minutes",
-             "--ai-usage", "--ai-context", "--copy", "--ai-ask", "--ai-explain"}
+             "--ai-usage", "--ai-context", "--copy", "--ai-ask", "--ai-explain",
+             "--ai-assist"}
 
     def _looks_like_flag(a: str) -> bool:
         """像个开关吗？（`-5` 这种**数字**不算 —— 它是 `--idle-minutes -5` 的值。）"""
@@ -7056,6 +7624,11 @@ def main() -> int:
         return ai_usage_cli(as_json=("--json" in args))
     if _has_flag("--ai-context"):
         return ai_context_cli(copy_to_clip=("--copy" in args))
+    if _has_flag("--ai-assist"):
+        question = _arg_value(args, "--ai-assist")
+        if question and _looks_like_flag(question):
+            question = ""
+        return ai_assist_cli(question or "", as_json=("--json" in args))
     if _has_flag("--ai-ask"):
         if _need_value("--ai-ask"):
             return 2

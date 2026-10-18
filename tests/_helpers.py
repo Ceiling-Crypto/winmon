@@ -53,6 +53,11 @@ os.environ.setdefault("WINMON_AI_BUDGET",
                       os.path.join(tempfile.gettempdir(), "winmon-test-budget.json"))
 os.environ.setdefault("WINMON_AI_PROVIDER_FILE",
                       os.path.join(tempfile.gettempdir(), "winmon-test-provider.json"))
+#: AI 助手的值守设置同样隔离；测试里绝不自动联网
+os.environ.setdefault("WINMON_AI_ASSIST",
+                      os.path.join(tempfile.gettempdir(), "winmon-test-assist.json"))
+#: 测试里默认不做精确分词（否则会真的向智谱发请求）
+os.environ.setdefault("WINMON_AI_EXACT", "0")
 
 #: 中文最多的文档，也一起守着编码约定。
 #:

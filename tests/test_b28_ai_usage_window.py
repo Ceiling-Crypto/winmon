@@ -41,6 +41,14 @@ class TestAiUsageWindow(unittest.TestCase):
             "root": self.root,
             "_set_status": lambda self_, text: None,
             "_ai_usage_window": None,
+            "_ai_sessions": {
+                "primary": {"name": "智谱清言", "kind": "web", "confidence": 0.65,
+                            "proc": "msedge.exe", "pid": 2676,
+                            "foreground_seconds_30m": 72, "activations_30m": 3,
+                            "source": "window_title", "pinned": False},
+                "others": [{"name": "DeepSeek", "kind": "desktop", "score": 0.0}],
+                "note": "测试",
+            },
         })()
 
     def test_window_opens_refreshes_and_closes(self):
@@ -50,6 +58,10 @@ class TestAiUsageWindow(unittest.TestCase):
         win.refresh()
         text = win.body.get("1.0", "end")
         self.assertIn("预算", text)
+        self.assertIn("当前识别", text)
+        self.assertIn("智谱清言", text, "打开窗口就必须看见现在识别到的 AI")
+        self.assertIn("真实", text)
+        self.assertIn("估算", text)
         win.toggle_pause()
         self.assertTrue(win.budget.status().get("paused"))
         win.toggle_pause()

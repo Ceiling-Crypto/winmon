@@ -3,7 +3,7 @@
 > 用途：在新的对话里快速恢复上下文。读这一份即可继续开发。
 > **正式发布名 `winmon1.0`**（`APP_VER = "1.0"`，查版本：`py winmon.py --version`）。
 > **先读 §一点五「WinMon 的定位与能力边界」** —— 输入注入已明确不再投入。
-> 代码状态：**827 个测试用例全绿**（约 101 秒）+ 代码复检 0 新增问题（基线为空）、
+> 代码状态：**843 个测试用例全绿**（约 101 秒）+ 代码复检 0 新增问题（基线为空）、
 > 自检 8/8、界面冒烟通过、
 > 桌面快捷方式可用、程序目录端到端可用、
 > 视频联动 = **监视当前窗口 / 停止监视 / 直接关闭视频**（自动识别与「用链接打开」已删掉）、
@@ -20,7 +20,7 @@
 
 | | |
 | --- | --- |
-| 测试 | **827 用例全绿**（`py tests\run_tests.py`，约 101 秒；含 7 条按环境 skip） |
+| 测试 | **843 用例全绿**（`py tests\run_tests.py`，约 101 秒；含 7 条按环境 skip） |
 | 代码复检 | `py tests\lint_check.py` → **新增问题 0**（基线已清空，见 §四） |
 | 自检 / 冒烟 | `py winmon.py --selftest` 8/8 通过；`--smoke` 通过 |
 | 规模 | `winmon_core.py` ~6700 行 / `winmon.py` ~7000 行 / 测试 34 个文件（21 个测试模块） |
@@ -70,7 +70,7 @@
 1. **把媒体那一行做精**：常驻快照已经有了，可以顺手把"播放速率/时间线"接进来
    （当初删掉的进度显示，明确说过"以后再说" —— **动手前先确认**）；
 2. **托盘右键加播放控制**（上一首/播放暂停/下一首）+ 显示当前曲名，不用切回主窗口；
-3. **测试提速**：827 用例 101 秒里，`test_b5`/`test_b6` 的"真开窗+真抓画面"占大头，
+3. **测试提速**：843 用例 101 秒里，`test_b5`/`test_b6` 的"真开窗+真抓画面"占大头，
    可给它们打标记 + `run_tests.py --fast`；
 4. **GUI 拆分**：`winmon.py` 已 7000 行，可按标签页拆包（注意 §§布局不变量与 lint 的 200 行阈值）。
 
@@ -104,7 +104,7 @@
 | `winmon_mcp.py` | ~800 | **MCP 服务器**：双时代 stdio + 本地 HTTP + 四个只读工具 |
 | `winmon_ai_provider.py` | ~250 | **可选**直连模型 API（默认关；精确 usage；key 只从环境变量读） |
 | `media_session.ps1` | ~230 | 系统媒体会话（GSMTC）桥接脚本（PowerShell + Windows 自带 WinRT 投影；**必须纯 ASCII 无 BOM**） |
-| `tests/` | 41 个 .py | **可重复运行的测试**（827 用例，纯 unittest） + 开发辅助工具 + `lint_check.py` / `lint_baseline.txt` |
+| `tests/` | 42 个 .py | **可重复运行的测试**（843 用例，纯 unittest） + 开发辅助工具 + `lint_check.py` / `lint_baseline.txt` |
 | `启动WinMon.bat` | — | 菜单式启动器（纯 ASCII，避免批处理编码问题） |
 | `scan_windows.py` | — | 命令行窗口清单 |
 | `close_others.py` | — | 批量关闭除当前窗口外的窗口 |
@@ -157,7 +157,7 @@ python winmon.py --videos --open 3 --watch --close-window   :: 完整视频链�
 python winmon.py --version          :: 打印版本（winmon1.0）
 python winmon.py --idle             :: 列出"长期开着、没人用"的程序（只看，不关任何东西）
 python winmon.py --idle --idle-minutes 5   :: 换个闲置阈值（分钟）
-py tests\run_tests.py               :: 全部测试（827 用例，约 101 秒）
+py tests\run_tests.py               :: 全部测试（843 用例，约 101 秒）
 ```
 
 ---
@@ -1727,7 +1727,7 @@ cloudflared / ngrok；不 tunnel 就用 `--ai-context --copy`。
 
 | 项 | 结果 |
 | --- | --- |
-| `py tests\run_tests.py` | **827 用例，失败 0 / 错误 0 / 跳过 7**（101 秒，stderr **0 行**） |
+| `py tests\run_tests.py` | **当时 827 用例，失败 0 / 错误 0 / 跳过 7**（101 秒，stderr **0 行**） |
 | `py winmon.py --mcp-selftest` | **13/13 OK**（两代协议 + 四个工具 + 错误路径 + 分帧） |
 | `--ai-usage` | 正常显示 0 / 10,000,000（估算） |
 | `--ai-context --copy` | 生成上下文包并复制成功（中文实测） |
@@ -1747,6 +1747,90 @@ cloudflared / ngrok；不 tunnel 就用 `--ai-context --copy`。
      错误信息里也不能带 key（测试专门断言了这一点）。
 130. **`clip.exe` 要喂 UTF-16LE**：用 UTF-8 字节管道过去，中文会变乱码；
      `text.encode("utf-16le")` 实测正常（本机验证过）。
+
+### 9.23 阶段 5：界面可见 + 真实计量 + GLM 真正读窗口（**2026-10-19 第六轮**）
+
+用户 2026-10-19 的三条原话：
+
+1. 「winmon 的界面 UI 并没有显示现在识别并正在使用的 AI，我怎么知道你说的 AI 用量用的谁的」
+2. 「AI 用量改为调取客户端真实数目而非估算」
+3. 「你刚刚接入智谱的 GLM5.3 然后呢？我并没有看到用处，也没有 token 消耗，
+   并没有跟进去读取窗口」
+
+#### 一、落地内容
+
+| 问题 | 实现 |
+| --- | --- |
+| ① 界面看不见 | 主界面常驻 **AI 状态条**：`AI：谁（桌面/网页 · 进程）｜真实 X · 估算 Y token｜GLM-5.3 就绪/缺 key`；「AI 用量」窗口第一段改成**当前识别 + 依据 + 候选**，再列三栏用量与按客户端分组 |
+| ② 估算 | 账本新增 `token_source="tokenizer"`：智谱 `POST /api/paas/v4/tokenizer` **精确数** MCP 工具结果（`exact_tokens` 开关，失败回落估算，结果按文本哈希缓存）；直连仍用 `usage`（真实）。界面三栏：**真实 / 精确 / 估算**，不再把估算叫账单 |
+| ③ GLM 没用处 | 新增 **AI 助手窗口** + `--ai-assist`：采集前台窗口 + 窗口清单（标题/进程/CPU/内存）+ 当前 AI + 本地事件，发给 GLM-5.3；回答与 `输入 / 输出 = 总 token（API 回执）` 一起写回；支持「值守」（前台变化才调用）与「出问题自动解释」 |
+
+#### 二、真实计量实测（本机，2026-10-19）
+
+| 路径 | 结果 |
+| --- | --- |
+| 分词器接口 | `POST /api/paas/v4/tokenizer`，`model=glm-5.3`，中文样本 `prompt_tokens=20`（和 glm-4.6 一致） |
+| MCP 工具结果 | `winmon_playbooks` → **533 token，`token_source=tokenizer`**，归到 `Claude Desktop` |
+| `--ai-assist`（读 6 个窗口） | 输入 **373** / 输出 **55** = **428 token**（API 回执） |
+| GUI 助手（后台线程 + 队列） | 输入 **397** / 输出 **50** = **447 token**；状态栏与账本同步 |
+
+#### 三、边界（必须继续写在文档里）
+
+- **MCP 协议没有"客户端 token 账单"字段**：能精确的只有
+  "WinMon 直连的 `usage`" 和 "WinMon 交给客户端的这段内容（分词器）"；
+  客户端自己的系统提示、多轮历史、推理消耗，WinMon 看不到。
+- 所以 `--ai-usage` / 窗口 / 状态条一律**三栏分列**，不把 `estimated` 写成真实。
+- 精确分词会把工具结果（窗口标题等）发给智谱；默认关，开启是用户的显式选择。
+- AI 助手默认**不自动跑**；值守只在前台窗口变化时调用，且受预算闸门约束。
+- 没有 key 时，助手窗口有一个"只存本次运行、不写盘"的输入框；长期使用仍建议
+  `WINMON_AI_API_KEY` 环境变量（key 从不写进配置文件 / 日志 / 仓库）。
+
+#### 四、本机配置（用户数据，不进仓库）
+
+`%LOCALAPPDATA%\WinMon\winmon_ai_provider.json` 追加：
+
+```json
+{"kind":"zhipu","model":"glm-5.3","reasoning_effort":"low","enabled":true,
+ "exact_tokens":true,"max_tokens":500,"timeout":60}
+```
+
+`winmon_ai_assist.json`：
+
+```json
+{"enabled":true,"interval_seconds":300,"auto_explain":true}
+```
+
+> 注意：`exact_tokens=true` 会让 MCP 进程把工具结果发给智谱分词器；
+> 不想这样就把这一项改 `false`（或在「AI 用量」窗口取消勾选）。
+> 本轮测试用的 key 已出现在对话里，**建议轮换/吊销**。
+
+#### 五、验收（见 §9.24 或本轮末尾的完整数字）
+
+- `test_b29_ai_visible_usage.py`：16 条（状态条 / 三栏账本 / 分词器缓存 /
+  窗口现场 / 值守设置 / MCP 精确与回落 / 助手窗口接线）；
+- `test_b28` 增加"窗口打开必须显示当前 AI"的断言；
+- 全量测试与 lint 结果见下一节。
+
+### 9.24 阶段 5 验收（2026-10-19 01:00）
+
+| 项 | 结果 |
+| --- | --- |
+| `py tests\run_tests.py` | **843 用例，失败 0 / 错误 0 / 跳过 7**（100.2 秒；exit 0） |
+| `py tests\lint_check.py` | **0 新增问题**（基线仍为空） |
+| `py winmon.py --mcp-selftest` | **13/13 OK**，exit 0 |
+| `py winmon.py --selftest` | 8/8 段全过，exit 0 |
+| `py winmon.py --smoke`（设置 key） | exit 0；状态条显示 `glm-5.3 就绪`、`真实/精确/估算` |
+| `--ai-assist`（读 6 个窗口） | 373 / 55 = **428 token**（API 回执） |
+| GUI 助手（线程 + 队列） | 397 / 50 = **447 token**，账本与状态条同步 |
+| MCP 精确分词 | `winmon_playbooks` = **533 token**，`token_source=tokenizer` |
+| 无 key 路径 | `--ai-assist` 退出 2，明确提示，**不发请求** |
+
+本轮新增/修改的测试：
+
+- 新增 `test_b29_ai_visible_usage.py` **16 条**；
+- `test_b28` 增加"窗口打开必须显示当前 AI"的断言；
+- `tests/_helpers.py` 隔离 `WINMON_AI_ASSIST` 并把 `WINMON_AI_EXACT` 默认设为 0
+  （否则跑测试会真的向智谱发分词请求）。
 
 ## 三、踩过的坑（**最重要，别重复踩**）
 
@@ -2300,7 +2384,7 @@ cloudflared / ngrok；不 tunnel 就用 `--ai-context --copy`。
 ## 四、测试体系（**改代码后先跑这个**）
 
 ```bat
-py tests\run_tests.py            :: 827 用例，约 101 秒
+py tests\run_tests.py            :: 843 用例，约 101 秒
 py tests\run_tests.py -v         :: 逐个看
 py tests\run_tests.py -k capture :: 只跑关心的
 py tests\lint_check.py           :: 代码复检（退出码 1 = 有新增问题）
@@ -2458,7 +2542,7 @@ py tests\lint_check.py           :: 代码复检（退出码 1 = 有新增问题
    把 `WinMonApp` 瘦成协调者。拆分时注意那些布局不变量（见坑 21~24），
    以及 `lint_check.py` 的"函数过长"（>200 行）阈值 —— `_build_ui` 已经贴着线走了，
    当时就是靠把视频联动那三行拆成 `_build_video_bars()` 才压下去的。
-5. **测试提速**：~~244 用例 17 秒~~ → 现在 **827 用例约 101 秒**。
+5. **测试提速**：~~244 用例 17 秒~~ → 现在 **843 用例约 101 秒**。
    变慢的是 `test_b5`/`test_b6` 里"真开窗、真抓画面、真关窗"的端到端用例
    （每次要采 2 秒画面，这是必要的 —— 播放判定本来就靠画面变化）。
    想快可以给它们打 `slow` 标记，`run_tests.py` 加 `--fast` 跳过
@@ -2981,7 +3065,7 @@ C 盘那份**保持原样、一字未改**（用户 2026-10-11 确认：暂不�
 
 > 继续开发 **WinMon 1.0（`winmon1.0`）** —— Windows 程序监控与终止工具，纯标准库，在 `项目根目录\`。
 > 请先读 `HANDOFF.md` 和 `README.md`，然后跑 `py tests\run_tests.py`
-> 确认基线是 **827 用例全绿**（需要哔哩哔哩/UIA 页面的用例会按需 skip）、
+> 确认基线是 **843 用例全绿**（需要哔哩哔哩/UIA 页面的用例会按需 skip）、
 > `py tests\lint_check.py` 退出码 0（无新增问题）。
 > **版式要另眼验收**：测试进程没有开 DPI 感知，布局检查看不到"真实 DPI 下控件被挤没"，
 > 所以改动界面后还要跑一次 `py winmon.py --smoke` 看截图（见 §9.15 第 14 条）。

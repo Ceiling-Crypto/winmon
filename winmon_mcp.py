@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-WinMon MCP 服务器（阶段 1.5：AI 工作伴侣的三个只读工具）。
+WinMon MCP 服务器（阶段 1.5–4：AI 工作伴侣的四个只读工具）。
 
 协议事实来自 `MCP.md` §一（2026-07-28 修订版 + 旧版 `initialize`），
 这里实现的是**双时代最小子集**：
@@ -9,13 +9,15 @@ WinMon MCP 服务器（阶段 1.5：AI 工作伴侣的三个只读工具）。
     Modern（2026-07-28）  ：每个请求 params._meta 带 protocolVersion + clientCapabilities
                            支持 server/discover，结果带 resultType
 
-传输只做 **stdio**（按行分帧，stdout 只允许 MCP 报文）。HTTP / 网页端见 MCP.md §10.6，
-不在这一阶段。
+传输支持 **stdio**（按行分帧）与**本地 HTTP**（单次 JSON POST 简化版；
+只绑 127.0.0.1、Bearer token、Origin 白名单）。完整 Streamable HTTP 的
+SSE / 订阅不在范围内，见 MCP.md §10.6。
 
-三个工具：
+四个工具：
     winmon_ai_sessions   现在在用哪个 AI（连接级 + 窗口级 + 打分 + 歧义提示）
     winmon_incidents     本地打开的事件（含当前这一拍能静态判定的）
     winmon_playbooks     剧本库（症状 → 检查 → 步骤）
+    winmon_budget_status 今日用量与预算状态（真实 / 精确 / 估算分栏）
 
 安全约定（MCP.md §3）：只读、不返回截图、窗口标题当不可信数据，
 工具名/描述全部静态，不拼接本机文本。
@@ -30,6 +32,7 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import winmon_ai as ai
+import winmon_ai_provider as provider
 
 MODERN_VERSION = "2026-07-28"
 #: 支持协商的版本。旧版取最后一个带 initialize 的修订。
@@ -99,7 +102,7 @@ TOOLS = [
         "name": "winmon_budget_status",
         "title": "AI 上下文预算状态",
         "description": (
-            "返回今日上下文用量（精确/估算分栏）、预算上限、是否暂停或已用尽。"
+            "返回今日用量（真实 / 精确 / 估算分栏）、预算上限、是否暂停或已用尽。"
             "用尽时其它工具会降载；**恢复预算只能在 WinMon 本地界面操作**，"
             "本服务器没有任何修改预算的工具。"),
         "inputSchema": {
@@ -274,6 +277,27 @@ def _budget_compact(status: dict) -> dict:
             "reason": status.get("reason", "")}
 
 
+def _payload_tokens(payload: str) -> tuple:
+    """
+    给工具结果计数：能精确就精确，不能就老实估算。
+
+    MCP 协议**不提供**客户端的 token 账单（客户端整段对话在它自己那边），
+    所以这里的上限是"WinMon 交给 AI 的这段内容"：
+      · 配了智谱分词器（exact_tokens=true）→ 精确计数，标 tokenizer；
+      · 否则 → 本地估算，标 estimated。
+    两种都不会冒充客户端账单。
+    """
+    try:
+        cfg = provider.ProviderConfig.load()
+        if cfg.exact_tokens and cfg.kind == "zhipu" and cfg.api_key():
+            out = provider.count_tokens(payload, cfg)
+            if out.get("ok") and int(out.get("tokens", 0) or 0) > 0:
+                return int(out.get("tokens", 0) or 0), "tokenizer"
+    except Exception:
+        pass
+    return ai.estimate_tokens(payload), "estimated"
+
+
 def call_tool(name: str, args: dict, state: dict | None = None) -> dict:
     """执行一个工具，返回 MCP 的 result（content / structuredContent / isError）。"""
     state = state or {}
@@ -318,9 +342,10 @@ def call_tool(name: str, args: dict, state: dict | None = None) -> dict:
             text = text[: max(200, int(per_incident * 1.6))] + "\n…（已按单事件预算截断）"
             result["content"] = [{"type": "text", "text": text}]
             structured = {"truncated": True}
-            est = ai.estimate_tokens(text)
-        status = budget.record(est, client=client, tool=name,
-                               token_source="estimated", mode="mcp",
+            payload = text
+        tokens, source = _payload_tokens(payload)
+        status = budget.record(tokens, client=client, tool=name,
+                               token_source=source, mode="mcp",
                                context_bytes=len(payload.encode("utf-8")))
         if structured is None:
             structured = {}
