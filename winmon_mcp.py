@@ -288,8 +288,8 @@ def _payload_tokens(payload: str) -> tuple:
     两种都不会冒充客户端账单。
     """
     try:
-        cfg = provider.ProviderConfig.load()
-        if cfg.exact_tokens and cfg.kind == "zhipu" and cfg.api_key():
+        cfg = provider.tokenizer_config()
+        if cfg is not None and cfg.kind == "zhipu" and cfg.api_key():
             out = provider.count_tokens(payload, cfg)
             if out.get("ok") and int(out.get("tokens", 0) or 0) > 0:
                 return int(out.get("tokens", 0) or 0), "tokenizer"

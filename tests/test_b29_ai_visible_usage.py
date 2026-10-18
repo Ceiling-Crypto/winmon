@@ -255,7 +255,7 @@ class TestMcpExactAccounting(unittest.TestCase):
         budget = self.FakeBudget()
         cfg = provider.ProviderConfig(kind="zhipu", enabled=True, exact_tokens=True,
                                       base_url="https://api.example.com/v4")
-        with mock.patch.object(mcp.provider.ProviderConfig, "load", return_value=cfg), \
+        with mock.patch.object(mcp.provider, "tokenizer_config", return_value=cfg), \
                 mock.patch.object(mcp.provider, "count_tokens",
                                   return_value={"ok": True, "tokens": 77}), \
                 mock.patch.dict(os.environ, {"WINMON_AI_API_KEY": "k"}):
@@ -273,7 +273,7 @@ class TestMcpExactAccounting(unittest.TestCase):
         budget = self.FakeBudget()
         cfg = provider.ProviderConfig(kind="zhipu", enabled=True, exact_tokens=True,
                                       base_url="https://api.example.com/v4")
-        with mock.patch.object(mcp.provider.ProviderConfig, "load", return_value=cfg), \
+        with mock.patch.object(mcp.provider, "tokenizer_config", return_value=cfg), \
                 mock.patch.object(mcp.provider, "count_tokens",
                                   return_value={"ok": False, "error": "x"}), \
                 mock.patch.dict(os.environ, {"WINMON_AI_API_KEY": "k"}):
@@ -305,9 +305,16 @@ class TestAssistantWindow(unittest.TestCase):
             def __init__(self, root):
                 self.root = root
                 self.asked = []
+                self.force_flags = []
+                self.saved = []
 
             def _ai_header_text(self):
-                return "glm-5.3 · 已就绪 ｜ 今日真实 428 token（API 回执）"
+                return "跟随当前 AI：DeepSeek → deepseek-chat · 缺 API key ｜ 真实 0 token"
+
+            def _ai_provider_snapshot(self):
+                return {"configured": True, "enabled": True, "key_present": False,
+                        "api_key_env": "WINMON_AI_API_KEY",
+                        "follow_ai": "DeepSeek", "model": "deepseek-chat"}
 
             def set_assist(self, enabled=None, auto_explain=None):
                 if enabled is not None:
@@ -316,8 +323,13 @@ class TestAssistantWindow(unittest.TestCase):
                     self._ai_assist["auto_explain"] = bool(auto_explain)
                 return dict(self._ai_assist)
 
-            def ai_assistant_request(self, question=""):
+            def ai_assistant_request(self, question="", force_handoff=False):
                 self.asked.append(question)
+                self.force_flags.append(bool(force_handoff))
+                return True
+
+            def ai_save_reply(self, text=""):
+                self.saved.append(text)
                 return True
 
             def action_ai_usage(self):
@@ -330,7 +342,7 @@ class TestAssistantWindow(unittest.TestCase):
         self.app._ai_assistant_window = win
         text = win.body.get("1.0", "end")
         self.assertIn("历史记录", text)
-        self.assertIn("glm-5.3", win.header.get())
+        self.assertIn("DeepSeek", win.header.get())
         win.analyze()
         self.assertEqual(self.app.asked, [""])
         win.question.set("为什么这么卡？")
@@ -348,6 +360,15 @@ class TestAssistantWindow(unittest.TestCase):
         self.assertEqual(os.environ.get("WINMON_AI_API_KEY"), "test-key-only-in-memory")
         self.assertEqual(win.key_var.get(), "")
         os.environ.pop("WINMON_AI_API_KEY", None)
+        win.question.set("交给当前 AI")
+        win.handoff()
+        self.assertEqual(self.app.asked[-1], "交给当前 AI")
+        self.assertTrue(self.app.force_flags[-1], "剪贴板交接必须显式 force_handoff")
+        self.assertEqual(win.question.get(), "")
+        self.root.clipboard_clear()
+        self.root.clipboard_append("AI 的回答")
+        win.save_reply()
+        self.assertEqual(self.app.saved[-1], "AI 的回答")
         win.close()
         self.assertIsNone(self.app._ai_assistant_window)
 

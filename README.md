@@ -31,8 +31,8 @@
 | **`README.md`**（本文） | **唯一的入口**：怎么用、能做什么、边界在哪、怎么验 | 第一次拿到 WinMon；想知道某个功能怎么操作 |
 | [`CHANGELOG.md`](CHANGELOG.md) | **改了什么**：按版本记功能与修复（含版本号怎么变的） | 想知道这版和上版的差别、某个改动是哪一版进的 |
 | [`HANDOFF.md`](HANDOFF.md) | **为什么是这样**：开发交接文档，2800 行，踩过的坑编号到 120+。**含内部设计讨论**（哪些方案试过、为什么放弃） | **改代码之前**（尤其别重复踩坑）；接手这个项目 |
-| [`MCP.md`](MCP.md) | 让 AI 客户端通过 **MCP** 接入 WinMon 的**方案**（**阶段 1.5–5 已实现**：只读工具 / 预算 / 直连 / 本地 HTTP / 桌面助手）；§十 是 2026-10-18 的「AI 工作伴侣」修订 | 想用 AI 操作/观察这台机器上的窗口与进程 |
-| [`tests/`](tests) | 可重复运行的验证用例（843 个，纯标准库） | 改完代码跑一遍；想知道某条规矩被谁钉住 |
+| [`MCP.md`](MCP.md) | 让 AI 客户端通过 **MCP** 接入 WinMon 的**方案**（**阶段 1.5–6 已实现**：只读工具 / 预算 / 直连 / 本地 HTTP / 跟随式助手）；§十 是 2026-10-18 的「AI 工作伴侣」修订 | 想用 AI 操作/观察这台机器上的窗口与进程 |
+| [`tests/`](tests) | 可重复运行的验证用例（855 个，纯标准库） | 改完代码跑一遍；想知道某条规矩被谁钉住 |
 | [`LICENSE`](LICENSE) | MIT 许可证 | 想用 / 改 / 分发这份代码 |
 
 一句话：**用**看 README，**对比**看 CHANGELOG，**改**看 HANDOFF，**接 AI** 看 MCP。
@@ -188,7 +188,7 @@ py winmon.py
 ### 跑测试（可选，纯标准库）
 
 ```bat
-py tests\run_tests.py            :: 全部用例（843 个，约 101 秒）
+py tests\run_tests.py            :: 全部用例（855 个，约 97 秒）
 py tests\run_tests.py -v         :: 详细输出
 py tests\run_tests.py -k capture :: 只跑名字里含 capture 的用例
 py tests\run_tests.py --list     :: 只列出会跑哪些用例
@@ -776,9 +776,9 @@ python close_others.py --keep 1234   :: 额外保留某个 PID
 - **什么都没做成时不写操作历史**（没在跑又没勾自动唤醒、或者三步都失败）：
   只在状态栏说一句，免得日志被"其实什么也没发生"的记录塞满。
 
-## AI 工作伴侣（阶段 1.5–5）
+## AI 工作伴侣（阶段 1.5–6）
 
-WinMon 的 AI 接入层：**本地识别 + 本地事件 + 用量预算 + 可选直连 + 本地 HTTP / 剪贴板桥 + 桌面助手**。
+WinMon 的 AI 接入层：**本地识别 + 本地事件 + 用量预算 + 可选直连 + 本地 HTTP / 剪贴板桥 + 跟随式助手**。
 默认**不联网、不调模型、不花 token**；只有显式开启「直连」才会产生外部调用。
 
 ### 识别与本地事件（0 token）
@@ -788,7 +788,7 @@ WinMon 的 AI 接入层：**本地识别 + 本地事件 + 用量预算 + 可选�
    用托盘气泡提醒；AI 按需来读，不读就永远是 0 token。
 
 **主界面常驻一条 AI 状态条**（2026-10-19 用户要求）：直接显示
-`AI：谁（桌面/网页 · 进程）｜真实 X · 估算 Y token｜GLM-5.3 就绪/缺 key`。
+`AI：谁（桌面/网页 · 进程）｜真实 X · 精确 Y · 估算 Z token｜跟随 谁 → 模型 就绪/缺 key`。
 打开「AI 用量…」还能看到**当前识别的完整依据**、候选 AI、按客户端分栏的用量。
 这样"这个数字是谁的"不用再猜：直连调用记在 `WinMon direct`，MCP 调用记在
 客户端名（如 `Claude Desktop`）下。
@@ -797,9 +797,10 @@ WinMon 的 AI 接入层：**本地识别 + 本地事件 + 用量预算 + 可选�
 py winmon.py --ai-sessions      :: 主 AI + 候选 + 判据（--json 机器可读）
 py winmon.py --incidents        :: 本地事件（--json 同理）
 py winmon.py --ai-usage         :: 当前识别 + 真实/精确/估算三栏用量
+py winmon.py --ai-chat          :: 助手本地记录（直连回答 / 交接 / 手动保存的回复）
 py winmon.py --ai-context       :: 生成给网页 AI 的上下文包
 py winmon.py --ai-context --copy :: 同上，并复制到剪贴板（剪贴板桥）
-py winmon.py --ai-assist "现在最值得注意什么"  :: 直连模型读窗口现场并回答
+py winmon.py --ai-assist "现在最值得注意什么"  :: 跟随当前 AI：能直连就调用，否则生成交接文本
 ```
 
 判据（与 MCP.md §10.3 一致）：
@@ -842,45 +843,69 @@ py winmon.py --mcp-http         :: 本地 HTTP（默认 8765，只绑 127.0.0.1�
 - **恢复只能在本机**：托盘右键 →「AI 用量…」或 `--ai-usage` 查看；
   **MCP 没有任何修改预算的工具**（防止提示注入自己解锁）。
 
-### 可选：直连模型 API（默认关闭）
+### 可选：直连模型 API（默认关闭，**按 AI 分别配置**）
+
+直连不是"WinMon 自己的 AI"，而是给**你正在用的 AI** 准备的钥匙：
+识别到智谱就找 `zhipu`，识别到 Claude 就找 `anthropic`，找不到就只用剪贴板交接。
+**不会再出现"用户用 DeepSeek、WinMon 却调 GLM"的情况。**
 
 ```bat
 set WINMON_AI_DIRECT=1
-set WINMON_AI_API_KEY=...          :: 只从环境变量读，不写文件、不进日志
-set WINMON_AI_PROVIDER=zhipu       :: openai / anthropic / zhipu（GLM-5.3）
-set WINMON_AI_MODEL=glm-5.3        :: 智谱默认就是 glm-5.3，可省略
-set WINMON_AI_REASONING_EFFORT=low :: GLM-5.3：low / high / max（默认 low）
-py winmon.py --ai-ask "帮我看看刚刚为什么卡"
-py winmon.py --ai-explain          :: 解释最近一条本地事件
-py winmon.py --ai-assist          :: 读窗口现场 + 回答（见下）
+set WINMON_AI_API_KEY=...              :: 智谱 profile 用这个（只从环境变量读）
+set WINMON_OPENAI_API_KEY=...          :: ChatGPT profile
+set WINMON_ANTHROPIC_API_KEY=...       :: Claude profile
+set WINMON_DEEPSEEK_API_KEY=...        :: DeepSeek profile
+py winmon.py --ai-ask "帮我看看刚刚为什么卡"   :: 用 active profile 直接问
+py winmon.py --ai-explain                      :: 解释最近一条本地事件
+py winmon.py --ai-assist                       :: 跟随当前 AI（见下）
 ```
 
-也可以在用户数据目录放 `winmon_ai_provider.json`（**不要放 key**）：
+配置文件 `winmon_ai_provider.json`（**不要放 key**）：
 
 ```json
-{"kind":"zhipu","model":"glm-5.3","reasoning_effort":"low","enabled":true,
- "exact_tokens":true,"timeout":60}
+{"follow_detected": true, "active": "zhipu",
+ "profiles": {
+   "zhipu":     {"kind":"zhipu","model":"glm-5.3","api_key_env":"WINMON_AI_API_KEY",
+                 "exact_tokens":true,"enabled":true,"timeout":60},
+   "openai":    {"kind":"openai","model":"gpt-4o-mini",
+                 "api_key_env":"WINMON_OPENAI_API_KEY","enabled":true},
+   "anthropic": {"kind":"anthropic","model":"claude-3-5-haiku-latest",
+                 "api_key_env":"WINMON_ANTHROPIC_API_KEY","enabled":true},
+   "deepseek":  {"kind":"openai","base_url":"https://api.deepseek.com/v1",
+                 "model":"deepseek-chat","api_key_env":"WINMON_DEEPSEEK_API_KEY",
+                 "enabled":true}
+ }
+}
 ```
 
-直连是**唯一能拿到供应商账单口径**的模式（响应里的 `usage`）；MCP 侧可以开
-`exact_tokens` 用分词器精确到模型，但两者都不等于客户端整段对话的账单。调用都会先过预算。
-智谱走 OpenAI 兼容端点 `https://open.bigmodel.cn/api/paas/v4/chat/completions`，
-已实测 `prompt_tokens / completion_tokens` 与正文都正确。
+- `follow_detected: true`（默认）：助手按**当前识别到的 AI** 找 profile；
+  找不到就只做剪贴板交接（无网络请求、无 token）。
+- `active`：只给 `--ai-ask` 与 MCP 精确分词用，不参与"跟随"。
+- `follow_detected: false`：才退回"固定用 active"的旧行为。
+- 直连是**唯一能拿到供应商账单口径**的模式（响应里的 `usage`）；
+  MCP 侧可以开 `exact_tokens` 用分词器精确到模型，但两者都不等于客户端整段对话的账单。
+- 智谱走 OpenAI 兼容端点 `https://open.bigmodel.cn/api/paas/v4/chat/completions`，
+  已实测 `prompt_tokens / completion_tokens` 与正文都正确。
 
-### AI 助手：让 GLM-5.3 真的读取窗口（阶段 5）
+### AI 助手：跟随你正在用的 AI（阶段 6）
 
 主界面点「AI 助手…」打开窗口（或 `--ai-assist`）：
 
-- **分析当前窗口**：采集前台窗口 + 窗口清单（标题/进程/CPU/内存）+ 当前 AI + 本地事件，
-  发给 GLM-5.3，回答写在窗口里；
-- **每次调用都显示真实 token**：`输入 397 / 输出 50 = 447 token（API 回执）`，
-  同时写进账本，主界面状态条立刻更新；
-- **值守（默认关）**：勾选后每 5 分钟检查一次，但**只在前台窗口变化时**才调用，
-  不会按时间空烧 token；发现异常走托盘气泡；
-- **出问题时自动解释（默认关）**：新事件（无响应/磁盘告急/MCP 失败）自动让模型
-  指出错因并给可验证的下一步；
-- 没有 key 时窗口里有一个"只存本次运行、不写盘"的输入框；长期使用建议设
-  `WINMON_AI_API_KEY` 环境变量后重启。
+- **跟随当前 AI**：识别到谁就找谁自己的直连 profile；
+  有 key 就调用它并显示 `输入 / 输出 = 总 token（API 回执）`；
+  **没有该 AI 的 key / profile 时，把现场复制到剪贴板**，你粘到它的对话里即可；
+  **绝不回退到另一个模型**。
+- **没有直连就不自动跑**：值守/自动解释只在当前 AI 的直连可用时才调用，
+  不会拿别的模型顶替，也不会按时间空烧 token。
+- **本地记录** `winmon_ai_chat.jsonl`：
+  - 直连：问题 + 回答 + 真实 token；
+  - 剪贴板交接：问题 + "WinMon 看不到这次回复"；
+  - 「保存 AI 回复」：你把 AI 的回答复制到剪贴板后点一下，回复就存进本地记录。
+  这样**关掉 AI 的对话窗口后，WinMon 这边仍有交接/回答留痕**。
+- **网页端（智谱 / ChatGPT / Claude 等）的对话记录仍在它们自己的账号里**，
+  WinMon 读不到；它只能记录"我交给了它什么"和"你粘回来的回答"。
+- 没有任何 key 时窗口里有一个"只存本次运行、不写盘"的输入框，
+  环境变量名跟着当前 profile 走（如 `WINMON_DEEPSEEK_API_KEY`）。
 
 窗口标题等文本一律先过 `sanitize_untrusted`；只发标题/进程/CPU/内存，
 **不发截图、不发文件路径、不发键盘输入**。值守开关存在
@@ -892,12 +917,12 @@ py winmon.py --ai-assist          :: 读窗口现场 + 回答（见下）
 
 ## 九、测试
 
-`tests/` 下是一套**可重复运行的验证用例**（843 个），只用 Python 标准库
+`tests/` 下是一套**可重复运行的验证用例**（855 个），只用 Python 标准库
 （`unittest`），与本体一样零依赖。它们把开发过程中一次性做过的验证固化了下来，
 以后改代码可以直接跑，不用重新手工试一遍。
 
 ```bat
-py tests\run_tests.py              :: 全部跑一遍（约 94 秒）
+py tests\run_tests.py              :: 全部跑一遍（约 97 秒）
 py tests\run_tests.py -v           :: 看每个用例的名字与结果
 py tests\run_tests.py -k capture   :: 只跑关心的部分
 py tests\lint_check.py             :: 代码复检（新增问题才退出码 1）
@@ -1029,7 +1054,7 @@ py tests\lint_check.py             :: 代码复检（新增问题才退出码 1�
 | `README.md` | 本文档（**入口**：怎么用） |
 | `CHANGELOG.md` | 版本变更记录（**改了什么**） |
 | `HANDOFF.md` | 开发交接文档（**为什么是这样**：踩过的坑、当前状态、待办。含内部设计讨论 —— 只想用工具的话读 README 就够） |
-| `MCP.md` | 让 AI 客户端通过 **MCP** 接入 WinMon 的**方案**（**阶段 1.5–5 已实现**：只读工具 / 预算 / 直连 / HTTP / 桌面助手） |
+| `MCP.md` | 让 AI 客户端通过 **MCP** 接入 WinMon 的**方案**（**阶段 1.5–6 已实现**：只读工具 / 预算 / 直连 / HTTP / 跟随式助手） |
 | `LICENSE` | MIT 许可证 |
 | `.gitignore` / `.gitattributes` | 版本控制配置：只跟踪"源"；而且**不让 git 改写任何字节**（本项目测试会逐字节核对编码与换行） |
 
@@ -1047,6 +1072,7 @@ py tests\lint_check.py             :: 代码复检（新增问题才退出码 1�
 | `winmon_ai_budget.json` | 用户数据目录 | 预算配置与"今日已重置"时间点（不含任何 key） |
 | `winmon_ai_provider.json` | 用户数据目录 | **可选**的直连 API 配置（模型/地址/`exact_tokens`；API key 只从环境变量读，不写这里） |
 | `winmon_ai_assist.json` | 用户数据目录 | **可选**的 AI 助手设置（值守开关 / 自动解释 / 间隔；默认关闭） |
+| `winmon_ai_chat.jsonl`（+ `.1`） | 用户数据目录 | AI 助手记录：直连问答 / 剪贴板交接 / 用户手动保存的回复（不含 key） |
 | `__pycache__/` | 程序目录 | Python 字节码缓存（解释器自动重建；它必须待在源旁边） |
 
 **“用户数据目录”是哪**：默认 `%LOCALAPPDATA%\WinMon`；设环境变量 `WINMON_DATA_DIR`
@@ -1094,6 +1120,7 @@ Copyright (c) 2026 Ceiling-Crypto
 但只要你把上下文交给 AI（桌面 MCP、HTTP/隧道、剪贴板桥、或「AI 助手」），
 **窗口标题与事件证据就会离开本机**——所以设计上：默认不调模型、
 直连要显式设环境变量、HTTP 只绑回环并要 Bearer token、隧道按需开启、
-AI 助手默认关闭且只在前台变化时调用、恢复预算只能在本机操作。
+AI 助手默认关闭且**只跟随当前 AI**（没有对应 key 就只复制到剪贴板，不联网）、
+恢复预算只能在本机操作。
 窗口标题始终被当作**不可信输入**清洗（提示注入）。
 

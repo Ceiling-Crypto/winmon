@@ -56,6 +56,9 @@ os.environ.setdefault("WINMON_AI_PROVIDER_FILE",
 #: AI 助手的值守设置同样隔离；测试里绝不自动联网
 os.environ.setdefault("WINMON_AI_ASSIST",
                       os.path.join(tempfile.gettempdir(), "winmon-test-assist.json"))
+#: 对话/交接记录也指到临时目录
+os.environ.setdefault("WINMON_AI_CHAT",
+                      os.path.join(tempfile.gettempdir(), "winmon-test-chat.jsonl"))
 #: 测试里默认不做精确分词（否则会真的向智谱发请求）
 os.environ.setdefault("WINMON_AI_EXACT", "0")
 

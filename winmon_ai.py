@@ -1208,13 +1208,21 @@ def format_ai_bar(primary: dict | None, status: dict | None,
              f" · 精确 {int(status.get('tokenizer_tokens', 0) or 0):,}"
              f" · 估算 {int(status.get('estimated_tokens', 0) or 0):,} token")
     if provider_info:
-        model = str(provider_info.get("model") or "模型")
-        if not provider_info.get("enabled"):
-            text += " ｜ 直连未启用"
-        elif not provider_info.get("key_present"):
-            text += f" ｜ {model} 缺 key"
+        follow = str(provider_info.get("follow_ai") or "")
+        if len(follow) > 12:
+            follow = follow[:11] + "…"
+        if provider_info.get("configured") is False:
+            text += (f" ｜ 跟随 {follow}（无直连）" if follow else " ｜ 无直连")
         else:
-            text += f" ｜ {model} 就绪"
+            model = str(provider_info.get("model") or "模型")
+            if not provider_info.get("enabled"):
+                state = "直连未启用"
+            elif not provider_info.get("key_present"):
+                state = "缺 key"
+            else:
+                state = "就绪"
+            text += (f" ｜ 跟随 {follow} → {model} {state}" if follow
+                     else f" ｜ {model} {state}")
     return text
 
 
@@ -1243,6 +1251,114 @@ def format_sessions_detail(res: dict | None) -> str:
     if res.get("ambiguous"):
         lines.append("  注意：前两名分差很小，建议手动指定主 AI")
     return "\n".join(lines)
+
+
+#: AI 对话/交接记录的本地账本上限（超过就轮转到 `.1`）
+CHAT_LOG_MAX_BYTES = 2 * 1024 * 1024
+
+
+def chat_path() -> str:
+    """AI 助手对话/交接记录路径；`WINMON_AI_CHAT` 可覆盖（测试用）。"""
+    override = os.environ.get("WINMON_AI_CHAT", "").strip()
+    return override or core.data_file("winmon_ai_chat.jsonl")
+
+
+def _clip_chat(text: str, limit: int = 4000) -> str:
+    raw = str(text or "")
+    return raw if len(raw) <= limit else raw[:limit] + "…（已截断）"
+
+
+def append_chat(record: dict) -> dict:
+    """
+    记一条"AI 助手"的对话/交接（只写本地用户数据目录，不含 API key）。
+
+    `mode`：
+      · direct —— WinMon 直连了当前 AI 的模型，answer 是真实回复；
+      · handoff —— 只把现场复制给用户正在用的 AI，WinMon 看不到回复；
+      · reply —— 用户从 AI 那边复制回来、手动保存的回复。
+    """
+    now = time.time()
+    row = {
+        "t": round(now, 3),
+        "ts": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(now)),
+        "id": str(record.get("id") or f"h-{int(now * 1000)}"),
+        "mode": str(record.get("mode") or "handoff")[:20],
+        "ai": str(record.get("ai") or "")[:80],
+        "model": str(record.get("model") or "")[:60],
+        "question": _clip_chat(record.get("question"), 2000),
+        "answer": _clip_chat(record.get("answer")),
+        "tokens": max(0, int(record.get("tokens", 0) or 0)),
+        "tokens_in": max(0, int(record.get("tokens_in", 0) or 0)),
+        "tokens_out": max(0, int(record.get("tokens_out", 0) or 0)),
+        "note": str(record.get("note") or "")[:300],
+    }
+    try:
+        core.ensure_data_dir()
+        path = chat_path()
+        parent = os.path.dirname(path)
+        if parent:
+            os.makedirs(parent, exist_ok=True)
+        try:
+            if os.path.getsize(path) > CHAT_LOG_MAX_BYTES:
+                old = path + ".1"
+                try:
+                    os.remove(old)
+                except OSError:
+                    pass
+                os.replace(path, old)
+        except OSError:
+            pass
+        with open(path, "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+    return row
+
+
+def load_chat(limit: int = 50) -> list:
+    """读最近的对话/交接记录（按时间正序）。坏行忽略。"""
+    out: list = []
+    try:
+        with open(chat_path(), encoding="utf-8") as fh:
+            for line in fh:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    row = json.loads(line)
+                except Exception:
+                    continue
+                if isinstance(row, dict):
+                    out.append(row)
+    except OSError:
+        return []
+    out.sort(key=lambda r: float(r.get("t", 0) or 0))
+    return out[-max(1, int(limit)):]
+
+
+def format_chat_record(record: dict) -> str:
+    """把一条记录写成窗口里的一小段人话（纯函数，可单测）。"""
+    row = record or {}
+    stamp = str(row.get("ts") or "")[11:16] or "--:--"
+    ai = str(row.get("ai") or "当前 AI")
+    question = str(row.get("question") or "").strip()
+    answer = str(row.get("answer") or "").strip()
+    mode = str(row.get("mode") or "")
+    if mode == "direct":
+        head = f"[{stamp}] 直连 {ai}"
+        if row.get("model"):
+            head += f"（{row['model']}）"
+        text = f"{head}：{question or '（值守）'}"
+        if answer:
+            text += f"\n{answer}"
+        if row.get("tokens"):
+            text += f"\n— 输入 {row.get('tokens_in', 0)} / 输出 {row.get('tokens_out', 0)}" \
+                    f" = {row.get('tokens')} token（API 回执）"
+        return text
+    if mode == "reply":
+        return f"[{stamp}] {ai} 的回复（手动保存）：\n{answer or '（空）'}"
+    return (f"[{stamp}] 交给 {ai}（剪贴板）：{question or '（现场）'}"
+            f"\n— WinMon 看不到这次回复；可把 AI 的回答复制回来保存。")
 
 
 #: AI 助手（值守）的本地设置默认值。**默认关闭**：它会联网并产生真实费用。

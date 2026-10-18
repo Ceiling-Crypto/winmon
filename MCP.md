@@ -1242,15 +1242,24 @@ WinMon 不捆绑隧道工具，只做三件事：
 | **精确** | 目标模型的分词器（智谱 `POST /paas/v4/tokenizer`） | 模型口径（不是客户端账单） | `tokens` / `model` / `token_source="tokenizer"` |
 | **估算** | 本地启发式（ASCII/4 + CJK/1.6） | ±20% | `tokens` / `token_source="estimated"` |
 
-精确计数的开关在 `winmon_ai_provider.json`：
+精确计数的开关在 `winmon_ai_provider.json`（多 profile 格式，**不再固定 GLM**）：
 
 ```json
-{"kind":"zhipu","model":"glm-5.3","enabled":true,"exact_tokens":true}
+{"follow_detected": true, "active": "zhipu",
+ "profiles": {
+   "zhipu":     {"kind":"zhipu","model":"glm-5.3","api_key_env":"WINMON_AI_API_KEY",
+                 "enabled":true,"exact_tokens":true},
+   "deepseek":  {"kind":"openai","base_url":"https://api.deepseek.com/v1",
+                 "model":"deepseek-chat","api_key_env":"WINMON_DEEPSEEK_API_KEY",
+                 "enabled":true}
+ }
+}
 ```
 
 打开后，MCP 工具结果的 `text + structuredContent` 会先发给智谱分词器数一遍
 （结果按文本哈希缓存，重复上下文不重复联网）；失败自动退回估算。
 **默认关闭**：它会把工具结果（窗口标题等）发给智谱，和"纯本地"是两种取舍。
+`follow_detected` 只影响界面/助手的直连选择，不影响这个分词器开关。
 
 > **仍然拿不到客户端的整段对话账单**：MCP 协议只传工具参数与结果，不传客户端
 > 每次模型调用的 `usage`。所以界面把三栏分开写：
@@ -1313,6 +1322,27 @@ est_tokens ≈ ceil(ascii_chars / 4 + cjk_chars / 1.6 + 24)
 > **AI 用量不写进 `ActionHistory`**（会把它塞爆），单独一个 JSONL；
 > 只有"预算变更 / 用户同意公网暴露 / 直连 API 开关"这类**有后果的动作**才进操作历史。
 
+#### 10.7.5 跟随当前 AI（阶段 6，2026-10-19）
+
+用户指出：**"AI 助手直接写 GLM-5.3，用户不用 GLM 就等同虚设"**。所以直连层改成：
+
+| 当前识别到的 AI | 行为 |
+| --- | --- |
+| 有同名 profile，且 key 可用 | 调用**它自己的模型**，记 `provider` 真实用量 |
+| 有 profile 但缺 key / 未启用 | **不调用任何模型**，把现场复制到剪贴板交接 |
+| 没有 profile（如 Kimi / 文心） | 同上，剪贴板交接；绝不回退到 zhipu |
+| 用户显式 `WINMON_AI_PIN` | 按 pin 的 AI 找 profile（可用来测试别的模型） |
+
+配置结构 `{"follow_detected": true, "profiles": {...}}`；`resolve_for_ai()` 负责
+"名字 → profile"，`profile_key_for_ai()` 覆盖 ChatGPT/Claude/智谱/DeepSeek/Kimi 等。
+`active` 只给 `--ai-ask` 与 MCP 分词器用，不参与跟随。
+
+**关掉对话窗口后怎么留痕**：本地 `winmon_ai_chat.jsonl` 记三类记录：
+`direct`（问题 + 回答 + usage）、`handoff`（交给谁 + 问题 + "看不到回复"）、
+`reply`（用户从 AI 侧复制回来、手动保存的回答）。
+网页端（智谱/ChatGPT/Claude）的对话本体仍在它们账号里，WinMon **读不到**，
+所以不假装知道；只记录自己交出去的内容，并允许把回复粘回来。
+
 ### 10.8 新增的 MCP 面
 
 | 名字 | 类型 | 级别 | 用途 | 是否吃预算 |
@@ -1362,14 +1392,18 @@ est_tokens ≈ ceil(ascii_chars / 4 + cjk_chars / 1.6 + 24)
 > - **4**：`--mcp-http`（只绑 127.0.0.1、Bearer token、Origin 白名单、
 >   可选 `--expire-minutes`）、`--ai-context [--copy]` 剪贴板桥；
 >   **HTTP 是单次 JSON POST 简化版**（不含 SSE / 订阅），隧道需用户自己配；
-> - **5（2026-10-19）**：主界面 AI 状态条（当前 AI + 真实/估算 token + 直连状态）、
+> - **5（2026-10-19）**：主界面 AI 状态条（当前 AI + 真实/精确/估算 + 直连状态）、
 >   `--ai-usage` 先列当前识别再列三栏用量、`_AiUsageWindow` 自动刷新；
 >   `UsageLedger` 新增 `token_source="tokenizer"`（智谱 `/tokenizer` 精确计数，
 >   `exact_tokens` 开关，失败回落估算）；`--ai-assist` / `_AiAssistantWindow`
 >   （读窗口现场 + 真实 usage + 值守 + 自动解释事件）、`winmon_ai_assist.json`；
+> - **6（2026-10-19）**：`follow_detected` + 多 profile（openai / anthropic / zhipu /
+>   deepseek …）；`resolve_for_ai()` 按当前 AI 选模型，**没有配置就只做剪贴板交接，
+>   绝不回退到 GLM**；`winmon_ai_chat.jsonl` 记录 direct / handoff / reply，
+>   AI 助手窗口可"保存 AI 回复"；值守/自动解释只在当前 AI 直连可用时才跑；
 > - 测试：`test_b22`（23）、`test_b23`（15）、`test_b24`（22）、
 >   `test_b25`（15）、`test_b26`（12）、`test_b27`（9）、`test_b28`（2）、
->   `test_b29`（16）；全量 **843 用例**。
+>   `test_b29`（16）、`test_b30`（12）；全量 **855 用例**。
 > - 每日 token 预算默认 **1000 万**（`winmon_ai.DEFAULT_DAILY_TOKEN_BUDGET`）。
 
 ### 10.10 测试策略（不接真 AI 也能测）

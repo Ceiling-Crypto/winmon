@@ -13,10 +13,10 @@
 
 ## [未发布] — 2026-10-19
 
-**AI 工作伴侣（阶段 1.5–5）**：本地识别"正在用哪个 AI"、把本地异常变成事件、
+**AI 工作伴侣（阶段 1.5–6）**：本地识别"正在用哪个 AI"、把本地异常变成事件、
 按需交给 AI（默认不调模型、不联网），并提供用量预算、可选直连与本地 HTTP /
 剪贴板桥；阶段 5 补上**主界面可见的 AI 状态条、真实/精确/估算三栏计量，
-以及真正读取窗口现场的 GLM-5.3 助手**。
+以及跟随当前 AI 的助手**；阶段 6 补上 **多 profile 跟随 + 对话交接留痕**。
 
 ### 新增
 
@@ -44,9 +44,14 @@
   `/api/paas/v4/tokenizer` 精确数 MCP 工具结果（`exact_tokens` 开关、缓存、失败回落）；
   界面/CLI 统一显示 **真实（API 回执）/ 精确（分词器）/ 估算** 三栏。
 - 每日 token 预算默认值定为 **1000 万**。
+- **阶段 6（2026-10-19）**：AI 助手改为**跟随当前 AI**——`follow_detected` + 多 profile
+  （openai / anthropic / zhipu / deepseek …），`resolve_for_ai()` 按识别结果选模型；
+  **没有对应 profile/key 时只做剪贴板交接，绝不回退到 GLM**；
+  `winmon_ai_chat.jsonl` 记录 direct / handoff / reply，窗口里可「保存 AI 回复」，
+  关掉 AI 对话窗口后仍有本地留痕；值守/自动解释只在当前 AI 直连可用时才跑。
 - 测试：`test_b22`（23）、`test_b23`（15）、`test_b24`（22）、`test_b25`（15）、
-  `test_b26`（12）、`test_b27`（9）、`test_b28`（2）、`test_b29`（16）；
-  全量 **843 用例**。
+  `test_b26`（12）、`test_b27`（9）、`test_b28`（2）、`test_b29`（16）、
+  `test_b30`（12）；全量 **855 用例**。
 
 ### 说明
 
@@ -66,7 +71,7 @@
 
 | 项目 | 结果 |
 | --- | --- |
-| `py tests\run_tests.py` | 843 用例，失败 0 / 错误 0 / 跳过 7（约 101 秒，stderr 0 行） |
+| `py tests\run_tests.py` | 855 用例，失败 0 / 错误 0 / 跳过 7（约 97 秒，stderr 0 行） |
 | `py winmon.py --mcp-selftest` | 13/13 OK，退出 0 |
 | `py winmon.py --smoke` | 退出 0，stderr 0 |
 | `--ai-usage` / `--ai-context --copy` | 正常；中文剪贴板实测通过 |
