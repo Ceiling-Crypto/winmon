@@ -34,6 +34,7 @@ WinMon —— Windows 桌面程序实时监控与终止工具（图形界面 + �
 from __future__ import annotations
 
 import ctypes
+import json
 import os
 import queue
 import re
@@ -44,7 +45,9 @@ import time
 import tkinter as tk
 from tkinter import messagebox, ttk
 
+import winmon_ai as ai
 import winmon_core as core
+import winmon_mcp as mcp
 
 APP_NAME = "WinMon"
 #: 正式版本号。2026-10-11 这次「逐文件 SHA256 核对 C/D 两份副本 + 统一测试基线」
@@ -2948,6 +2951,16 @@ class WinMonApp:
         self._video_dialog_open = False
         self._video_after_id = None
 
+        # AI 工作伴侣（阶段 1.5）：前台累计 + 本地事件。只读、不联网、不花 token。
+        self._ai_enabled = True
+        self._ai_pin = os.environ.get("WINMON_AI_PIN", "")
+        self._ai_tracker = ai.AiTracker()
+        self._ai_incidents = ai.IncidentStore(path=ai.incidents_path())
+        self._ai_primary = None
+        # 测试里把 WINMON_AI_NOTIFY 设为 0，避免弹系统通知打扰
+        self._ai_notify_enabled = os.environ.get("WINMON_AI_NOTIFY", "1") not in (
+            "", "0", "false", "False")
+
         self.worker = core.CaptureWorker()
         self.worker.start()
 
@@ -4453,9 +4466,70 @@ class WinMonApp:
             if fg != self._fg_hwnd:
                 self._fg_hwnd = fg
                 self._update_foreground_marks()
+            self._ai_observe_foreground(fg)
         except Exception:
             pass
         self.root.after(700, self._poll_foreground)
+
+    # ------------------------------------------------------------------
+    # AI 工作伴侣（阶段 1.5）：识别主 AI + 本地事件
+    # ------------------------------------------------------------------
+    def _ai_observe_foreground(self, fg: int) -> None:
+        """喂一拍给前台累计器（每 700ms 一次；只记内存，不落盘）。"""
+        tracker = getattr(self, "_ai_tracker", None)
+        if tracker is None:
+            return
+        wi = None
+        try:
+            wi = self.win_by_hwnd.get(fg)
+        except Exception:
+            wi = None
+        key = ai.session_key_for_window(wi) if wi is not None else ""
+        try:
+            tracker.observe(time.monotonic(), key)
+        except Exception:
+            pass
+
+    def _ai_tick(self) -> None:
+        """
+        每 2 秒一拍：算主 AI、跑本地检测器、必要时弹本地提醒。
+
+        刻意**不调用任何模型**：这一步是"稳定提醒"的来源，0 token、不联网。
+        AI 想看这些数据时，由它通过 MCP 来读（见 `winmon_mcp.py`）。
+        """
+        if not getattr(self, "_ai_enabled", False):
+            return
+        try:
+            res = ai.identify_ai_sessions(
+                self.windows, getattr(self, "proc_map", {}) or {},
+                self._ai_tracker, getattr(self, "_fg_hwnd", 0),
+                pin=getattr(self, "_ai_pin", ""))
+            self._ai_primary = res.get("primary")
+            candidates = ai.detect_incidents(
+                self.windows, getattr(self, "proc_map", {}) or {},
+                disk_usage=ai.disk_usage_for_data_dir())
+            fresh = self._ai_incidents.observe(candidates)
+            for inc in fresh:
+                self._ai_notify(inc)
+        except Exception:
+            # 这一层坏了不能影响主界面：静默跳过，下一拍再试
+            pass
+
+    def _ai_notify(self, inc) -> None:
+        """本地提醒：优先托盘气泡；托盘不可用就退回状态栏。"""
+        if not getattr(self, "_ai_notify_enabled", True):
+            return
+        text = ai.incident_notification_text(inc)
+        if getattr(self, "_tray_ok", False) and getattr(self, "_tray", None) is not None:
+            try:
+                if self._tray.notify("WinMon 提醒", text, severity=inc.severity):
+                    return
+            except Exception:
+                pass
+        try:
+            self._set_status(text)
+        except Exception:
+            pass
 
     # ------------------------------------------------------------------
     # 左栏列表：单击切到最前 / 双击最小化↔还原
@@ -5511,6 +5585,8 @@ class WinMonApp:
                 self.refresh_process_tree()
             self._request_preview_frame()
             self._check_idle(self.IDLE_TICK_SECONDS)
+            # AI 工作伴侣：识别主 AI + 本地事件（只读、0 token；提醒走托盘气泡）
+            self._ai_tick()
             # 媒体会话：比界面刷新慢一拍（它要起 PowerShell，约 290ms，在后台线程做）
             now = time.monotonic()
             if now - self._media_last >= MEDIA_POLL_SECONDS:
@@ -6565,6 +6641,56 @@ def smoke_test(seconds: float = 6.0) -> int:
     return 0
 
 
+def ai_sessions_cli(as_json: bool = False) -> int:
+    """
+    命令行：识别"现在在用哪个 AI"（只读，不联网）。
+
+    判据与界面 / MCP 完全同一套；区别是命令行只能看**这一拍**，
+    所以"最近 30 分钟前台时长"是 0 —— 累计时长需要 WinMon 界面在跑。
+    """
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+    res = ai.collect_ai_sessions(pin=os.environ.get("WINMON_AI_PIN", ""))
+    if as_json:
+        print(json.dumps(res, ensure_ascii=False, indent=2))
+        return 0
+    print(ai.format_sessions_text(res))
+    primary = res.get("primary")
+    if primary:
+        print(f"  进程：{primary.get('proc') or '?'}  PID {primary.get('pid')}"
+              f"  来源 {primary.get('source')}")
+        print(f"  资源占比：CPU {primary.get('cpu_share')} / 内存 {primary.get('mem_share')}"
+              f"（只用于并列时打破平局）")
+    for other in (res.get("others") or []):
+        print(f"  候选：{other.get('name')}（{other.get('kind')}，"
+              f"score {other.get('score')}）")
+    if res.get("ambiguous"):
+        print("  注意：前两名分差很小，建议用 WINMON_AI_PIN 或设置里的「主 AI」指定")
+    print("  说明：命令行是一次性查询，看不到「最近 30 分钟前台时长」；"
+          "累计时长需要 WinMon 界面在跑。")
+    return 0
+
+
+def incidents_cli(as_json: bool = False, limit: int = 20) -> int:
+    """命令行：列出本地事件（只读；不写事件文件）。"""
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+    res = ai.collect_incidents(limit=limit)
+    if as_json:
+        print(json.dumps(res, ensure_ascii=False, indent=2))
+        return 0
+    print(ai.format_incidents_text(res.get("incidents") or []))
+    for inc in (res.get("incidents") or [])[:10]:
+        book = inc.get("playbook_id") or ""
+        if book:
+            print(f"      剧本：{book}（用 py winmon.py --mcp-selftest 或 MCP 读取详情）")
+    return 0
+
+
 USAGE_TEXT = """WinMon 1.0 —— 桌面程序实时监控与终止（纯 ctypes + tkinter，零第三方依赖）
 
 用法：python winmon.py [选项]
@@ -6596,6 +6722,13 @@ USAGE_TEXT = """WinMon 1.0 —— 桌面程序实时监控与终止（纯 ctypes
   --smoke               开个隐藏窗口做一次冒烟测试
   --version             打印版本
   -h, --help, /?        显示这份说明
+
+AI / MCP（阶段 1.5，只读）：
+  --ai-sessions         识别现在在用哪个 AI（桌面客户端 / 网页端）
+  --incidents           列出本地事件（无响应窗口 / 磁盘告急 / MCP 工具失败）
+  --mcp-stdio           以 MCP 服务器身份跑在 stdio 上（给 AI 客户端挂）
+  --mcp-selftest        MCP 协议与三个工具的自检（不需要客户端）
+      WINMON_AI_PIN=名字  指定主 AI（环境变量；设置界面在阶段 2.5 接）
 
 示例：
   python winmon.py                     启动界面
@@ -6634,7 +6767,8 @@ def main() -> int:
              "--catalog", "--programs", "--category", "--favorites", "--recent", "--clean",
              "--dry-run", "--yes", "--idle", "--idle-minutes", "--minutes", "--find",
              "--open", "--admin", "--help", "-h", "/?", "-?", "help",
-             "--settings", "--clean-all"}
+             "--settings", "--clean-all",
+             "--ai-sessions", "--incidents", "--mcp-stdio", "--mcp-selftest"}
 
     def _looks_like_flag(a: str) -> bool:
         """像个开关吗？（`-5` 这种**数字**不算 —— 它是 `--idle-minutes -5` 的值。）"""
@@ -6696,6 +6830,15 @@ def main() -> int:
         return selftest()
     if "--smoke" in args:
         return smoke_test()
+    # MCP / AI 伴侣：都必须先于"未知参数"与单实例判断，且不创建 GUI
+    if "--mcp-selftest" in args:
+        return mcp.selftest()
+    if "--mcp-stdio" in args:
+        return mcp.stdio_main()
+    if _has_flag("--ai-sessions"):
+        return ai_sessions_cli(as_json=("--json" in args))
+    if _has_flag("--incidents"):
+        return incidents_cli(as_json=("--json" in args))
     # `--all` 单独用时也走清单（以前只有 --scan/--json/--list 才算，`--all` 会掉进界面）
     if any(a in args for a in ("--scan", "--json", "--list", "--all")):
         return scan_windows(as_json=("--json" in args), show_hidden=("--all" in args))

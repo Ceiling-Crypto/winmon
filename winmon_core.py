@@ -4098,6 +4098,11 @@ class NOTIFYICONDATAW(ctypes.Structure):
                 ("guidItem", ctypes.c_byte * 16), ("hBalloonIcon", w.HICON)]
 
 
+#: 托盘气泡用的标志（`NIF_INFO` 表示 szInfo/szInfoTitle 有效）
+NIF_INFO = 0x10
+NIIF_INFO, NIIF_WARNING, NIIF_ERROR = 0x1, 0x2, 0x3
+
+
 class TrayIcon:
     """
     一个托盘图标：加图标 / 弹右键菜单 / 移除。
@@ -4166,6 +4171,32 @@ class TrayIcon:
         # （有些环境下这个查询 API 被限制，拿它当真会误报失败）
         self.ok = True
         return True, "已放入托盘（双击图标恢复窗口，右键出菜单）"
+
+    def notify(self, title: str = "WinMon", text: str = "", severity: str = "info",
+               timeout_ms: int = 5000) -> bool:
+        """
+        弹一条托盘气泡（Win10/11 上是"通知"）。
+
+        为什么用它当本地提醒：不需要额外窗口、不需要 AI、进程活着就能弹；
+        失败也不影响主流程（调用方自己退回状态栏）。标题与正文都会被截断到
+        `NOTIFYICONDATAW` 的字段长度，避免 ctypes 写入越界。
+        """
+        if not self.ok:
+            return False
+        try:
+            nid = NOTIFYICONDATAW()
+            nid.cbSize = ctypes.sizeof(NOTIFYICONDATAW)
+            nid.hWnd = w.HWND(self.hwnd)
+            nid.uID = self.uid
+            nid.uFlags = NIF_INFO
+            nid.szInfo = (text or "")[:255]
+            nid.szInfoTitle = (title or "WinMon")[:63]
+            nid.dwInfoFlags = {"warn": NIIF_WARNING, "error": NIIF_ERROR}.get(
+                severity, NIIF_INFO)
+            nid.uTimeoutOrVersion = max(1000, min(30000, int(timeout_ms)))
+            return bool(shell32.Shell_NotifyIconW(NIM_MODIFY, ctypes.byref(nid)))
+        except Exception:
+            return False
 
     def remove(self) -> None:
         try:

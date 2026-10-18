@@ -11,6 +11,41 @@
 
 ---
 
+## [未发布] — 2026-10-18
+
+**AI 工作伴侣（阶段 1.5，只读）**：不主动调模型、不联网、不花 token；
+本地识别"正在用哪个 AI"，把本地能确定的异常变成事件并用托盘气泡提醒。
+
+### 新增
+
+- `winmon_ai.py`：AI 会话识别（桌面客户端 / 网页标签）、前台时长累计、Incident
+  检测与状态机、诊断剧本库、token 估算、MCP 父进程识别。
+- `winmon_mcp.py`：MCP stdio 服务器（同时支持 `initialize` 旧时代与
+  `2026-07-28` 新时代），三个只读工具：
+  `winmon_ai_sessions` / `winmon_incidents` / `winmon_playbooks`。
+- 命令行：`--ai-sessions`、`--incidents`、`--mcp-stdio`、`--mcp-selftest`。
+- 界面：每 2 秒跑一次本地事件检测（0 token）；托盘气泡提醒（`TrayIcon.notify`）。
+- 每日 token 预算默认值定为 **1000 万**（估算）；计量与调节器在阶段 2.5。
+- 测试：`test_b22_ai_identity.py`（23）、`test_b23_incidents.py`（15）、
+  `test_b24_mcp_ai_tools.py`（18）；全量 **785 用例**。
+
+### 说明
+
+- 主 AI 判据：**MCP 连接 > 前台时长 > 交互新鲜度 > 用户 pin > 资源占比**；
+  资源占比只用于平局，网页端不可归因、恒为 0。
+- 提醒是**本地**行为：MCP 服务器不能主动推消息，AI 只能按需来读。
+- 仍然只读：没有写工具，也不通过 MCP 修改预算 / 设置 / pin。
+
+### 验证
+
+| 项目 | 结果 |
+| --- | --- |
+| `py tests\run_tests.py` | 785 用例，失败 0 / 错误 0 / 跳过 7（约 95 秒） |
+| `py winmon.py --mcp-selftest` | 12/12 OK，退出 0 |
+| `py winmon.py --smoke` | 退出 0，stderr 0 |
+
+---
+
 ## [1.0.0] — 2026-10-16（收尾清理 2026-10-18）　`git tag v1.0.0`
 
 第一个**打上版本标签**的版本。它同时是"把项目纳入版本控制"的那一版。

@@ -31,8 +31,8 @@
 | **`README.md`**（本文） | **唯一的入口**：怎么用、能做什么、边界在哪、怎么验 | 第一次拿到 WinMon；想知道某个功能怎么操作 |
 | [`CHANGELOG.md`](CHANGELOG.md) | **改了什么**：按版本记功能与修复（含版本号怎么变的） | 想知道这版和上版的差别、某个改动是哪一版进的 |
 | [`HANDOFF.md`](HANDOFF.md) | **为什么是这样**：开发交接文档，2800 行，踩过的坑编号到 120+。**含内部设计讨论**（哪些方案试过、为什么放弃） | **改代码之前**（尤其别重复踩坑）；接手这个项目 |
-| [`MCP.md`](MCP.md) | 让 AI 客户端通过 **MCP** 接入 WinMon 的**方案**（**尚未实现**）；§十 是 2026-10-18 的「AI 工作伴侣」修订（主 AI 识别 / 稳定提醒 / token 预算） | 想用 AI 操作/观察这台机器上的窗口与进程 |
-| [`tests/`](tests) | 可重复运行的验证用例（729 个，纯标准库） | 改完代码跑一遍；想知道某条规矩被谁钉住 |
+| [`MCP.md`](MCP.md) | 让 AI 客户端通过 **MCP** 接入 WinMon 的**方案**（**阶段 1.5 已实现三个只读工具**，其余阶段待做）；§十 是 2026-10-18 的「AI 工作伴侣」修订 | 想用 AI 操作/观察这台机器上的窗口与进程 |
+| [`tests/`](tests) | 可重复运行的验证用例（785 个，纯标准库） | 改完代码跑一遍；想知道某条规矩被谁钉住 |
 | [`LICENSE`](LICENSE) | MIT 许可证 | 想用 / 改 / 分发这份代码 |
 
 一句话：**用**看 README，**对比**看 CHANGELOG，**改**看 HANDOFF，**接 AI** 看 MCP。
@@ -188,7 +188,7 @@ py winmon.py
 ### 跑测试（可选，纯标准库）
 
 ```bat
-py tests\run_tests.py            :: 全部用例（729 个，约 93 秒）
+py tests\run_tests.py            :: 全部用例（785 个，约 95 秒）
 py tests\run_tests.py -v         :: 详细输出
 py tests\run_tests.py -k capture :: 只跑名字里含 capture 的用例
 py tests\run_tests.py --list     :: 只列出会跑哪些用例
@@ -776,9 +776,45 @@ python close_others.py --keep 1234   :: 额外保留某个 PID
 - **什么都没做成时不写操作历史**（没在跑又没勾自动唤醒、或者三步都失败）：
   只在状态栏说一句，免得日志被"其实什么也没发生"的记录塞满。
 
+## AI 工作伴侣（阶段 1.5，只读）
+
+WinMon 带一个**只读**的 AI 接入层：**不主动调模型、不联网、不花 token**。
+它只做两件事：
+
+1. **识别你正在用哪个 AI**（桌面客户端 / 网页标签），并给出置信度与判据；
+2. **把本地能确定的异常变成事件**（无响应窗口、系统盘告急、MCP 工具失败），
+   用托盘气泡提醒；AI 可以按需来读，不读就永远是 0 token。
+
+命令行看一眼（不需要任何 AI 客户端）：
+
+```bat
+py winmon.py --ai-sessions      :: 主 AI + 候选 + 判据（--json 出机器可读版）
+py winmon.py --incidents        :: 本地事件（--json 同理）
+py winmon.py --mcp-selftest     :: MCP 协议与三个工具的自检（不需要客户端）
+py winmon.py --mcp-stdio        :: 以 MCP 服务器身份跑（给 AI 客户端挂）
+```
+
+挂到 Claude Desktop / Cursor（stdio，配置文件里加一段）：
+
+```json
+{"mcpServers":{"winmon":{"command":"python","args":["D:\\winmon\\winmon.py","--mcp-stdio"]}}}
+```
+
+三个工具：`winmon_ai_sessions`（主 AI）、`winmon_incidents`（本地事件）、
+`winmon_playbooks`（诊断剧本）。
+
+判据（与 MCP.md §10.3 一致）：
+**MCP 连接级实锤 > 前台时长 > 交互新鲜度 > 用户 pin > 资源占比**。
+资源占比只用于并列时打破平局；**网页端不可归因，恒为 0**。
+用环境变量 `WINMON_AI_PIN=Claude` 可指定主 AI。
+
+**这一阶段还没有的**（阶段 2.5 / 3.5 / 4）：token 用量账本与预算调节器
+（默认日预算已定为 **1000 万**（估算），调节器待实现）、直连模型 API、
+本地 HTTP / 网页端隧道。完整方案见 [`MCP.md`](MCP.md) §十。
+
 ## 九、测试
 
-`tests/` 下是一套**可重复运行的验证用例**（729 个），只用 Python 标准库
+`tests/` 下是一套**可重复运行的验证用例**（785 个），只用 Python 标准库
 （`unittest`），与本体一样零依赖。它们把开发过程中一次性做过的验证固化了下来，
 以后改代码可以直接跑，不用重新手工试一遍。
 
@@ -903,6 +939,8 @@ py tests\lint_check.py             :: 代码复检（新增问题才退出码 1�
 | --- | --- |
 | `winmon.py` | 图形界面 + 命令行入口 |
 | `winmon_core.py` | 核心层（Win32 采集 / 捕获 / 终止 / 图标 / 程序目录 / 媒体会话 / 视频联动） |
+| `winmon_ai.py` | AI 工作伴侣（阶段 1.5）：识别正在用的 AI / 本地事件 / 诊断剧本（不联网、不调模型） |
+| `winmon_mcp.py` | MCP 服务器（stdio；三个只读工具，供 AI 客户端挂载） |
 | `media_session.ps1` | 系统媒体会话（GSMTC）桥接脚本。PowerShell + Windows 自带的 WinRT 投影，**必须纯 ASCII 无 BOM**（否则 PowerShell 5.1 会按 ANSI 解码、把语法搞坏） |
 | `启动WinMon.bat` | 启动器（菜单式，可自检） |
 | `winmon.ico` | 程序图标（`py tests\make_icon.py` 可重新生成） |
@@ -912,7 +950,7 @@ py tests\lint_check.py             :: 代码复检（新增问题才退出码 1�
 | `README.md` | 本文档（**入口**：怎么用） |
 | `CHANGELOG.md` | 版本变更记录（**改了什么**） |
 | `HANDOFF.md` | 开发交接文档（**为什么是这样**：踩过的坑、当前状态、待办。含内部设计讨论 —— 只想用工具的话读 README 就够） |
-| `MCP.md` | 让 AI 客户端通过 **MCP** 接入 WinMon 的**方案**（**功能尚未实现**，只是设计文档） |
+| `MCP.md` | 让 AI 客户端通过 **MCP** 接入 WinMon 的**方案**（**阶段 1.5 已实现三个只读工具**，其余阶段未实现） |
 | `LICENSE` | MIT 许可证 |
 | `.gitignore` / `.gitattributes` | 版本控制配置：只跟踪"源"；而且**不让 git 改写任何字节**（本项目测试会逐字节核对编码与换行） |
 
@@ -925,6 +963,7 @@ py tests\lint_check.py             :: 代码复检（新增问题才退出码 1�
 | `winmon_history.log`（+ `.1`） | 用户数据目录 | 操作历史日志（超过上限自动轮转） |
 | `winmon_media.jsonl`（+ `.tmp`） | 用户数据目录 | 常驻媒体助手的快照，每几秒一行 |
 | `winmon_error.log` | 用户数据目录 | 仅在启动失败时生成，用于排查 |
+| `winmon_incidents.json` | 用户数据目录 | 本地事件状态（阶段 1.5；同一事件 10 分钟只提醒一次，已恢复的保留 24 小时） |
 | `__pycache__/` | 程序目录 | Python 字节码缓存（解释器自动重建；它必须待在源旁边） |
 
 **“用户数据目录”是哪**：默认 `%LOCALAPPDATA%\WinMon`；设环境变量 `WINMON_DATA_DIR`
