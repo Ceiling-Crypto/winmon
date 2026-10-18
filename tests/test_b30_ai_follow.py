@@ -18,6 +18,7 @@ import json
 import os
 import sys
 import tempfile
+import time
 import unittest
 from unittest import mock
 
@@ -157,12 +158,27 @@ class TestWorkAndBreak(unittest.TestCase):
         self.assertIn("37 分钟", text)
         self.assertIn("0 token", text)
 
-    def test_break_message_day_and_night(self):
+    def test_time_slots_use_24h_clock(self):
         import time
-        day = ai.break_message(time.mktime((2026, 10, 19, 14, 0, 0, 0, 0, -1)), 50)
-        self.assertIn("50 分钟", day)
-        night = ai.break_message(time.mktime((2026, 10, 19, 1, 0, 0, 0, 0, -1)), 50)
-        self.assertTrue(("早点休息" in night) or ("别熬太晚" in night), night)
+        night = ai.time_slot(time.mktime((2026, 10, 19, 1, 54, 0, 0, 0, -1)))
+        self.assertIsNotNone(night)
+        self.assertEqual(night["label"], "深夜")
+        self.assertEqual(night["clock"], "01:54")
+        self.assertIn("01:54", night["message"])
+        self.assertIn("休息", night["message"])
+        morning = ai.time_slot(time.mktime((2026, 10, 19, 7, 30, 0, 0, 0, -1)))
+        self.assertEqual(morning["label"], "早上")
+        self.assertIn("07:30", morning["message"])
+        self.assertIsNone(ai.time_slot(
+            time.mktime((2026, 10, 19, 15, 0, 0, 0, 0, -1))),
+            "15:00 不在提醒时段")
+
+    def test_night_slot_crosses_midnight_once(self):
+        import time
+        before = ai.time_slot(time.mktime((2026, 10, 19, 23, 59, 0, 0, 0, -1)))
+        after = ai.time_slot(time.mktime((2026, 10, 20, 0, 1, 0, 0, 0, -1)))
+        self.assertEqual(before["key"], after["key"],
+                         "23:59 与次日 00:01 必须算同一个深夜时段")
 
     def test_last_input_is_a_number(self):
         import winmon_core as core
@@ -244,37 +260,56 @@ class TestAssistantDoesNotFallback(unittest.TestCase):
 
 
 class TestWellnessTick(unittest.TestCase):
-    def test_local_mode_fires_break_reminder_without_tokens(self):
-        import time
+    def _app(self, mode="local"):
         import winmon
         app = winmon.WinMonApp.__new__(winmon.WinMonApp)
-        app._ai_assist = {"mode": "local", "break_enabled": True,
-                          "break_minutes": 50}
+        app._ai_assist = {"mode": mode, "break_enabled": True}
         app._ai_log_lines = []
         app._ai_assistant_window = None
         app._ai_notify_enabled = False
-        app._work_since = time.time() - 51 * 60
-        app._break_snooze_until = 0.0
-        app._last_break_notice = 0.0
+        app._last_time_slot = ""
+        app._work_since = time.time()
         app._set_status = lambda text: None
+        return app
+
+    def test_clock_slots_fire_once_per_slot(self):
+        import time
+        import winmon
+        app = self._app("local")
+        night = time.mktime((2026, 10, 19, 1, 54, 0, 0, 0, -1))
         with mock.patch.object(winmon.core, "seconds_since_last_input",
                                return_value=0.0):
-            app._ai_wellness_tick()
-        self.assertTrue(any("休息提醒" in line for line in app._ai_log_lines),
+            app._ai_wellness_tick(night)
+        self.assertTrue(any("时间提醒 01:54" in line for line in app._ai_log_lines),
                         app._ai_log_lines)
-        self.assertGreater(app._work_since, time.time() - 5,
-                           "提醒后应重新计时")
+        self.assertTrue(any("深夜" in line for line in app._ai_log_lines))
+        count = len(app._ai_log_lines)
+        with mock.patch.object(winmon.core, "seconds_since_last_input",
+                               return_value=0.0):
+            app._ai_wellness_tick(night + 60)
+        self.assertEqual(len(app._ai_log_lines), count,
+                         "同一时段每天只提醒一次")
+        morning = time.mktime((2026, 10, 19, 7, 30, 0, 0, 0, -1))
+        with mock.patch.object(winmon.core, "seconds_since_last_input",
+                               return_value=0.0):
+            app._ai_wellness_tick(morning)
+        self.assertEqual(len(app._ai_log_lines), count + 1)
+        self.assertTrue(any("早上" in line for line in app._ai_log_lines))
 
-    def test_passive_mode_never_reminds(self):
+    def test_idle_and_passive_do_not_remind(self):
+        import time
         import winmon
-        app = winmon.WinMonApp.__new__(winmon.WinMonApp)
-        app._ai_assist = {"mode": "passive", "break_enabled": True,
-                          "break_minutes": 15}
-        app._ai_log_lines = []
-        app._ai_notify_enabled = False
-        app._work_since = 0.0
-        app._ai_wellness_tick()
-        self.assertEqual(app._ai_log_lines, [])
+        app = self._app("local")
+        night = time.mktime((2026, 10, 19, 1, 54, 0, 0, 0, -1))
+        with mock.patch.object(winmon.core, "seconds_since_last_input",
+                               return_value=400.0):
+            app._ai_wellness_tick(night)
+        self.assertEqual(app._ai_log_lines, [], "离开电脑时不打扰")
+        passive = self._app("passive")
+        with mock.patch.object(winmon.core, "seconds_since_last_input",
+                               return_value=0.0):
+            passive._ai_wellness_tick(night)
+        self.assertEqual(passive._ai_log_lines, [])
 
 
 if __name__ == "__main__":

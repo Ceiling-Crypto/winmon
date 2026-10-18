@@ -2822,22 +2822,12 @@ class _AiAssistantWindow:
         self.mode_combo.pack(side="left", padx=(0, 8))
         self.mode_combo.bind("<<ComboboxSelected>>", lambda _e: self.change_mode())
         self.break_var = tk.BooleanVar(value=bool(assist0.get("break_enabled", True)))
-        ttk.Checkbutton(mode_row, text="休息提醒", variable=self.break_var,
+        ttk.Checkbutton(mode_row, text="按时间提醒（24 小时制）",
+                        variable=self.break_var,
                         command=self.toggle_break).pack(side="left", padx=2)
-        ttk.Label(mode_row, text="每", font=UI_FONT).pack(side="left")
-        self.break_minutes_var = tk.StringVar(
-            value=str(int(assist0.get("break_minutes", 50) or 50)))
-        self.break_combo = ttk.Combobox(
-            mode_row, textvariable=self.break_minutes_var, state="readonly",
-            width=4, values=("30", "45", "50", "60", "90"), font=UI_FONT)
-        self.break_combo.pack(side="left", padx=2)
-        self.break_combo.bind("<<ComboboxSelected>>",
-                              lambda _e: self.change_break_minutes())
-        ttk.Label(mode_row, text="分钟", font=UI_FONT).pack(side="left")
-        ttk.Button(mode_row, text="我休息了", width=9,
-                   command=self.rest_now).pack(side="left", padx=(8, 2))
-        ttk.Button(mode_row, text="稍后 10 分钟", width=12,
-                   command=self.snooze_break).pack(side="left", padx=2)
+        self.time_text = tk.StringVar(value="正在读取时间…")
+        ttk.Label(mode_row, textvariable=self.time_text, font=UI_FONT,
+                  foreground="#555").pack(side="left", padx=(8, 0))
 
         #: 没配 key 时给一个"只用于本次运行"的入口：不写盘、不进日志。
         self.key_row = ttk.Frame(wrap)
@@ -2916,6 +2906,10 @@ class _AiAssistantWindow:
             self.set_work(app._ai_work_text())
         except Exception:
             self.set_work("当前工作：（主界面还没跑采集）")
+        try:
+            self.set_time(app._ai_time_status())
+        except Exception:
+            self.set_time("现在 " + time.strftime("%H:%M") + " · 24 小时制")
 
         records = ai.load_chat(limit=8)
         if records:
@@ -2944,6 +2938,10 @@ class _AiAssistantWindow:
     def set_work(self, text: str) -> None:
         if text:
             self.work_text.set(text)
+
+    def set_time(self, text: str) -> None:
+        if text:
+            self.time_text.set(text)
 
     def show_connect_help(self) -> None:
         """用户点「接入说明」时给出可复制的 MCP 配置（不自动改任何设置）。"""
@@ -2994,25 +2992,8 @@ class _AiAssistantWindow:
 
     def toggle_break(self) -> None:
         data = self.app.set_assist(break_enabled=bool(self.break_var.get()))
-        self.append(f"[休息提醒] {'开' if data.get('break_enabled') else '关'}"
-                    f"（每 {data.get('break_minutes')} 分钟）")
-
-    def change_break_minutes(self) -> None:
-        try:
-            minutes = int(self.break_minutes_var.get())
-        except (TypeError, ValueError):
-            return
-        data = self.app.set_assist(break_minutes=minutes)
-        self.break_minutes_var.set(str(data.get("break_minutes", minutes)))
-        self.append(f"[休息提醒] 间隔改为 {data.get('break_minutes')} 分钟")
-
-    def rest_now(self) -> None:
-        self.app._ai_mark_break()
-        self.append("[休息] 已记录一次休息，连续工作重新计时。")
-
-    def snooze_break(self) -> None:
-        self.app._ai_snooze_break(10)
-        self.append("[休息] 10 分钟后再提醒。")
+        self.append(f"[时间提醒] {'开' if data.get('break_enabled') else '关'}"
+                    "（按 24 小时制时段：深夜/早上/中午/傍晚）")
 
     def use_key(self) -> None:
         """把用户粘进来的 key 放进**本进程**的对应环境变量（不写任何文件）。"""
@@ -3465,10 +3446,10 @@ class WinMonApp:
         #: 本次运行真正调用了多少次模型 / 花了多少 token（界面必须能看见）
         self._ai_session_calls = 0
         self._ai_session_tokens = 0
-        #: 工作节律（本地计时，0 token）
+        #: 工作节律（本地计时，0 token；只用于"当前工作"显示，不用于提醒）
         self._work_since = time.time()
-        self._last_break_notice = 0.0
-        self._break_snooze_until = 0.0
+        #: 按 24 小时制的时间段提醒：记录已提醒过的时段 key（每天每段一次）
+        self._last_time_slot = str(self._ai_assist.get("last_time_slot") or "")
         # 测试里把 WINMON_AI_NOTIFY 设为 0，避免弹系统通知打扰
         self._ai_notify_enabled = os.environ.get("WINMON_AI_NOTIFY", "1") not in (
             "", "0", "false", "False")
@@ -5178,51 +5159,48 @@ class WinMonApp:
         except Exception:
             return "当前工作：（读取失败；WinMon 不会因此调用模型）"
 
-    def _ai_wellness_tick(self) -> None:
+    def _ai_wellness_tick(self, now: float | None = None) -> None:
         """
-        本地休息提醒：0 token、不调用模型、不抢焦点。
+        本地休息提醒：**按当前时间（24 小时制）**，不是按用了多久。
 
-        只在"本地提醒 / 主动 AI"模式下生效；离开电脑超过 5 分钟自动重新计时。
+        时段（每个时段每天只提醒一次）：
+          22:00–05:59 深夜 / 06:00–08:59 早上 / 11:00–13:59 中午 / 17:00–19:59 傍晚。
+        其它时间不提醒；离开电脑超过 5 分钟时不打扰（回来后仍会补这一次）。
         """
         assist = getattr(self, "_ai_assist", {}) or {}
         if assist.get("mode") not in ("local", "active"):
             return
         if not assist.get("break_enabled", True):
             return
-        now = time.time()
-        if now < getattr(self, "_break_snooze_until", 0.0):
-            return
+        now = time.time() if now is None else float(now)
         try:
-            idle = core.seconds_since_last_input()
+            if core.seconds_since_last_input() >= 300:
+                return
         except Exception:
-            idle = 0.0
-        if idle >= 300:
-            self._work_since = now
+            pass
+        slot = ai.time_slot(now)
+        if not slot:
             return
+        if slot.get("key") == getattr(self, "_last_time_slot", ""):
+            return
+        self._last_time_slot = str(slot.get("key") or "")
         try:
-            minutes = max(15, int(assist.get("break_minutes", 50)))
-        except (TypeError, ValueError):
-            minutes = 50
-        if now - self._work_since < minutes * 60:
-            return
-        text = ai.break_message(now, minutes)
-        self._ai_notify_text("该休息一下了", text, "info")
-        self._ai_log(f"[休息提醒] {text}")
-        self._last_break_notice = now
-        self._work_since = now
+            self._ai_assist = ai.save_assist(
+                {**self._ai_assist, "last_time_slot": self._last_time_slot})
+        except Exception:
+            pass
+        text = str(slot.get("message") or "")
+        self._ai_notify_text(f"休息提醒（{slot.get('label')}）", text, "info")
+        self._ai_log(f"[时间提醒 {slot.get('clock')}] {text}")
 
-    def _ai_mark_break(self) -> None:
-        """用户点了"我休息了"：重新开始计时。"""
-        self._work_since = time.time()
-        self._break_snooze_until = 0.0
-        self._ai_log("[休息] 已记录一次休息，连续工作时间重新开始。")
-        self._set_status("已记录休息：连续工作时间重新开始")
-
-    def _ai_snooze_break(self, minutes: int = 10) -> None:
-        """稍后提醒（本地，不改变 AI 调用）。"""
-        self._break_snooze_until = time.time() + max(1, int(minutes)) * 60
-        self._ai_log(f"[休息] {minutes} 分钟后再提醒。")
-        self._set_status(f"休息提醒已推迟 {minutes} 分钟")
+    def _ai_time_status(self) -> str:
+        """界面上的"现在几点 / 当前时段"，24 小时制。"""
+        now = time.time()
+        slot = ai.time_slot(now)
+        clock = time.strftime("%H:%M", time.localtime(now))
+        if not slot:
+            return f"现在 {clock} · 不在提醒时段"
+        return f"现在 {clock} · {slot.get('label')}"
 
     def _ai_log(self, text: str) -> None:
         """AI 助手的运行记录：窗口开着就追加，没开也留在内存里（最多 200 条）。"""
@@ -5355,6 +5333,7 @@ class WinMonApp:
             try:
                 win.set_header(self._ai_header_text())
                 win.set_work(self._ai_work_text())
+                win.set_time(self._ai_time_status())
             except Exception:
                 pass
         assist = getattr(self, "_ai_assist", {}) or {}
@@ -5414,16 +5393,14 @@ class WinMonApp:
     def set_assist(self, enabled: bool | None = None,
                    auto_explain: bool | None = None,
                    mode: str | None = None,
-                   break_enabled: bool | None = None,
-                   break_minutes: int | None = None) -> dict:
-        """改助手模式/值守/休息提醒（界面调用；只写本地设置文件）。"""
+                   break_enabled: bool | None = None) -> dict:
+        """改助手模式/值守/时间提醒（界面调用；只写本地设置文件）。"""
         data = dict(getattr(self, "_ai_assist", {}) or {})
         old_mode = str(data.get("mode") or "local")
         if mode is not None:
             data["mode"] = str(mode)
         if mode is not None and str(mode) != old_mode:
             self._work_since = time.time()
-            self._break_snooze_until = 0.0
         if enabled is not None:
             data["enabled"] = bool(enabled)
             if enabled:
@@ -5433,8 +5410,6 @@ class WinMonApp:
             data["auto_explain"] = bool(auto_explain)
         if break_enabled is not None:
             data["break_enabled"] = bool(break_enabled)
-        if break_minutes is not None:
-            data["break_minutes"] = int(break_minutes)
         self._ai_assist = ai.save_assist(data)
         return self._ai_assist
 
@@ -5534,6 +5509,7 @@ class WinMonApp:
                 win.top.focus_force()
                 win.set_header(self._ai_header_text())
                 win.set_work(self._ai_work_text())
+                win.set_time(self._ai_time_status())
                 return
             except Exception:
                 self._ai_assistant_window = None

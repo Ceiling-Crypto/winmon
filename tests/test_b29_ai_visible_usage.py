@@ -237,10 +237,8 @@ class TestAssistSettings(unittest.TestCase):
         self.assertEqual(saved["interval_seconds"], 60, "间隔必须夹到 ≥60 秒")
         loaded = ai.load_assist()
         self.assertTrue(loaded["auto_explain"])
-        ai.save_assist({"interval_seconds": 99999, "break_minutes": 5})
-        after = ai.load_assist()
-        self.assertEqual(after["interval_seconds"], 3600)
-        self.assertEqual(after["break_minutes"], 15, "休息间隔夹到 ≥15 分钟")
+        ai.save_assist({"interval_seconds": 99999})
+        self.assertEqual(ai.load_assist()["interval_seconds"], 3600)
         local = ai.save_assist({"mode": "local", "enabled": True,
                                 "auto_explain": True})
         self.assertFalse(local["enabled"], "切回本地提醒必须关掉自动调用开关")
@@ -339,7 +337,7 @@ class TestAssistantWindow(unittest.TestCase):
                         "follow_ai": "DeepSeek", "model": "deepseek-chat"}
 
             def set_assist(self, enabled=None, auto_explain=None, mode=None,
-                           break_enabled=None, break_minutes=None):
+                           break_enabled=None):
                 if mode is not None:
                     self._ai_assist["mode"] = mode
                 if enabled is not None:
@@ -348,8 +346,6 @@ class TestAssistantWindow(unittest.TestCase):
                     self._ai_assist["auto_explain"] = bool(auto_explain)
                 if break_enabled is not None:
                     self._ai_assist["break_enabled"] = bool(break_enabled)
-                if break_minutes is not None:
-                    self._ai_assist["break_minutes"] = int(break_minutes)
                 return dict(self._ai_assist)
 
             def ai_assistant_request(self, question="", force_handoff=False):

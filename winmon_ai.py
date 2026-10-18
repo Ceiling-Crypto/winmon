@@ -1451,7 +1451,7 @@ def describe_work(windows: list, foreground_hwnd: int = 0,
             side.append(f"{getattr(w, 'real_name', '') or getattr(w, 'proc', '?')}「{t}」")
         lines.append("旁边：" + "；".join(side))
     if work_minutes:
-        lines.append(f"连续工作：约 {int(work_minutes)} 分钟（本地统计，0 token）")
+        lines.append(f"本次会话：约 {int(work_minutes)} 分钟（只显示，不用于提醒；0 token）")
     else:
         lines.append("本地读取：0 token；需要 AI 解释时再把现场交给它")
     tip = {"编程": "编程场景：WinMon 只读窗口，不抢焦点、不自动调用模型；"
@@ -1487,7 +1487,7 @@ DEFAULT_ASSIST = {
     "interval_seconds": 300,
     "auto_explain": False,
     "break_enabled": True,
-    "break_minutes": 50,
+    "last_time_slot": "",
 }
 
 
@@ -1515,16 +1515,12 @@ def load_assist() -> dict:
     data["enabled"] = bool(raw.get("enabled", False))
     data["auto_explain"] = bool(raw.get("auto_explain", False))
     data["break_enabled"] = bool(raw.get("break_enabled", True))
+    data["last_time_slot"] = str(raw.get("last_time_slot") or "")[:40]
     try:
         interval = int(raw.get("interval_seconds", DEFAULT_ASSIST["interval_seconds"]))
     except (TypeError, ValueError):
         interval = DEFAULT_ASSIST["interval_seconds"]
     data["interval_seconds"] = max(60, min(3600, interval))
-    try:
-        minutes = int(raw.get("break_minutes", DEFAULT_ASSIST["break_minutes"]))
-    except (TypeError, ValueError):
-        minutes = DEFAULT_ASSIST["break_minutes"]
-    data["break_minutes"] = max(15, min(240, minutes))
     return data
 
 
@@ -1538,16 +1534,13 @@ def save_assist(data: dict) -> dict:
         clean["enabled"] = bool(data.get("enabled", clean["enabled"]))
         clean["auto_explain"] = bool(data.get("auto_explain", clean["auto_explain"]))
         clean["break_enabled"] = bool(data.get("break_enabled", clean["break_enabled"]))
+        clean["last_time_slot"] = str(data.get("last_time_slot",
+                                              clean.get("last_time_slot", "")))[:40]
         try:
             interval = int(data.get("interval_seconds", clean["interval_seconds"]))
         except (TypeError, ValueError):
             interval = clean["interval_seconds"]
         clean["interval_seconds"] = max(60, min(3600, interval))
-        try:
-            minutes = int(data.get("break_minutes", clean["break_minutes"]))
-        except (TypeError, ValueError):
-            minutes = clean["break_minutes"]
-        clean["break_minutes"] = max(15, min(240, minutes))
         if clean["mode"] != "active":
             # 只读/本地提醒下不应留下"自动值守"的旧开关，避免误以为会调用
             clean["enabled"] = False
@@ -1563,13 +1556,43 @@ def save_assist(data: dict) -> dict:
     return clean
 
 
-def break_message(now: float, minutes: int) -> str:
-    """休息提醒的本地文案（0 token；区分白天/深夜）。"""
-    hour = time.localtime(now).tm_hour
-    clock = time.strftime("%H:%M", time.localtime(now))
-    if hour >= 23 or hour < 6:
-        return f"现在 {clock} 了，已经连续工作 {int(minutes)} 分钟；早点休息，别熬太晚。"
-    return f"已经连续工作 {int(minutes)} 分钟，起来走动一下、喝口水吧。"
+#: 按**当前时间（24 小时制）**触发的休息提醒。
+#: 不是"用了多久"，而是"现在处在一天里的哪个时段"；每个时段每天只提醒一次。
+#: 深夜时段跨午夜（22:00–05:59），用开始日期做 key，避免 23:59/00:00 连续提醒。
+TIME_SLOTS = (
+    ("night", 22, 6, "深夜", "现在 {clock}，深夜了；该休息了，别熬太晚。"),
+    ("morning", 6, 9, "早上", "现在 {clock}，早上好；先喝口水、吃早饭，再开始今天的活。"),
+    ("noon", 11, 14, "中午", "现在 {clock}，中午了；起来吃饭、午休一下。"),
+    ("evening", 17, 20, "傍晚", "现在 {clock}，傍晚了；收个尾，准备吃饭/下班。"),
+)
+
+
+def time_slot(now: float | None = None) -> dict | None:
+    """
+    当前 24 小时制时间落在哪个提醒时段；不在任何时段返回 None。
+
+    返回 `{"id","label","clock","message","key"}`。`key` 含时段开始日期，
+    调用方用它保证"每个时段每天只提醒一次"。
+    """
+    now = time.time() if now is None else float(now)
+    lt = time.localtime(now)
+    hour = lt.tm_hour
+    clock = time.strftime("%H:%M", lt)
+    for slot_id, start, end, label, template in TIME_SLOTS:
+        if slot_id == "night":
+            matched = hour >= start or hour < end
+        else:
+            matched = start <= hour < end
+        if not matched:
+            continue
+        base = now
+        if slot_id == "night" and hour < end:
+            base = now - 86400          # 午夜后仍算"昨夜"这个时段
+        day = time.strftime("%Y-%m-%d", time.localtime(base))
+        return {"id": slot_id, "label": label, "clock": clock,
+                "message": template.format(clock=clock),
+                "key": f"{slot_id}:{day}"}
+    return None
 
 
 def build_work_context(windows: list, procs: dict | None = None,
