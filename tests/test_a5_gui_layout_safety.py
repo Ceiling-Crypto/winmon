@@ -83,10 +83,8 @@ class TestMainWindowLayout(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
-        try:
-            cls.root.destroy()
-        except Exception:
-            pass
+        # 先取消挂起的 after（搜索防抖等），再销毁窗口
+        h.destroy_root(cls.root)
         try:
             cls._data_tmp.cleanup()
         except Exception:
@@ -392,10 +390,7 @@ class TestTerminateSafety(unittest.TestCase):
 
     @classmethod
     def tearDownClass(cls):
-        try:
-            cls.root.destroy()
-        except Exception:
-            pass
+        h.destroy_root(cls.root)
         try:
             cls._data_tmp.cleanup()
         except Exception:

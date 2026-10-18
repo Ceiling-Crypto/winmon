@@ -3,14 +3,14 @@
 > 用途：在新的对话里快速恢复上下文。读这一份即可继续开发。
 > **正式发布名 `winmon1.0`**（`APP_VER = "1.0"`，查版本：`py winmon.py --version`）。
 > **先读 §一点五「WinMon 的定位与能力边界」** —— 输入注入已明确不再投入。
-> 代码状态：**582 个测试用例全绿**（约 82 秒）+ 代码复检 0 新增问题、
-> 自检 5/5、界面冒烟通过、
-> 桌面快捷方式可用、程序目录端到端可用（91 项）、
+> 代码状态：**729 个测试用例全绿**（约 93 秒）+ 代码复检 0 新增问题（基线为空）、
+> 自检 8/8、界面冒烟通过、
+> 桌面快捷方式可用、程序目录端到端可用、
 > 视频联动 = **监视当前窗口 / 停止监视 / 直接关闭视频**（自动识别与「用链接打开」已删掉）、
 > 媒体 = 会话曲目/状态 + **会话命令（能回读核对）** + 客户端标题兜底、
 > 「清理程序文件」。
 
-## 〇、新对话从这里开始（第一屏 · 2026-10-13 更新）
+## 〇、新对话从这里开始（第一屏 · 2026-10-18 更新）
 
 > **一句话**：WinMon 是一个**零第三方依赖**的 Windows 监控工具（`ctypes` + `tkinter`），
 > 定位是**看见层 + 有限控制层** —— 把"谁在占资源、谁在放什么"摊开给你看，
@@ -20,10 +20,10 @@
 
 | | |
 | --- | --- |
-| 测试 | **677 用例全绿**（`py tests\run_tests.py`，约 94 秒；含 4 条按环境 skip） |
-| 代码复检 | `py tests\lint_check.py` → **新增问题 0**（基线 1 处已知死代码，见 §四） |
-| 自检 / 冒烟 | `py winmon.py --selftest` 5/5 通过；`--smoke` 通过 |
-| 规模 | `winmon_core.py` ~6600 行 / `winmon.py` ~6800 行 / 测试 18 个文件 |
+| 测试 | **729 用例全绿**（`py tests\run_tests.py`，约 93 秒；含 7 条按环境 skip） |
+| 代码复检 | `py tests\lint_check.py` → **新增问题 0**（基线已清空，见 §四） |
+| 自检 / 冒烟 | `py winmon.py --selftest` 8/8 通过；`--smoke` 通过 |
+| 规模 | `winmon_core.py` ~6700 行 / `winmon.py` ~7000 行 / 测试 34 个文件（21 个测试模块） |
 | 运行方式 | `py winmon.py`（GUI）或双击「WinMon 程序监控」快捷方式；**单实例**：第二个实例会把已有窗口带到前台后自己退出 |
 | 窗口尺寸 | 设计稿 **1280×800**，开窗时**按 DPI 缩放**（本机 150% → 1920×1200；见 §9.15 第 14 条） |
 | 数据文件 | `winmon_settings.json`（界面偏好/收藏）、`winmon_history.log`（操作留痕）、`winmon_catalog.json`（程序目录缓存）、`winmon_media.jsonl`（媒体快照缓存，可删） |
@@ -72,7 +72,7 @@
 2. **托盘右键加播放控制**（上一首/播放暂停/下一首）+ 显示当前曲名，不用切回主窗口；
 3. **测试提速**：729 用例 93 秒里，`test_b5`/`test_b6` 的"真开窗+真抓画面"占大头，
    可给它们打标记 + `run_tests.py --fast`；
-4. **GUI 拆分**：`winmon.py` 已 6400 行，可按标签页拆包（注意 §§布局不变量与 lint 的 200 行阈值）。
+4. **GUI 拆分**：`winmon.py` 已 7000 行，可按标签页拆包（注意 §§布局不变量与 lint 的 200 行阈值）。
 
 > **关于"两份副本"**：这个项目早期在两处工作区各有一份拷贝。2026-10-11 用 SHA256
 > 逐文件比对过，结论是：这里这份是另一份的**严格超集**（对方多出来的文件 = 0 个；
@@ -98,10 +98,10 @@
 
 | 文件 | 行数级 | 作用 |
 | --- | --- | --- |
-| `winmon_core.py` | ~4700 | **核心层**：Win32 采集/捕获/终止/图标/程序目录/媒体会话/视频来源与视频操作/可清理文件。不依赖 tkinter，可当库用 |
-| `winmon.py` | ~4100 | GUI（5 个标签页）+ 命令行入口 |
+| `winmon_core.py` | ~6700 | **核心层**：Win32 采集/捕获/终止/图标/程序目录/媒体会话/视频来源与视频操作/可清理文件。不依赖 tkinter，可当库用 |
+| `winmon.py` | ~7000 | GUI（5 个标签页）+ 命令行入口 |
 | `media_session.ps1` | ~230 | 系统媒体会话（GSMTC）桥接脚本（PowerShell + Windows 自带 WinRT 投影；**必须纯 ASCII 无 BOM**） |
-| `tests/` | 30 个 .py | **可重复运行的测试**（729 用例，纯 unittest） + 开发辅助工具 + `lint_check.py` / `lint_baseline.txt` |
+| `tests/` | 34 个 .py | **可重复运行的测试**（729 用例，纯 unittest） + 开发辅助工具 + `lint_check.py` / `lint_baseline.txt` |
 | `启动WinMon.bat` | — | 菜单式启动器（纯 ASCII，避免批处理编码问题） |
 | `scan_windows.py` | — | 命令行窗口清单 |
 | `close_others.py` | — | 批量关闭除当前窗口外的窗口 |
@@ -1469,6 +1469,101 @@ README 另新增「十三、隐私：它会不会把你的东西发出去？」�
     分帧是**按行**而不是 `Content-Length`。写方案前必须联网核对规范原文
     （规范页 URL 后面加 `.md` 能拿到完整原文）。这条留给"真的实现 MCP"那一轮。
 
+### 9.19 「先解决剩下的代码问题」：死代码清除 + 退出噪音修复 + GitHub 前置条件审计（**2026-10-18 第四轮**）
+
+用户这一轮的四句话：
+
+1. 先解决**仍然存在的代码问题**；
+2. 能简化/清除的代码就**执行**，但**不得影响 WinMon 的运行与运行框架**；
+3. **MCP 接入等他决议**（本轮没有动 `MCP.md` 的任何方案结论）；
+4. 检查 **GitHub 前置条件**是否达标 —— 达标后**由他自己上传**（仓库里仍没有 remote）。
+
+#### 一、删掉的死代码（一行都不参与运行）
+
+| 位置 | 内容 | 为什么能删 |
+| --- | --- | --- |
+| `winmon_core.py` 476–617 行 | `二之二、开始菜单快捷方式解析（IShellLink COM 接口）`整段：`resolve_shortcut()` + `_GUID` / `_IShellLinkWVtbl` / `_IShellLinkW` + 4 个 CLSID/IID 常量（共 142 行） | 全项目没有调用点（`lint_check` 基线里唯一一条就是它）。真正解析快捷方式的是 `resolve_shortcuts()`（PowerShell `WScript.Shell`），**没动** |
+| `winmon.py` | `CATEGORY_ALL = "全部类别"` | 类别筛选改成多选后，这个"不过滤"选项没有引用 |
+| `winmon_core.py` | `_LOCAL_KINDS = ("local",)` | 写死的"本地播放器"类别元组，没有引用 |
+| `winmon_core.py` | `WM_TRAY_COMMAND` | 托盘菜单命令改为在主窗口过程里直接处理，这个"转发消息号"没用了 |
+| `winmon.py` `idle_cli()` | `threshold = max(1, int(minutes)) * 60` | 算了不用（打印用的是 `minutes`） |
+| `tests/` | 4 份重复的 `_shutdown(app)`（test_b3 / test_b8 两处 / test_b10） | 合并成 `_helpers.shutdown_app(app)`，收尾顺序只在一处维护 |
+
+效果：`winmon_core.py` **309,275 → 302,278 字节（−142 行）**；`tests/lint_baseline.txt`
+**清空**（那份"已知且接受"清单现在一条都不需要）；`lint_check.py` 仍是**新增问题 0**。
+
+> 为什么不把 `resolve_shortcut()` 当"坑 11 的参照实现"留着：坑本身已经写在 §三（坑 11），
+> 连"`GetPath` 返回 S_OK 但写回垃圾值、已改用 PowerShell 解析"的结论都在。
+> 公开仓库里留 140 行不参与运行的 COM 代码，只会让读者以为那里有功能。
+
+#### 二、修掉的两个真缺陷（用户能感知）
+
+1. **托盘轮询链会翻倍**：`_hide_to_tray()` 以前无条件 `after(400, _poll_tray)`，而
+   `_poll_tray` 自己也会接着排下一次 —— 每"隐藏 → 恢复 → 再隐藏"一次就多一条 400ms
+   轮询链，定时器越积越多。现在由 `_schedule_tray_poll()` 用 `_tray_after_id` 保证
+   **只有一条**，`_teardown_tray()` 会把它取消。
+2. **退出时 Tcl 往 stderr 打一串错误**（`invalid command name "..._pump_frames"` /
+   `"..._poll_tray"` / `"...apply_filter"`）：`quit_app()` 在 `root.destroy()` 之前没有
+   取消挂起的 `after`。现在 `_cancel_pending_after()` 统一收掉，`--smoke` 收尾走同一套；
+   `ProgramCatalogPane` 的 `after(1500, apply_filter)` 也补了 id（`_apply_after`）与
+   "已销毁"守门（`_destroyed`），后台线程晚到的收尾不会再往已销毁的 root 上排定时器。
+
+**实测对比**：全量测试的 stderr 从**成百行** Tcl 噪音降到 **0 行**；
+`--selftest` / `--smoke` 的 stderr 也都是 0。
+
+#### 三、文档与帮助同步（"文档里写着"这一类错）
+
+- README：用例数 **715 → 729**（两处）、HANDOFF 行数与坑编号；
+- HANDOFF：第一屏的 582 → 729、自检 5/5 → 8/8、规模数字、§一 表格行数、§六/§七 的 715 / 677；
+- `MCP.md` 里两处 715 → 729（只改数字，**方案结论没动**）；
+- `--help` 补上 `--clean --yes` 与 `--clean --yes --settings`：这两条能力一直存在，
+  但帮助里没写，等于没人会发现。
+
+#### 四、验收（本轮实测）
+
+| 项 | 结果 |
+| --- | --- |
+| `py tests\run_tests.py` | **729 用例，失败 0 / 错误 0 / 跳过 7**（92 秒）✅ |
+| stderr 噪音 | **0 行**（改动前是成片的 `invalid command name`）✅ |
+| `py tests\lint_check.py` | 退出 0，**新增问题 0**，基线为空 ✅ |
+| `py winmon.py --selftest` | **8/8**，退出 0，stderr 0 ✅ |
+| `py winmon.py --smoke` | 退出 0，三张截图 1940×1255，stderr 0 ✅ |
+| 命令行 | `--version` / `--help` / `--clean` / `--idle` / `--catalog` 全部退出 0；`--nope` 仍按约定退出 2 ✅ |
+| 程序目录 | 跑完测试/自检/冒烟后，顶层仍只有源与文档；运行时数据都在 `%LOCALAPPDATA%\WinMon` ✅ |
+
+#### 五、GitHub 前置条件审计（结论：**达标，等你 push**）
+
+| 检查 | 结果 |
+| --- | --- |
+| 许可证 | `LICENSE` = MIT（`Copyright (c) 2026 Ceiling-Crypto`），README 有「十二、许可」✅ |
+| 提交元数据 | 所有提交（含本轮）的作者/提交者全是 GitHub noreply，**没有私人邮箱** ✅ |
+| 标签 | 附注标签 `v1.0.0`（tagger = Ceiling-Crypto）；**本轮已移到第 4 个提交上**（用户拍板，见本节末）✅ |
+| 分支 / remote | 默认分支 `main`；**没有 remote**（按约定由你添加）✅ |
+| 历史干净 | 从 HEAD 与全部历史里都搜不到 `screenshot*` / `*.bak` / `*.log` / `_backup*` / `*.ppm` / `*.pyc` ✅ |
+| 大文件 | 最大的跟踪文件是 `winmon.py` 341 KB；`.git` 共 4.05 MiB（178 个松散对象）—— 远低于 GitHub 的限制，**不需要 LFS** ✅ |
+| 编码 / 换行 | 49 个跟踪文件全部纯 LF、无 BOM（`winmon.ico` 是二进制）✅ |
+| 隐私 | 跟踪文件里没有硬路径 / 用户名 / 令牌 / QQ 邮箱；`tests/check_playback_rate.py` 用的是 `os.path.join(HOME, "AppData", ...)` 这类**相对 HOME** 的写法 ✅ |
+| 文档链接 | 四份文档里 14 个相对链接全部指向真实文件 ✅ |
+| 忽略规则 | `.gitignore` 覆盖运行时数据、截图、`*.bak`；跑完测试 `git status` 仍干净 ✅ |
+| 克隆验证 | `git clone D:\winmon C:\tmp\winmon-clone` → `--version` / `--selftest`（8/8）/ `--smoke` 全部通过，跑完 `git status --short` 为空 ✅ |
+
+> 还没做的一步是 **加 remote + push**（按约定由用户执行）。提交/标签按用户拍板：
+> **新增第 4 个提交，并把附注标签 `v1.0.0` 移到它上面** —— 仓库从未 push 过，
+> 所以移动标签不会影响任何人；这样"v1.0.0 = 可发布状态"包含本轮修复。
+
+#### 六、本轮新增的坑
+
+120. **`after()` 不记 id，就等于没打算取消它**：`destroy()` 之后 Tcl 还会派发已排的定时器，
+     往 stderr 打 `invalid command name "..."`。更阴的是**单模块跑看不出来** ——
+     要等后面的模块新建 Tk 时才会被泵出来，所以"单跑是绿的"完全不能证明没问题。
+     → 每个 `after` 要么是一次性且立即执行，要么把 id 存下来、在销毁前取消。
+121. **同一段收尾逻辑抄多份，等于把"顺序约定"拆散**：`test_b3` / `test_b8`（两处）/
+     `test_b10` 各有一份 `_shutdown`，谁改了顺序另外几份不会跟着变 —— 这类问题的表现是
+     "随机红灯"，而不是稳定失败。→ 合成 `_helpers.shutdown_app()` 一处维护。
+122. **死代码的"参照价值"应该留在文档，不该留在仓库**：`resolve_shortcut()` 作为坑 11
+     的参照实现留了几个月，实际没有任何调用点。要记一条坑，用**文字 + 可复现命令**
+     （§三 坑 11 已经写了），不要把不参与运行的代码留在公开仓库里误导读者。
+
 ## 三、踩过的坑（**最重要，别重复踩**）
 
 ### 编码类（最容易毁掉成果）
@@ -2129,9 +2224,10 @@ py tests\lint_check.py           :: 代码复检（退出码 1 = 有新增问题
   基线条目失效时会提醒删掉。
 - 退出码：**有新增问题才 1**，所以"无新增问题"可以机械判定了。
 
-结果：32 处噪音 → **2 处真实发现**（都是真的全项目没人用，已按"有意保留"写进基线）：
-`winmon_core.resolve_shortcut()`（IShellLinkW 实验，见坑 11）与
-`tests/_helpers.pick_window_for_pid()`（备用辅助）。
+结果：32 处噪音 → **1 处真实发现**（`winmon_core.resolve_shortcut()`；
+`tests/_helpers.pick_window_for_pid()` 后来被多个测试用到，不再算死代码）。
+那一处已于 **2026-10-18 随死代码清理删除**，`tests/lint_baseline.txt` 现在是**空的**
+（见 §9.19）—— 也就是说以后 lint 一旦报"可能死代码"，就是真新增的。
 
 ---
 
@@ -2178,7 +2274,7 @@ py tests\lint_check.py           :: 代码复检（退出码 1 = 有新增问题
    把 `WinMonApp` 瘦成协调者。拆分时注意那些布局不变量（见坑 21~24），
    以及 `lint_check.py` 的"函数过长"（>200 行）阈值 —— `_build_ui` 已经贴着线走了，
    当时就是靠把视频联动那三行拆成 `_build_video_bars()` 才压下去的。
-5. **测试提速**：~~244 用例 17 秒~~ → 现在 **715 用例约 92 秒**。
+5. **测试提速**：~~244 用例 17 秒~~ → 现在 **729 用例约 93 秒**。
    变慢的是 `test_b5`/`test_b6` 里"真开窗、真抓画面、真关窗"的端到端用例
    （每次要采 2 秒画面，这是必要的 —— 播放判定本来就靠画面变化）。
    想快可以给它们打 `slow` 标记，`run_tests.py` 加 `--fast` 跳过
@@ -2186,9 +2282,9 @@ py tests\lint_check.py           :: 代码复检（退出码 1 = 有新增问题
 6. **补 GUI 交互测试**：目前 GUI 测试集中在布局与筛选逻辑，
    可以补"右键菜单""双击启动""历史导出"等动作的用例（用 FakeApp 替身即可）。
 7. ~~**修 lint_check 的误报**~~ **已做**（见 §四「lint_check 为什么曾经没用」）：
-   32 处噪音 → 2 处真实发现。剩下的建议：如果决定删掉
-   `resolve_shortcut()`（80 行 IShellLinkW 实验）与 `pick_window_for_pid()`，
-   把 `tests/lint_baseline.txt` 清空即可。
+   32 处噪音 → 1 处真实发现；**2026-10-18 已删掉 `resolve_shortcut()`（142 行，
+   连同 IShellLink COM 那一整段），`tests/lint_baseline.txt` 清空**。
+   `pick_window_for_pid()` 被 8 处测试用到，**保留**。
 
 **P2 · 体验细节**
 8. **程序目录**：右键菜单（加星 / 设为类别 / 打开 / 定位）、"最近使用"显示相对时间已做，
@@ -2701,7 +2797,7 @@ C 盘那份**保持原样、一字未改**（用户 2026-10-11 确认：暂不�
 
 > 继续开发 **WinMon 1.0（`winmon1.0`）** —— Windows 程序监控与终止工具，纯标准库，在 `项目根目录\`。
 > 请先读 `HANDOFF.md` 和 `README.md`，然后跑 `py tests\run_tests.py`
-> 确认基线是 **677 用例全绿**（需要哔哩哔哩/UIA 页面的用例会按需 skip）、
+> 确认基线是 **729 用例全绿**（需要哔哩哔哩/UIA 页面的用例会按需 skip）、
 > `py tests\lint_check.py` 退出码 0（无新增问题）。
 > **版式要另眼验收**：测试进程没有开 DPI 感知，布局检查看不到"真实 DPI 下控件被挤没"，
 > 所以改动界面后还要跑一次 `py winmon.py --smoke` 看截图（见 §9.15 第 14 条）。

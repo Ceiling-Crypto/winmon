@@ -1076,7 +1076,7 @@ class TestListClickEndToEnd(unittest.TestCase):
                 os.environ.pop("WINMON_SETTINGS", None)
             else:
                 os.environ["WINMON_SETTINGS"] = old_env
-        self.addCleanup(self._shutdown, app)
+        self.addCleanup(h.shutdown_app, app)
         app.follow_selection.set(False)          # 别让预览抢活儿
 
         def row_of(name: str) -> str:
@@ -1234,21 +1234,6 @@ class TestListClickEndToEnd(unittest.TestCase):
         self.assertEqual(failed, [], f"端到端有步骤失败：{failed}")
         print("\n  端到端：" + " · ".join(f"{n} ✓" for n, _ok, _d in self.results))
 
-    @staticmethod
-    def _shutdown(app) -> None:
-        """按 on_close 的顺序收尾（与 test_b3 同样的做法）。"""
-        try:
-            app.on_close()
-        except Exception:
-            try:
-                app.worker.shutdown()
-            except Exception:
-                pass
-            try:
-                app.root.destroy()
-            except Exception:
-                pass
-
 
 class TestTreeKeepsUserExpansion(unittest.TestCase):
     """
@@ -1284,29 +1269,12 @@ class TestTreeKeepsUserExpansion(unittest.TestCase):
                 os.environ.pop("WINMON_SETTINGS", None)
             else:
                 os.environ["WINMON_SETTINGS"] = old
-        self.addCleanup(self._shutdown, self.app)
+        self.addCleanup(h.shutdown_app, self.app)
 
     @staticmethod
     def _safe_destroy(root) -> None:
-        """清理时销毁 root；`_shutdown` 可能已经销毁过了，别再抛出来。"""
-        try:
-            root.destroy()
-        except Exception:
-            pass
-
-    @staticmethod
-    def _shutdown(app) -> None:
-        try:
-            app.on_close()
-        except Exception:
-            try:
-                app.worker.shutdown()
-            except Exception:
-                pass
-            try:
-                app.root.destroy()
-            except Exception:
-                pass
+        """清理时销毁 root；`h.shutdown_app` 可能已经销毁过了，别再抛出来。"""
+        h.destroy_root(root)
 
     @staticmethod
     def _fake_window(hwnd: int, pid: int, title: str, proc: str) -> core.WinInfo:

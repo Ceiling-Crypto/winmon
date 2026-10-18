@@ -127,9 +127,6 @@ PREVIEW_SIZES = [
 ]
 FPS_CHOICES = [("极省电 1 FPS", 1000), ("省电 2 FPS", 500), ("流畅 5 FPS", 200),
                ("很流畅 10 FPS", 100), ("极流畅 15 FPS", 66), ("最高 30 FPS", 33)]
-#: 程序目录的类别筛选下拉框里代表"不过滤"的那一项
-CATEGORY_ALL = "全部类别"
-
 # ---- 左栏列表的点击手势（`plan_window_click` 的返回值）----
 CLICK_NONE = "none"          # 什么都不做（单击只选中）
 CLICK_ACTIVATE = "activate"  # 还原并切到最前
@@ -1194,6 +1191,10 @@ class ProgramCatalogPane:
         self.category_row: dict[str, str] = {}          # 分组表头 iid -> 类别 key
         self._icon_cache: dict[str, tk.PhotoImage | None] = {}
         self._search_after = None
+        #: 批量启动后"过 1.5 秒重排一次"的 after id（销毁时要一起取消）
+        self._apply_after = None
+        #: 界面已销毁（后台线程里的收尾回调据此收手，别再往已销毁的 root 上排定时器）
+        self._destroyed = False
         self.frame = ttk.Frame(parent)
         self.frame.rowconfigure(3, weight=1)
         self.frame.columnconfigure(0, weight=1)
@@ -1637,17 +1638,22 @@ class ProgramCatalogPane:
         """
         取消挂起的定时回调。
 
-        为什么需要：搜索框用的是 `after(220, apply_filter)` 防抖。
-        窗口关闭（或测试里销毁 Tk 根窗口）之后这个回调如果还在队列里，
+        为什么需要：搜索框用的是 `after(220, apply_filter)` 防抖；
+        批量启动的收尾还会另排一个 `after(1500, apply_filter)`。
+        窗口关闭（或测试里销毁 Tk 根窗口）之后这些回调如果还在队列里，
         Tk 会报 `invalid command name "...apply_filter"` —— 本身无害，
         但会让测试输出很吵，也掩盖真正的错误。
         """
-        if getattr(self, "_search_after", None):
+        self._destroyed = True
+        for attr in ("_search_after", "_apply_after"):
+            after_id = getattr(self, attr, None)
+            if after_id is None:
+                continue
             try:
-                self.app.root.after_cancel(self._search_after)
+                self.app.root.after_cancel(after_id)
             except Exception:
                 pass
-            self._search_after = None
+            setattr(self, attr, None)
         try:
             self.frame.destroy()
         except Exception:
@@ -1723,10 +1729,12 @@ class ProgramCatalogPane:
         "允许例外"，而那正是它存在的意义。挪出来两边都干净。
         """
         self.app._save_settings_soon()
+        if getattr(self, "_destroyed", False):
+            return
         try:
-            self.app.root.after(1500, self.apply_filter)
+            self._apply_after = self.app.root.after(1500, self.apply_filter)
         except Exception:
-            pass
+            self._apply_after = None
 
     def launch_with_args_dialog(self) -> None:
         """
@@ -3037,6 +3045,8 @@ class WinMonApp:
         self._tray = None
         self._tray_window = None
         self._tray_polling = False
+        #: 托盘轮询的 after id（只允许一条轮询链，见 `_schedule_tray_poll`）
+        self._tray_after_id = None
         self._tray_ok = False
         # ---- 闲置程序（"开着不用、白耗电"）----
         # 和上面同样的理由放在这里：所有"手工搭 app"的测试都调 `_init_video_vars()`
@@ -6026,7 +6036,7 @@ class WinMonApp:
             self._tray = tray
             self._tray_ok = True
             self._tray_polling = True
-            self.root.after(400, self._poll_tray)
+            self._schedule_tray_poll()
             return True
         except Exception as exc:
             self._tray_error = f"{type(exc).__name__}: {exc}"
@@ -6056,7 +6066,7 @@ class WinMonApp:
                     return False, self._tray_error or "托盘初始化失败"
             self.root.withdraw()
             self._tray_polling = True
-            self.root.after(400, self._poll_tray)
+            self._schedule_tray_poll()
             return True, "已隐藏到托盘（双击图标恢复窗口，右键出菜单）"
         except Exception as exc:
             try:
@@ -6092,6 +6102,7 @@ class WinMonApp:
         Tk 的消息循环看不到它。所以托盘窗口把用户的选择 `PostMessage` 到主窗口，
         这里每隔 400ms 用 `PeekMessageW` 把它取走 —— 简单、可靠、不动 Tk 的循环。
         """
+        self._tray_after_id = None          # 本次回调已经触发，挂起标记作废
         if not self._tray_polling:
             return
         try:
@@ -6105,7 +6116,23 @@ class WinMonApp:
         except Exception as exc:
             self._set_status(f"托盘消息处理失败：{type(exc).__name__}: {exc}")
         if self._tray_polling:
-            self.root.after(400, self._poll_tray)
+            self._schedule_tray_poll()
+
+    def _schedule_tray_poll(self) -> None:
+        """
+        排下一次托盘轮询 —— **只在没有挂起的时候排**。
+
+        为什么必须这样（真缺陷）：`_hide_to_tray()` 以前无条件
+        `after(400, _poll_tray)`，而 `_poll_tray` 自己也会接着排。于是每
+        "隐藏 → 恢复 → 再隐藏"一次就多一条轮询链，托盘消息的处理频率成倍增加
+        （用户看不出来，但定时器越积越多）。现在只保留一条。
+        """
+        if getattr(self, "_tray_after_id", None) is not None:
+            return
+        try:
+            self._tray_after_id = self.root.after(400, self._poll_tray)
+        except Exception:
+            self._tray_after_id = None
 
     def restore_from_tray(self) -> None:
         """
@@ -6126,7 +6153,13 @@ class WinMonApp:
         self._request_preview_frame(force=True)
 
     def _teardown_tray(self) -> None:
-        """退出前收拾托盘：摘图标 + 恢复被接管的窗口过程。"""
+        """退出前收拾托盘：停轮询 + 摘图标 + 恢复被接管的窗口过程。"""
+        if getattr(self, "_tray_after_id", None) is not None:
+            try:
+                self.root.after_cancel(self._tray_after_id)
+            except Exception:
+                pass
+            self._tray_after_id = None
         if self._tray is not None:
             try:
                 self._tray.remove()
@@ -6141,6 +6174,25 @@ class WinMonApp:
             self._tray_window = None
         self._tray_ok = False
         self._tray_polling = False
+
+    def _cancel_pending_after(self) -> None:
+        """
+        取消所有还没触发的 `after` 定时器 —— 销毁窗口**之前**必须做。
+
+        不做会怎样（实测）：`root.destroy()` 之后 Tcl 还会派发这些定时器，
+        向 stderr 打印一串 `invalid command name "..._pump_frames"` / `"..._poll_tray"`
+        —— 从控制台启动、退出时就会看到这些红字。它们都是"每 10~1200ms 再排一次"
+        的常驻循环，窗口都销毁了，收掉才是正确语义。
+        """
+        try:
+            pending = self.root.tk.splitlist(self.root.tk.call("after", "info"))
+        except Exception:
+            return
+        for after_id in pending:
+            try:
+                self.root.after_cancel(after_id)
+            except Exception:
+                pass
 
     def quit_app(self) -> None:
         """真正退出：收托盘图标 → 停常驻助手 → 存设置 → 收线程与句柄 → 销毁窗口。"""
@@ -6167,6 +6219,7 @@ class WinMonApp:
             self.worker.shutdown()
         except Exception:
             pass
+        self._cancel_pending_after()
         self.root.destroy()
 
     def action_settings(self) -> None:
@@ -6489,6 +6542,16 @@ def smoke_test(seconds: float = 6.0) -> int:
         except Exception as exc:
             print(f"截图失败：{type(exc).__name__}: {exc}")
 
+    def finish() -> None:
+        """收尾：停媒体助手 → 取消所有定时器 → 销毁窗口。
+
+        不取消定时器的话，`destroy()` 之后 Tcl 还会派发它们，
+        控制台上会出现一串 `invalid command name "..._pump_frames"`。
+        """
+        core.stop_media_snapshot_helper()
+        app._cancel_pending_after()
+        root.destroy()
+
     root.after(700, pick_target)
     root.after(2000, lambda: app.notebook.select(1))
     root.after(3400, lambda: snapshot("gallery"))
@@ -6496,8 +6559,7 @@ def smoke_test(seconds: float = 6.0) -> int:
     root.after(4800, lambda: snapshot("proctree"))
     root.after(5000, lambda: app.notebook.select(0))
     root.after(int(seconds * 1000) - 800, lambda: snapshot("preview"))
-    root.after(int(seconds * 1000),
-               lambda: (core.stop_media_snapshot_helper(), root.destroy()))
+    root.after(int(seconds * 1000), finish)
     root.mainloop()
     print(f"后台捕获线程共取帧 {app.worker.frames_done} 次；句柄池 {core._PROC_POOL.stats()}")
     return 0
@@ -6524,6 +6586,8 @@ USAGE_TEXT = """WinMon 1.0 —— 桌面程序实时监控与终止（纯 ctypes
 维护：
   --clean               列出程序自己产生的可清理文件（只看，不删）
       --dry-run           同上（显式表示"只看"）
+      --yes               真的清理"默认勾选"的那些（缓存 / 日志 / 字节码 / 临时导出）
+      --settings          清理时连设置一起清（**会丢收藏 / 分类 / 最近使用**）
   --idle                列出"长期开着、没人用"的程序（只看，不关）
       --idle-minutes N    换个闲置阈值（分钟）
 
@@ -6860,6 +6924,8 @@ def find_programs_cli(keyword: str) -> int:
         if it.args:
             print(f"      参数：{it.args}")
     return 0
+
+
 def idle_cli(minutes: int = 30, sample_seconds: float = 1.0) -> int:
     """
     列出"开着不用"的程序（判定与界面完全同一套逻辑）。
@@ -6877,7 +6943,6 @@ def idle_cli(minutes: int = 30, sample_seconds: float = 1.0) -> int:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
     except Exception:
         pass
-    threshold = max(1, int(minutes)) * 60
     # 命令行是一次性判定，所以自己采一次 CPU（界面上那份是跟着刷新周期滚动的）
     pids = {wi.pid for wi in core.enum_windows(include_cloaked=True)
             if not wi.is_hidden_surface}

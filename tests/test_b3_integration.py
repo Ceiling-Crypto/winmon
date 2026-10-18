@@ -146,23 +146,8 @@ class TestFullAppStartup(unittest.TestCase):
                 os.environ.pop("WINMON_SETTINGS", None)
             else:
                 os.environ["WINMON_SETTINGS"] = old
-        self.addCleanup(self._shutdown, app)
+        self.addCleanup(h.shutdown_app, app)
         return root, app
-
-    @staticmethod
-    def _shutdown(app):
-        """按 on_close 的顺序收尾：存设置 → 关句柄池 → 停捕获线程 → 销毁窗口。"""
-        try:
-            app.on_close()
-        except Exception:
-            try:
-                app.worker.shutdown()
-            except Exception:
-                pass
-            try:
-                app.root.destroy()
-            except Exception:
-                pass
 
     def test_creates_all_panes_and_widgets(self):
         root, app = self._make_app()

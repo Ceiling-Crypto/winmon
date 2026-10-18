@@ -99,6 +99,65 @@ def needs_tk(obj):
     return unittest.skipUnless(ok, why or "需要 tkinter 图形会话")(obj)
 
 
+def cancel_after(root) -> None:
+    """
+    取消一个 Tk 根窗口上所有挂起的 `after` 回调。
+
+    为什么需要：测试里很多地方直接 `root.destroy()`。只要还有挂起的定时器
+    （搜索防抖 / 批量启动收尾 / 托盘轮询 / 预览泵），Tcl 会在窗口销毁后继续派发，
+    往 stderr 打印 `invalid command name "…apply_filter"`。单个模块跑时通常看不到，
+    **全量跑时后面的模块一建 Tk 就会把这些残留打出来** —— 真红灯会被它淹掉。
+    """
+    try:
+        pending = root.tk.splitlist(root.tk.call("after", "info"))
+    except Exception:
+        return
+    for after_id in pending:
+        try:
+            root.after_cancel(after_id)
+        except Exception:
+            pass
+
+
+def destroy_root(root) -> None:
+    """先取消定时器、再销毁根窗口（测试收尾统一走这里）。"""
+    cancel_after(root)
+    try:
+        root.destroy()
+    except Exception:
+        pass
+
+
+def shutdown_app(app) -> None:
+    """
+    收尾一个真的 `WinMonApp`：按 `on_close` 的顺序走（存设置 → 停线程 → 销毁窗口）。
+
+    原来 test_b3 / test_b8（两处）/ test_b10 各自抄了一份，顺序稍有出入就会
+    变成"设置没存 / 线程没停 / 定时器还在跑"的随机红灯 —— 所以只留这一处。
+
+    兜底分支必须**先取消定时器再 destroy**：否则 Tcl 会在窗口销毁后继续派发
+    `_pump_frames` / `_poll_tray` 这些常驻循环，往 stderr 打印
+    `invalid command name "…"`（全量跑时上百行噪音，真红灯会被淹掉）。
+    """
+    try:
+        app.on_close()
+        return
+    except Exception:
+        pass
+    try:
+        app.worker.shutdown()
+    except Exception:
+        pass
+    try:
+        app._cancel_pending_after()
+    except Exception:
+        pass
+    try:
+        app.root.destroy()
+    except Exception:
+        pass
+
+
 # ---------------------------------------------------------------------------
 # 临时子进程
 # ---------------------------------------------------------------------------

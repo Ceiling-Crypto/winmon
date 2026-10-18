@@ -474,148 +474,6 @@ except OSError:  # pragma: no cover
 
 
 # ============================================================================
-# 二之二、开始菜单快捷方式解析（IShellLink COM 接口）
-# ============================================================================
-#
-# 要"精准打开某个程序"，最可靠的入口是开始菜单的 .lnk 快捷方式：
-# 它记录了目标 exe、启动参数、工作目录，正是资源管理器双击时的行为。
-# 用 COM 的 IShellLinkW + IPersistFile 直接解析，比额外启动 PowerShell 快得多，
-# 而且不依赖目标机器是否允许执行脚本。
-
-class _GUID(ctypes.Structure):
-    _fields_ = [("Data1", w.DWORD), ("Data2", w.WORD), ("Data3", w.WORD),
-                ("Data4", ctypes.c_ubyte * 8)]
-
-    def __init__(self, guid_str: str = "", **kw):
-        super().__init__(**kw)
-        if guid_str:
-            import uuid
-            u = uuid.UUID(guid_str)
-            self.Data1, self.Data2, self.Data3 = u.time_low, u.time_mid, u.time_hi_version
-            self.Data4 = (ctypes.c_ubyte * 8)(*u.bytes[8:])
-
-
-CLSID_ShellLink = "{00021401-0000-0000-C000-000000000046}"
-IID_IShellLinkW = "{000214F9-0000-0000-C000-000000000046}"
-IID_IPersistFile = "{0000010B-0000-0000-C000-000000000046}"
-CLSCTX_INPROC_SERVER = 1
-
-
-class _IShellLinkWVtbl(ctypes.Structure):
-    _fields_ = [
-        ("QueryInterface", ctypes.c_void_p),
-        ("AddRef", ctypes.c_void_p),
-        ("Release", ctypes.c_void_p),
-        # IUnknown..IShellLinkW 之间还有 GetClassID（IPersist 的方法）
-        ("GetClassID", ctypes.c_void_p),
-        ("GetPath", ctypes.c_void_p),
-        ("GetIDList", ctypes.c_void_p),
-        ("SetIDList", ctypes.c_void_p),
-        ("GetDescription", ctypes.c_void_p),
-        ("SetDescription", ctypes.c_void_p),
-        ("GetWorkingDirectory", ctypes.c_void_p),
-        ("SetWorkingDirectory", ctypes.c_void_p),
-        ("GetArguments", ctypes.c_void_p),
-        ("SetArguments", ctypes.c_void_p),
-        ("GetHotkey", ctypes.c_void_p),
-        ("SetHotkey", ctypes.c_void_p),
-        ("GetShowCmd", ctypes.c_void_p),
-        ("SetShowCmd", ctypes.c_void_p),
-        ("GetIconLocation", ctypes.c_void_p),
-        ("SetIconLocation", ctypes.c_void_p),
-        ("SetRelativePath", ctypes.c_void_p),
-        ("Resolve", ctypes.c_void_p),
-        ("SetPath", ctypes.c_void_p),
-    ]
-
-
-class _IShellLinkW(ctypes.Structure):
-    _fields_ = [("lpVtbl", ctypes.POINTER(_IShellLinkWVtbl))]
-
-
-def resolve_shortcut(path: str) -> dict:
-    """
-    解析一个 .lnk 快捷方式，返回 {target, args, workdir, ok}。
-
-    用 IShellLinkW::GetPath，其中 SLGP_UNCPRIORITY(0x4) 会优先返回 UNC 路径，
-    对网络快捷方式更友好；本机快捷方式不受影响。
-    """
-    out = {"target": "", "args": "", "workdir": "", "ok": False}
-    ole32 = ctypes.WinDLL("ole32")
-    ole32.CoInitializeEx.argtypes = [ctypes.c_void_p, w.DWORD]
-    ole32.CoUninitialize.argtypes = []
-    ole32.CoCreateInstance.argtypes = [ctypes.POINTER(_GUID), ctypes.c_void_p, w.DWORD,
-                                       ctypes.POINTER(_GUID), ctypes.POINTER(ctypes.c_void_p)]
-    ole32.CoCreateInstance.restype = ctypes.c_long
-    ole32.CoInitializeEx(None, 2)        # APARTMENTTHREADED
-
-    link = ctypes.c_void_p()
-    try:
-        clsid = _GUID(CLSID_ShellLink)
-        iid = _GUID(IID_IShellLinkW)
-        # CoCreateInstance 的第 4 个形参是 POINTER(c_void_p)，因此这里必须用
-        # 通用的 c_void_p 接收，之后再 cast 成接口指针。
-        # 直接传 POINTER(IShellLinkW) 会抛 ArgumentError
-        # （被本函数的 except 吞掉，表现为"解析全部失败"）——这是踩过的坑。
-        rc = ole32.CoCreateInstance(ctypes.byref(clsid), None, CLSCTX_INPROC_SERVER,
-                                    ctypes.byref(iid), ctypes.byref(link))
-        if rc != 0 or not link:
-            return out
-        link_ptr = ctypes.cast(link, ctypes.POINTER(_IShellLinkW))
-        vtbl = link_ptr.contents.lpVtbl.contents
-        # 转成 IPersistFile 再 Load
-        iid_pf = _GUID(IID_IPersistFile)
-        pf = ctypes.c_void_p()
-        query_interface = ctypes.WINFUNCTYPE(ctypes.c_long, ctypes.c_void_p,
-                                             ctypes.POINTER(_GUID),
-                                             ctypes.POINTER(ctypes.c_void_p))(vtbl.QueryInterface)
-        if query_interface(link, ctypes.byref(iid_pf), ctypes.byref(pf)) != 0 or not pf:
-            return out
-        try:
-            # IPersistFile 的 vtable：IUnknown 3 个 + GetClassID + IsDirty + Load + Save...
-            pf_vtbl = ctypes.cast(pf, ctypes.POINTER(ctypes.POINTER(ctypes.c_void_p))).contents
-            load = ctypes.WINFUNCTYPE(ctypes.c_long, ctypes.c_void_p, w.LPCWSTR, w.DWORD)(pf_vtbl[5])
-            if load(pf, path, 0) != 0:
-                return out
-            # 注意：输出参数必须用 POINTER(c_wchar) 而不是 w.LPWSTR。
-            # ctypes 对 LPWSTR 参数会把传入的 c_wchar_Array 再取一次地址
-            # （等于把"指针的地址"交给函数），结果写到错误的内存里，
-            # 表现为调用成功但缓冲区一直是垃圾数据 —— 这是本函数早期踩过的坑。
-            buf = ctypes.create_unicode_buffer(32768)
-            get_path = ctypes.WINFUNCTYPE(ctypes.c_long, ctypes.c_void_p,
-                                          ctypes.POINTER(ctypes.c_wchar),
-                                          ctypes.c_int, w.DWORD)(vtbl.GetPath)
-            if get_path(link, buf, 32768, 0x4) == 0:
-                out["target"] = buf.value
-            abuf = ctypes.create_unicode_buffer(4096)
-            get_args = ctypes.WINFUNCTYPE(ctypes.c_long, ctypes.c_void_p,
-                                          ctypes.POINTER(ctypes.c_wchar),
-                                          ctypes.c_int)(vtbl.GetArguments)
-            if get_args(link, abuf, 4096) == 0:
-                out["args"] = abuf.value
-            wbuf = ctypes.create_unicode_buffer(4096)
-            get_wd = ctypes.WINFUNCTYPE(ctypes.c_long, ctypes.c_void_p,
-                                        ctypes.POINTER(ctypes.c_wchar),
-                                        ctypes.c_int)(vtbl.GetWorkingDirectory)
-            if get_wd(link, wbuf, 4096) == 0:
-                out["workdir"] = wbuf.value
-            out["ok"] = bool(out["target"])
-        finally:
-            release = ctypes.WINFUNCTYPE(ctypes.c_ulong, ctypes.c_void_p)(pf_vtbl[2])
-            release(pf)
-    except Exception:
-        return out
-    finally:
-        if link:
-            try:
-                release = ctypes.WINFUNCTYPE(ctypes.c_ulong, ctypes.c_void_p)(vtbl.Release)
-                release(link)
-            except Exception:
-                pass
-    return out
-
-
-# ============================================================================
 # 二、窗口与进程采集
 # ============================================================================
 
@@ -4094,8 +3952,6 @@ def set_autostart(enabled: bool) -> tuple[bool, str]:
 # ---- 托盘（通知区域图标）----
 #: 给托盘图标发消息的自定义消息号（WM_APP + 1）
 WM_TRAY = 0x8001
-#: 托盘消息窗口**转给主程序**的自定义消息（用户选了菜单项）
-WM_TRAY_COMMAND = 0x8002
 NIM_ADD, NIM_MODIFY, NIM_DELETE = 0, 1, 2
 NIF_MESSAGE, NIF_ICON, NIF_TIP = 0x01, 0x02, 0x04
 #: 鼠标消息
@@ -5304,9 +5160,6 @@ VIDEO_APP_TABLE: dict[str, tuple[str, str]] = {
     "qqplayer.exe": ("QQ 影音", "local"),
     "tmph.exe": ("迅雷影音", "local"),
 }
-
-#: 本地播放器要求"给文件才能精准打开"，其余类别可以给链接
-_LOCAL_KINDS = ("local",)
 
 
 def classify_video_app(proc: str, path: str = "") -> tuple[str, str]:

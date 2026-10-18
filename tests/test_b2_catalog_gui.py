@@ -104,10 +104,7 @@ class TestCatalogPane(unittest.TestCase):
             cls.pane.destroy()
         except Exception:
             pass
-        try:
-            cls.root.destroy()
-        except Exception:
-            pass
+        h.destroy_root(cls.root)
 
     def setUp(self):
         self.app.program_prefs = core.CatalogPrefs()
@@ -484,7 +481,7 @@ class TestCatalogPaneSettingsRoundTrip(unittest.TestCase):
                         except Exception:
                             pass
         finally:
-            root.destroy()
+            h.destroy_root(root)
 
 
 if __name__ == "__main__":

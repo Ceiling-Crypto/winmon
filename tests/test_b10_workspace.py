@@ -643,22 +643,8 @@ class TestWorkspaceOnRealApp(unittest.TestCase):
                 os.environ.pop("WINMON_SETTINGS", None)
             else:
                 os.environ["WINMON_SETTINGS"] = old
-        self.addCleanup(self._shutdown, app)
+        self.addCleanup(h.shutdown_app, app)
         return root, app
-
-    @staticmethod
-    def _shutdown(app):
-        try:
-            app.on_close()
-        except Exception:
-            try:
-                app.worker.shutdown()
-            except Exception:
-                pass
-            try:
-                app.root.destroy()
-            except Exception:
-                pass
 
     def _spawn(self, title):
         path = os.path.join(self.tmp.name, f"{title}.py")
