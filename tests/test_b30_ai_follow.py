@@ -124,6 +124,50 @@ class TestBarFollowsAi(unittest.TestCase):
         self.assertIn("跟随 智谱清言 → glm-5.3 就绪", text)
         self.assertIn("真实 441", text)
 
+    def test_bar_shows_mcp_connection_and_mode(self):
+        text = ai.format_ai_bar(
+            {"name": "Claude Desktop", "kind": "desktop", "proc": "claude.exe"},
+            {"provider_tokens": 20, "tokenizer_tokens": 30, "estimated_tokens": 0},
+            {"configured": True, "follow_ai": "Claude Desktop",
+             "model": "claude-3-5-haiku-latest", "enabled": True, "key_present": True},
+            connection={"kind": "mcp", "client": "Claude Desktop",
+                        "ts": "2026-10-19T01:33:00", "calls": 3},
+            mode="local")
+        self.assertIn("已接入 MCP（Claude Desktop）", text)
+        self.assertIn("01:33", text)
+        self.assertIn("本地提醒", text)
+
+
+class TestWorkAndBreak(unittest.TestCase):
+    def test_work_kind_and_summary(self):
+        class W:
+            def __init__(self, hwnd, proc, title, cpu=0):
+                self.hwnd, self.proc, self.title = hwnd, proc, title
+                self.real_name = proc
+                self.cpu = cpu
+                self.mem_private_kb = 1024
+                self.is_hidden_surface = False
+        wins = [W(1, "Code.exe", "winmon.py — Visual Studio Code", 5),
+                W(2, "msedge.exe", "Python 文档", 1)]
+        self.assertEqual(ai.work_kind_of("Code.exe", "x"), "编程")
+        self.assertEqual(ai.work_kind_of("winword.exe", "文档"), "文档")
+        text = ai.describe_work(wins, 1, work_minutes=37)
+        self.assertIn("当前工作：编程", text)
+        self.assertIn("Visual Studio Code", text)
+        self.assertIn("37 分钟", text)
+        self.assertIn("0 token", text)
+
+    def test_break_message_day_and_night(self):
+        import time
+        day = ai.break_message(time.mktime((2026, 10, 19, 14, 0, 0, 0, 0, -1)), 50)
+        self.assertIn("50 分钟", day)
+        night = ai.break_message(time.mktime((2026, 10, 19, 1, 0, 0, 0, 0, -1)), 50)
+        self.assertTrue(("早点休息" in night) or ("别熬太晚" in night), night)
+
+    def test_last_input_is_a_number(self):
+        import winmon_core as core
+        self.assertGreaterEqual(core.seconds_since_last_input(), 0.0)
+
 
 class TestHandoffPrompt(unittest.TestCase):
     def test_prompt_names_the_current_ai_and_marks_data_untrusted(self):
@@ -197,6 +241,40 @@ class TestAssistantDoesNotFallback(unittest.TestCase):
         rows = ai.load_chat()
         self.assertEqual(rows[-1]["mode"], "handoff")
         self.assertEqual(rows[-1]["ai"], "DeepSeek")
+
+
+class TestWellnessTick(unittest.TestCase):
+    def test_local_mode_fires_break_reminder_without_tokens(self):
+        import time
+        import winmon
+        app = winmon.WinMonApp.__new__(winmon.WinMonApp)
+        app._ai_assist = {"mode": "local", "break_enabled": True,
+                          "break_minutes": 50}
+        app._ai_log_lines = []
+        app._ai_assistant_window = None
+        app._ai_notify_enabled = False
+        app._work_since = time.time() - 51 * 60
+        app._break_snooze_until = 0.0
+        app._last_break_notice = 0.0
+        app._set_status = lambda text: None
+        with mock.patch.object(winmon.core, "seconds_since_last_input",
+                               return_value=0.0):
+            app._ai_wellness_tick()
+        self.assertTrue(any("休息提醒" in line for line in app._ai_log_lines),
+                        app._ai_log_lines)
+        self.assertGreater(app._work_since, time.time() - 5,
+                           "提醒后应重新计时")
+
+    def test_passive_mode_never_reminds(self):
+        import winmon
+        app = winmon.WinMonApp.__new__(winmon.WinMonApp)
+        app._ai_assist = {"mode": "passive", "break_enabled": True,
+                          "break_minutes": 15}
+        app._ai_log_lines = []
+        app._ai_notify_enabled = False
+        app._work_since = 0.0
+        app._ai_wellness_tick()
+        self.assertEqual(app._ai_log_lines, [])
 
 
 if __name__ == "__main__":

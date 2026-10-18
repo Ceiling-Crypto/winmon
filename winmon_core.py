@@ -162,6 +162,29 @@ user32 = ctypes.WinDLL("user32", use_last_error=True)
 gdi32 = ctypes.WinDLL("gdi32", use_last_error=True)
 kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
 
+
+class _LASTINPUTINFO(ctypes.Structure):
+    _fields_ = [("cbSize", ctypes.c_uint),
+                ("dwTime", ctypes.c_uint)]
+
+
+def seconds_since_last_input() -> float:
+    """
+    距离上一次键盘/鼠标输入有多少秒（用于"该休息了"的本地判断）。
+
+    读不到就返回 0（当作"刚刚有输入"），绝不因此把用户判成闲置。
+    """
+    try:
+        info = _LASTINPUTINFO()
+        info.cbSize = ctypes.sizeof(_LASTINPUTINFO)
+        if not user32.GetLastInputInfo(ctypes.byref(info)):
+            return 0.0
+        tick = int(kernel32.GetTickCount()) & 0xFFFFFFFF
+        delta = (tick - int(info.dwTime)) & 0xFFFFFFFF
+        return max(0.0, min(86400.0, delta / 1000.0))
+    except Exception:
+        return 0.0
+
 # ---- 常量 ----
 GW_OWNER = 4
 GW_HWNDFIRST = 0

@@ -2802,7 +2802,42 @@ class _AiAssistantWindow:
         wrap.pack(fill="both", expand=True)
         self.header = tk.StringVar(value="正在读取当前 AI…")
         ttk.Label(wrap, textvariable=self.header, font=UI_FONT,
-                  foreground="#2a4a66").pack(fill="x")
+                  foreground="#2a4a66", justify="left").pack(fill="x")
+        self.work_text = tk.StringVar(value="正在读取当前工作…")
+        ttk.Label(wrap, textvariable=self.work_text, font=UI_FONT,
+                  foreground="#3d5a73", justify="left").pack(fill="x", pady=(2, 0))
+
+        #: 模式 = 使用定位：只读 / 本地提醒 / 主动 AI。默认 local（0 token）。
+        assist0 = getattr(app, "_ai_assist", {}) or {}
+        mode_row = ttk.Frame(wrap)
+        mode_row.pack(fill="x", pady=(5, 0))
+        ttk.Label(mode_row, text="模式：", font=UI_FONT).pack(side="left")
+        self._mode_by_label = {v: k for k, v in ai.ASSIST_MODE_LABELS.items()}
+        self.mode_var = tk.StringVar(
+            value=ai.assist_mode_label(str(assist0.get("mode") or "local")))
+        self.mode_combo = ttk.Combobox(mode_row, textvariable=self.mode_var,
+                                       state="readonly", width=20,
+                                       values=list(ai.ASSIST_MODE_LABELS.values()),
+                                       font=UI_FONT)
+        self.mode_combo.pack(side="left", padx=(0, 8))
+        self.mode_combo.bind("<<ComboboxSelected>>", lambda _e: self.change_mode())
+        self.break_var = tk.BooleanVar(value=bool(assist0.get("break_enabled", True)))
+        ttk.Checkbutton(mode_row, text="休息提醒", variable=self.break_var,
+                        command=self.toggle_break).pack(side="left", padx=2)
+        ttk.Label(mode_row, text="每", font=UI_FONT).pack(side="left")
+        self.break_minutes_var = tk.StringVar(
+            value=str(int(assist0.get("break_minutes", 50) or 50)))
+        self.break_combo = ttk.Combobox(
+            mode_row, textvariable=self.break_minutes_var, state="readonly",
+            width=4, values=("30", "45", "50", "60", "90"), font=UI_FONT)
+        self.break_combo.pack(side="left", padx=2)
+        self.break_combo.bind("<<ComboboxSelected>>",
+                              lambda _e: self.change_break_minutes())
+        ttk.Label(mode_row, text="分钟", font=UI_FONT).pack(side="left")
+        ttk.Button(mode_row, text="我休息了", width=9,
+                   command=self.rest_now).pack(side="left", padx=(8, 2))
+        ttk.Button(mode_row, text="稍后 10 分钟", width=12,
+                   command=self.snooze_break).pack(side="left", padx=2)
 
         #: 没配 key 时给一个"只用于本次运行"的入口：不写盘、不进日志。
         self.key_row = ttk.Frame(wrap)
@@ -2840,8 +2875,9 @@ class _AiAssistantWindow:
         entry = ttk.Entry(ask, textvariable=self.question, font=UI_FONT)
         entry.pack(side="left", fill="x", expand=True, padx=(0, 4))
         entry.bind("<Return>", lambda _e: self.send())
-        ttk.Button(ask, text="分析当前窗口", width=13,
-                   command=self.analyze).pack(side="right", padx=2)
+        self.analyze_btn = ttk.Button(ask, text="分析当前窗口", width=13,
+                                      command=self.analyze)
+        self.analyze_btn.pack(side="right", padx=2)
         ttk.Button(ask, text="发送", width=8,
                    command=self.send).pack(side="right", padx=2)
 
@@ -2851,6 +2887,8 @@ class _AiAssistantWindow:
                    command=self.handoff).pack(side="left", padx=2)
         ttk.Button(more, text="保存 AI 回复", width=12,
                    command=self.save_reply).pack(side="left", padx=2)
+        ttk.Button(more, text="接入说明", width=9,
+                   command=self.show_connect_help).pack(side="left", padx=2)
         ttk.Button(more, text="AI 用量…", width=9,
                    command=self.app.action_ai_usage).pack(side="right", padx=2)
 
@@ -2859,17 +2897,25 @@ class _AiAssistantWindow:
         assist = getattr(app, "_ai_assist", {}) or {}
         self.watch_var = tk.BooleanVar(value=bool(assist.get("enabled")))
         self.explain_var = tk.BooleanVar(value=bool(assist.get("auto_explain")))
-        ttk.Checkbutton(opts, text="值守（前台变化时检查）",
-                        variable=self.watch_var,
-                        command=self.toggle_watch).pack(side="left", padx=2)
-        ttk.Checkbutton(opts, text="出问题时自动解释",
-                        variable=self.explain_var,
-                        command=self.toggle_explain).pack(side="left", padx=8)
+        self.watch_chk = ttk.Checkbutton(opts, text="值守（前台变化时检查）",
+                                        variable=self.watch_var,
+                                        command=self.toggle_watch)
+        self.watch_chk.pack(side="left", padx=2)
+        self.explain_chk = ttk.Checkbutton(opts, text="出问题时自动解释",
+                                          variable=self.explain_var,
+                                          command=self.toggle_explain)
+        self.explain_chk.pack(side="left", padx=8)
         interval = int(assist.get("interval_seconds", 300) or 300)
         ttk.Label(wrap, text=f"最快每 {max(1, interval // 60)} 分钟一次；"
                             "只在前台窗口变化或出现新事件时调用，且受预算限制。"
-                            "没有直连配置时不会自动调用，只用剪贴板交接。",
+                            "只读/本地提醒模式不会自动调用，只用剪贴板交接。",
                   font=UI_FONT, foreground="#777").pack(fill="x", pady=(2, 0))
+
+        self._sync_mode_widgets()
+        try:
+            self.set_work(app._ai_work_text())
+        except Exception:
+            self.set_work("当前工作：（主界面还没跑采集）")
 
         records = ai.load_chat(limit=8)
         if records:
@@ -2894,6 +2940,79 @@ class _AiAssistantWindow:
     def set_header(self, text: str) -> None:
         if text:
             self.header.set(text)
+
+    def set_work(self, text: str) -> None:
+        if text:
+            self.work_text.set(text)
+
+    def show_connect_help(self) -> None:
+        """用户点「接入说明」时给出可复制的 MCP 配置（不自动改任何设置）。"""
+        script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "winmon.py")
+        snippet = json.dumps(
+            {"mcpServers": {"winmon": {"command": "python",
+                                       "args": [script, "--mcp-stdio"]}}},
+            ensure_ascii=False, indent=1)
+        messagebox.showinfo(
+            "让 AI 接入 WinMon",
+            "桌面 AI（Claude Desktop / Cursor / 其它支持 MCP 的客户端）：\n"
+            "在它的 MCP 配置里加入：\n\n"
+            f"{snippet}\n\n"
+            "重启客户端后，工具栏会显示「已接入 MCP（客户端名）」。\n\n"
+            "网页 AI：用 py winmon.py --ai-context --copy 复制现场，"
+            "或 --mcp-http 配隧道。\n\n"
+            "直连：模式选「主动 AI」并配置对应 key；没有 key 时只会复制现场，"
+            "不会偷偷调用模型。",
+            parent=self.top)
+
+    def _sync_mode_widgets(self) -> None:
+        """按模式启用/禁用"会花 token"的开关。"""
+        mode = self._mode_by_label.get(self.mode_var.get(), "local")
+        active = mode == "active"
+        state = "normal" if active else "disabled"
+        try:
+            self.watch_chk.configure(state=state)
+            self.explain_chk.configure(state=state)
+            self.analyze_btn.configure(text="直连分析" if active else "分析并复制")
+        except Exception:
+            pass
+
+    def change_mode(self) -> None:
+        mode = self._mode_by_label.get(self.mode_var.get(), "local")
+        data = self.app.set_assist(mode=mode)
+        self.mode_var.set(ai.assist_mode_label(str(data.get("mode") or mode)))
+        self.watch_var.set(bool(data.get("enabled")))
+        self.explain_var.set(bool(data.get("auto_explain")))
+        self._sync_mode_widgets()
+        note = {"passive": "只读：只识别窗口/记录事件，不提醒、不调用模型。",
+                "local": "本地提醒：0 token；有休息提醒和本地事件提醒。",
+                "active": "主动 AI：允许直连当前 AI，会花 token（仍受预算限制）。"}[mode]
+        self.append(f"[模式] {note}")
+        try:
+            self.set_header(self.app._ai_header_text())
+        except Exception:
+            pass
+
+    def toggle_break(self) -> None:
+        data = self.app.set_assist(break_enabled=bool(self.break_var.get()))
+        self.append(f"[休息提醒] {'开' if data.get('break_enabled') else '关'}"
+                    f"（每 {data.get('break_minutes')} 分钟）")
+
+    def change_break_minutes(self) -> None:
+        try:
+            minutes = int(self.break_minutes_var.get())
+        except (TypeError, ValueError):
+            return
+        data = self.app.set_assist(break_minutes=minutes)
+        self.break_minutes_var.set(str(data.get("break_minutes", minutes)))
+        self.append(f"[休息提醒] 间隔改为 {data.get('break_minutes')} 分钟")
+
+    def rest_now(self) -> None:
+        self.app._ai_mark_break()
+        self.append("[休息] 已记录一次休息，连续工作重新计时。")
+
+    def snooze_break(self) -> None:
+        self.app._ai_snooze_break(10)
+        self.append("[休息] 10 分钟后再提醒。")
 
     def use_key(self) -> None:
         """把用户粘进来的 key 放进**本进程**的对应环境变量（不写任何文件）。"""
@@ -3343,6 +3462,13 @@ class WinMonApp:
         self._ai_last_watch = time.time()
         self._ai_watch_sig = ""
         self._ai_explained: dict = {}
+        #: 本次运行真正调用了多少次模型 / 花了多少 token（界面必须能看见）
+        self._ai_session_calls = 0
+        self._ai_session_tokens = 0
+        #: 工作节律（本地计时，0 token）
+        self._work_since = time.time()
+        self._last_break_notice = 0.0
+        self._break_snooze_until = 0.0
         # 测试里把 WINMON_AI_NOTIFY 设为 0，避免弹系统通知打扰
         self._ai_notify_enabled = os.environ.get("WINMON_AI_NOTIFY", "1") not in (
             "", "0", "false", "False")
@@ -4939,6 +5065,7 @@ class WinMonApp:
             for inc in fresh:
                 self._ai_notify(inc)
             self._ai_assistant_tick(res, fresh)
+            self._ai_wellness_tick()
         except Exception:
             # 这一层坏了不能影响主界面：静默跳过，下一拍再试
             pass
@@ -4974,33 +5101,42 @@ class WinMonApp:
         except Exception:
             return None, name
 
+    def _ai_connection_snapshot(self) -> dict:
+        """
+        "AI 到底有没有接上 WinMon"的唯一判据（界面必须直接写出来）。
+
+        优先级：最近 15 分钟有 MCP 调用（真实接入）> 当前 AI 直连可用 > 只能剪贴板。
+        """
+        status = self._ai_status_snapshot()
+        last = status.get("last_mcp") or {}
+        try:
+            age = time.time() - float(last.get("t", 0) or 0)
+        except (TypeError, ValueError):
+            age = 10 ** 9
+        if last and age <= 900:
+            return {"kind": "mcp", "client": str(last.get("client") or "MCP 客户端"),
+                    "ts": str(last.get("ts") or ""), "calls": int(status.get("mcp_calls", 0) or 0)}
+        cfg, name = self._ai_direct_target()
+        if cfg is not None and not cfg.validate():
+            return {"kind": "direct", "model": cfg.model, "ai": name}
+        return {"kind": "clipboard", "ai": name}
+
     def _ai_recent_mcp_client(self) -> str:
         """最近 15 分钟有没有 AI 客户端真的通过 MCP 调过 WinMon。"""
-        try:
-            rows = (self._ai_budget.status() or {}).get("recent") or []
-        except Exception:
-            return ""
-        now = time.time()
-        for row in reversed(rows):
-            if row.get("mode") != "mcp":
-                continue
-            try:
-                age = now - float(row.get("t", 0) or 0)
-            except (TypeError, ValueError):
-                continue
-            name = str(row.get("client") or "")
-            if age <= 900 and name and name != "WinMon direct":
-                return name
-        return ""
+        conn = self._ai_connection_snapshot()
+        return str(conn.get("client") or "") if conn.get("kind") == "mcp" else ""
 
     def _ai_provider_snapshot(self, force: bool = False) -> dict:
         """当前 AI 的直连状态（不读 key 内容，只读"key 在不在"）。"""
         cfg, name = self._ai_direct_target()
         if cfg is None:
-            return {"configured": False, "follow_ai": name}
-        info = cfg.describe()
-        info["configured"] = True
-        info["follow_ai"] = name
+            info = {"configured": False, "follow_ai": name}
+        else:
+            info = cfg.describe()
+            info["configured"] = True
+            info["follow_ai"] = name
+        info["connection"] = self._ai_connection_snapshot()
+        info["mode"] = str((getattr(self, "_ai_assist", {}) or {}).get("mode") or "local")
         return info
 
     def _update_ai_bar(self, res=None) -> None:
@@ -5025,6 +5161,68 @@ class WinMonApp:
             getattr(self, "windows", []) or [], getattr(self, "proc_map", {}) or {},
             getattr(self, "_fg_hwnd", 0), getattr(self, "_ai_sessions", None) or {},
             incidents)
+
+    def _ai_work_minutes(self) -> int:
+        """连续工作分钟数（本地计时；离开电脑超过 5 分钟会重新计时）。"""
+        try:
+            return max(0, int((time.time() - self._work_since) / 60))
+        except Exception:
+            return 0
+
+    def _ai_work_text(self) -> str:
+        """界面上的"当前工作"摘要（0 token，只读窗口）。"""
+        try:
+            return ai.describe_work(getattr(self, "windows", []) or [],
+                                    getattr(self, "_fg_hwnd", 0),
+                                    self._ai_work_minutes())
+        except Exception:
+            return "当前工作：（读取失败；WinMon 不会因此调用模型）"
+
+    def _ai_wellness_tick(self) -> None:
+        """
+        本地休息提醒：0 token、不调用模型、不抢焦点。
+
+        只在"本地提醒 / 主动 AI"模式下生效；离开电脑超过 5 分钟自动重新计时。
+        """
+        assist = getattr(self, "_ai_assist", {}) or {}
+        if assist.get("mode") not in ("local", "active"):
+            return
+        if not assist.get("break_enabled", True):
+            return
+        now = time.time()
+        if now < getattr(self, "_break_snooze_until", 0.0):
+            return
+        try:
+            idle = core.seconds_since_last_input()
+        except Exception:
+            idle = 0.0
+        if idle >= 300:
+            self._work_since = now
+            return
+        try:
+            minutes = max(15, int(assist.get("break_minutes", 50)))
+        except (TypeError, ValueError):
+            minutes = 50
+        if now - self._work_since < minutes * 60:
+            return
+        text = ai.break_message(now, minutes)
+        self._ai_notify_text("该休息一下了", text, "info")
+        self._ai_log(f"[休息提醒] {text}")
+        self._last_break_notice = now
+        self._work_since = now
+
+    def _ai_mark_break(self) -> None:
+        """用户点了"我休息了"：重新开始计时。"""
+        self._work_since = time.time()
+        self._break_snooze_until = 0.0
+        self._ai_log("[休息] 已记录一次休息，连续工作时间重新开始。")
+        self._set_status("已记录休息：连续工作时间重新开始")
+
+    def _ai_snooze_break(self, minutes: int = 10) -> None:
+        """稍后提醒（本地，不改变 AI 调用）。"""
+        self._break_snooze_until = time.time() + max(1, int(minutes)) * 60
+        self._ai_log(f"[休息] {minutes} 分钟后再提醒。")
+        self._set_status(f"休息提醒已推迟 {minutes} 分钟")
 
     def _ai_log(self, text: str) -> None:
         """AI 助手的运行记录：窗口开着就追加，没开也留在内存里（最多 200 条）。"""
@@ -5127,6 +5325,8 @@ class WinMonApp:
         else:
             body = (out.get("text") or "").strip() or "（模型没有返回文字）"
             total = int(out.get("tokens", 0) or 0)
+            self._ai_session_calls += 1
+            self._ai_session_tokens += max(0, total)
             usage = (f"{out.get('model') or '?'}：输入 {out.get('tokens_in', 0)} / "
                      f"输出 {out.get('tokens_out', 0)} = {total} token（API 回执）")
             self._ai_log(f"{body}\n— 跟随 {ai_name} · {usage}")
@@ -5154,11 +5354,13 @@ class WinMonApp:
         if win is not None:
             try:
                 win.set_header(self._ai_header_text())
+                win.set_work(self._ai_work_text())
             except Exception:
                 pass
         assist = getattr(self, "_ai_assist", {}) or {}
         cfg, ai_name = self._ai_direct_target()
-        usable = bool(cfg is not None and not cfg.validate())
+        usable = bool(assist.get("mode") == "active"
+                      and cfg is not None and not cfg.validate())
         if fresh and assist.get("auto_explain") and usable:
             for inc in fresh:
                 key = inc.key
@@ -5187,25 +5389,41 @@ class WinMonApp:
         self._ai_pump_jobs()
 
     def _ai_header_text(self) -> str:
-        cfg, ai_name = self._ai_direct_target()
+        """助手窗口顶部：**先写接入状态**，再写模式和本次花费。"""
+        conn = self._ai_connection_snapshot()
+        kind = str(conn.get("kind") or "")
+        mode = str((getattr(self, "_ai_assist", {}) or {}).get("mode") or "local")
+        mode_label = ai.assist_mode_label(mode).split("（")[0]
+        session = (f"本次 {self._ai_session_calls} 次 / "
+                   f"{self._ai_session_tokens:,} token")
         status = self._ai_status_snapshot()
-        usage = (f"真实 {int(status.get('provider_tokens', 0) or 0):,} · "
-                 f"精确 {int(status.get('tokenizer_tokens', 0) or 0):,} token")
-        if not ai_name:
-            return f"未识别到正在使用的 AI；先打开一个 AI 窗口。｜ {usage}"
-        if cfg is None:
-            return f"当前 AI：{ai_name}（没有直连配置）→ 剪贴板交接 ｜ {usage}"
-        bad = cfg.validate()
-        if bad:
-            state = "缺 API key" if ("key" in bad or "API key" in bad) else bad
+        today = int(status.get("provider_tokens", 0) or 0)
+        if kind == "mcp":
+            stamp = str(conn.get("ts") or "")[11:16]
+            line1 = (f"接入：已通过 MCP 接入 {conn.get('client')}"
+                     + (f"（最近 {stamp}，今日 {conn.get('calls', 0)} 次）" if stamp else ""))
+        elif kind == "direct":
+            line1 = f"接入：直连就绪 {conn.get('ai')} → {conn.get('model')}"
         else:
-            state = "已就绪"
-        return f"跟随当前 AI：{ai_name} → {cfg.model} · {state} ｜ {usage}"
+            ai_name = str(conn.get("ai") or "")
+            line1 = ("接入：还没接上"
+                     + (f"；可复制现场给 {ai_name}" if ai_name else "；先打开一个 AI 窗口"))
+        line2 = f"模式：{mode_label} ｜ {session} ｜ 今日真实 {today:,} token"
+        return line1 + "\n" + line2
 
     def set_assist(self, enabled: bool | None = None,
-                   auto_explain: bool | None = None) -> dict:
-        """改值守开关（界面调用；只写本地设置文件）。"""
+                   auto_explain: bool | None = None,
+                   mode: str | None = None,
+                   break_enabled: bool | None = None,
+                   break_minutes: int | None = None) -> dict:
+        """改助手模式/值守/休息提醒（界面调用；只写本地设置文件）。"""
         data = dict(getattr(self, "_ai_assist", {}) or {})
+        old_mode = str(data.get("mode") or "local")
+        if mode is not None:
+            data["mode"] = str(mode)
+        if mode is not None and str(mode) != old_mode:
+            self._work_since = time.time()
+            self._break_snooze_until = 0.0
         if enabled is not None:
             data["enabled"] = bool(enabled)
             if enabled:
@@ -5213,6 +5431,10 @@ class WinMonApp:
                 self._ai_watch_sig = ""
         if auto_explain is not None:
             data["auto_explain"] = bool(auto_explain)
+        if break_enabled is not None:
+            data["break_enabled"] = bool(break_enabled)
+        if break_minutes is not None:
+            data["break_minutes"] = int(break_minutes)
         self._ai_assist = ai.save_assist(data)
         return self._ai_assist
 
@@ -5253,9 +5475,10 @@ class WinMonApp:
     def ai_assistant_request(self, question: str = "",
                              force_handoff: bool = False) -> bool:
         """
-        「AI 助手」的手动提问：**跟随当前识别到的 AI**。
+        「AI 助手」的手动提问：**跟随当前识别到的 AI，并受模式约束**。
 
-        能拿到该 AI 自己的直连配置就调用它；拿不到就复制现场给用户粘贴，
+        · active 且该 AI 直连可用 → 调用它；
+        · passive/local、或没有直连 → 只复制现场给用户粘贴；
         绝不回退到"另一个模型"。
         """
         cfg, ai_name = self._ai_direct_target()
@@ -5263,6 +5486,10 @@ class WinMonApp:
             self._ai_log("没有识别到正在使用的 AI；先打开一个 AI 窗口。")
             self._set_status("AI 助手：没有识别到正在使用的 AI")
             return False
+        mode = str((getattr(self, "_ai_assist", {}) or {}).get("mode") or "local")
+        if not force_handoff and mode != "active":
+            # 只读/本地提醒：只用剪贴板交接，绝不自动调用模型
+            return self._ai_handoff(question)
         if cfg is not None and not force_handoff:
             bad = cfg.validate()
             if not bad:
@@ -5306,13 +5533,14 @@ class WinMonApp:
                 win.top.lift()
                 win.top.focus_force()
                 win.set_header(self._ai_header_text())
+                win.set_work(self._ai_work_text())
                 return
             except Exception:
                 self._ai_assistant_window = None
         try:
             self._ai_assistant_window = _AiAssistantWindow(self.root, self)
-            self._set_status("AI 助手已打开：跟随当前 AI；有直连则调用，"
-                             "否则复制现场供你粘贴")
+            self._set_status("AI 助手已打开：顶部显示接入状态；"
+                             "本地提醒模式不会自动调用模型")
         except Exception as exc:
             self._set_status(f"打不开「AI 助手」：{type(exc).__name__}: {exc}")
 
@@ -7502,11 +7730,28 @@ def ai_usage_cli(as_json: bool = False) -> int:
         pass
     status = ai.Budget().status()
     sessions = ai.collect_ai_sessions(pin=os.environ.get("WINMON_AI_PIN", ""))
+    primary = sessions.get("primary") or {}
+    name = str(primary.get("name") or "")
+    cfg = provider.resolve_for_ai(name) if name else None
+    last = status.get("last_mcp") or {}
+    try:
+        fresh_mcp = (time.time() - float(last.get("t", 0) or 0)) <= 900
+    except (TypeError, ValueError):
+        fresh_mcp = False
+    if last and fresh_mcp:
+        connection = f"已接入 MCP（{last.get('client') or 'MCP 客户端'}）"
+    elif cfg is not None and not cfg.validate():
+        connection = f"直连就绪（{cfg.model}）"
+    else:
+        connection = "未接入（可复制）"
+    mode = str(ai.load_assist().get("mode") or "local")
     if as_json:
-        print(json.dumps({"sessions": sessions, "budget": status},
+        print(json.dumps({"sessions": sessions, "budget": status,
+                          "connection": connection, "mode": mode},
                          ensure_ascii=False, indent=2))
     else:
         print(ai.format_sessions_detail(sessions))
+        print(f"接入：{connection} ｜ 模式：{ai.assist_mode_label(mode)}")
         print()
         print(ai.format_usage_text(status))
         print("\n（恢复预算只能在 WinMon 界面里操作；MCP 没有改预算的工具）")

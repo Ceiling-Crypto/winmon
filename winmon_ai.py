@@ -960,6 +960,7 @@ class UsageLedger:
     def summary(self, now: float, day_start: float) -> dict:
         rows = self.rows(since=day_start)
         by_client: dict[str, dict] = {}
+        mcp_rows: list = []
         for r in rows:
             name = str(r.get("client") or "未知客户端")
             item = by_client.setdefault(name, {"tokens": 0, "calls": 0,
@@ -974,12 +975,25 @@ class UsageLedger:
             else:
                 item["estimated"] += int(r.get("tokens", 0) or 0)
             item["exact"] = item["provider"] + item["tokenizer"]
+            if r.get("mode") == "mcp":
+                mcp_rows.append(r)
+        last_mcp = {}
+        if mcp_rows:
+            last = max(mcp_rows, key=lambda x: float(x.get("t", 0) or 0))
+            last_mcp = {"client": str(last.get("client") or "MCP 客户端"),
+                        "tool": str(last.get("tool") or ""),
+                        "ts": str(last.get("ts") or ""),
+                        "t": float(last.get("t", 0) or 0)}
         return {
             "day_tokens": sum(i["tokens"] for i in by_client.values()),
             "day_calls": len(rows),
             "hour_calls": len(self.rows(since=now - 3600)),
             "by_client": by_client,
             "recent": rows[-5:],
+            "mcp_calls": len(mcp_rows),
+            "mcp_clients": sorted({str(r.get("client") or "") for r in mcp_rows
+                                   if r.get("client")}),
+            "last_mcp": last_mcp,
         }
 
 
@@ -1095,6 +1109,9 @@ class Budget:
             "reset_at": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(start)),
             "day_calls": summary["day_calls"], "by_client": summary["by_client"],
             "recent": summary["recent"],
+            "mcp_calls": summary.get("mcp_calls", 0),
+            "mcp_clients": summary.get("mcp_clients", []),
+            "last_mcp": summary.get("last_mcp") or {},
             "note": "真实=直连 API 回执；精确=目标模型分词器；"
                     "估算=MCP 上下文（客户端账单不在 MCP 协议里）",
         }
@@ -1185,11 +1202,14 @@ def _format_seconds(seconds) -> str:
 
 
 def format_ai_bar(primary: dict | None, status: dict | None,
-                  provider_info: dict | None = None) -> str:
+                  provider_info: dict | None = None,
+                  connection: dict | None = None,
+                  mode: str = "") -> str:
     """
     主界面 AI 状态条的**一句话**（纯函数，方便单测）。
 
-    必须同时回答两件事：现在识别到的是谁、这个数字是谁的用量。
+    必须同时回答三件事：现在识别到的是谁、**AI 有没有真的接上**、
+    这个数字是谁的用量；模式（只读/本地提醒/主动 AI）也要写出来。
     """
     if primary:
         name = str(primary.get("name") or "?")
@@ -1203,21 +1223,38 @@ def format_ai_bar(primary: dict | None, status: dict | None,
             text += f" · 前台 {_format_seconds(secs)}"
     else:
         text = "AI：未识别到外部 AI"
+    info = provider_info or {}
     status = status or {}
+    connection = connection or info.get("connection") or {}
+    mode = mode or str(info.get("mode") or "")
+    kind = str(connection.get("kind") or "")
+    if kind == "mcp":
+        client = str(connection.get("client") or "MCP 客户端")[:18]
+        text += f" ｜ 已接入 MCP（{client}）"
+        stamp = str(connection.get("ts") or "")[11:16]
+        if stamp:
+            text += f" {stamp}"
+    elif kind == "direct":
+        model = str(connection.get("model") or "")
+        text += " ｜ 直连就绪" + (f"（{model}）" if model else "")
+    elif kind == "clipboard":
+        text += " ｜ 未接入（可复制）"
+    if mode:
+        text += f" ｜ {assist_mode_label(mode).split('（')[0]}"
     text += (f" ｜ 真实 {int(status.get('provider_tokens', 0) or 0):,}"
              f" · 精确 {int(status.get('tokenizer_tokens', 0) or 0):,}"
              f" · 估算 {int(status.get('estimated_tokens', 0) or 0):,} token")
-    if provider_info:
-        follow = str(provider_info.get("follow_ai") or "")
+    if info and not kind:
+        follow = str(info.get("follow_ai") or "")
         if len(follow) > 12:
             follow = follow[:11] + "…"
-        if provider_info.get("configured") is False:
+        if info.get("configured") is False:
             text += (f" ｜ 跟随 {follow}（无直连）" if follow else " ｜ 无直连")
         else:
-            model = str(provider_info.get("model") or "模型")
-            if not provider_info.get("enabled"):
+            model = str(info.get("model") or "模型")
+            if not info.get("enabled"):
                 state = "直连未启用"
-            elif not provider_info.get("key_present"):
+            elif not info.get("key_present"):
                 state = "缺 key"
             else:
                 state = "就绪"
@@ -1361,11 +1398,96 @@ def format_chat_record(record: dict) -> str:
             f"\n— WinMon 看不到这次回复；可把 AI 的回答复制回来保存。")
 
 
-#: AI 助手（值守）的本地设置默认值。**默认关闭**：它会联网并产生真实费用。
+#: 常见编程/终端进程（只用于"当前工作"的本地归类，不参与 AI 判定）
+CODING_PROCS = {
+    "code.exe", "cursor.exe", "devenv.exe", "pycharm64.exe", "idea64.exe",
+    "goland64.exe", "webstorm64.exe", "rider64.exe", "sublime_text.exe",
+    "notepad++.exe", "windowsterminal.exe", "wt.exe", "powershell.exe",
+    "pwsh.exe", "cmd.exe", "git-bash.exe", "bash.exe", "wsl.exe",
+}
+CODING_HINTS = ("visual studio", "pycharm", "intellij", "android studio",
+                "sublime", "notepad++", "terminal", "powershell", "命令提示符",
+                "github", "gitlab", ".py", ".js", ".ts", ".java", ".cpp", ".rs")
+
+
+def work_kind_of(proc: str, title: str = "") -> str:
+    """本地判断"这一窗更像在干什么"（编程 / 文档 / 查资料 / 一般使用）。"""
+    p = (proc or "").lower()
+    t = (title or "").lower()
+    if p in CODING_PROCS or any(h in t for h in CODING_HINTS):
+        return "编程"
+    if p in ("winword.exe", "excel.exe", "powerpnt.exe", "wps.exe", "et.exe"):
+        return "文档"
+    if p in core.BROWSER_PROCESSES:
+        return "查资料"
+    return "一般使用"
+
+
+def describe_work(windows: list, foreground_hwnd: int = 0,
+                  work_minutes: int = 0) -> str:
+    """
+    本地"当前工作"摘要（0 token，不调用任何模型）。
+
+    给界面一个不花 token 也能"读窗口辅助工作"的最小视图：
+    现在在哪个窗口、做什么类型的事、旁边还开着什么。
+    """
+    visible = [w for w in (windows or []) if not getattr(w, "is_hidden_surface", False)]
+    fg = next((w for w in visible if getattr(w, "hwnd", 0) == foreground_hwnd), None)
+    if fg is None and visible:
+        fg = max(visible, key=lambda w: float(getattr(w, "cpu", 0) or 0))
+    if fg is None:
+        return "当前工作：没有取到前台窗口（WinMon 只读，不会调用模型）"
+    proc = getattr(fg, "proc", "") or ""
+    title, _ = sanitize_untrusted(getattr(fg, "title", "") or "", 80)
+    name = getattr(fg, "real_name", "") or proc or "?"
+    kind = work_kind_of(proc, title)
+    lines = [f"当前工作：{kind} · {name}「{title or '（无标题）'}」"]
+    others = [w for w in visible if w is not fg and getattr(w, "title", "")]
+    others.sort(key=lambda w: -float(getattr(w, "cpu", 0) or 0))
+    if others:
+        side = []
+        for w in others[:3]:
+            t, _ = sanitize_untrusted(getattr(w, "title", "") or "", 42)
+            side.append(f"{getattr(w, 'real_name', '') or getattr(w, 'proc', '?')}「{t}」")
+        lines.append("旁边：" + "；".join(side))
+    if work_minutes:
+        lines.append(f"连续工作：约 {int(work_minutes)} 分钟（本地统计，0 token）")
+    else:
+        lines.append("本地读取：0 token；需要 AI 解释时再把现场交给它")
+    tip = {"编程": "编程场景：WinMon 只读窗口，不抢焦点、不自动调用模型；"
+                  "需要时点「分析并复制」把现场交给你的 AI。",
+           "文档": "文档场景：需要润色/查错时复制现场给 AI，WinMon 不会自动插话。",
+           "查资料": "查资料场景：现场里已带浏览器标题，可直接交给 AI 帮你归纳。",
+           "一般使用": "需要时把现场交给 AI；WinMon 默认不自动调用。"}.get(kind)
+    if tip:
+        lines.append(tip)
+    return "\n".join(lines)
+
+
+#: AI 助手的工作模式：
+#:   passive —— 只读：只识别窗口/记录事件，可复制现场，不自动调用、不提醒；
+#:   local   —— 本地提醒：0 token，本地事件 + 休息提醒；
+#:   active  —— 主动 AI：允许直连当前 AI（会花 token，必须显式选）。
+ASSIST_MODES = ("passive", "local", "active")
+ASSIST_MODE_LABELS = {"passive": "只读（0 token）",
+                      "local": "本地提醒（0 token）",
+                      "active": "主动 AI（会花 token）"}
+
+
+def assist_mode_label(mode: str) -> str:
+    """模式 slug → 界面上的中文（认不出按本地提醒）。"""
+    return ASSIST_MODE_LABELS.get(str(mode or ""), ASSIST_MODE_LABELS["local"])
+
+
+#: AI 助手（值守）的本地设置默认值。
+#: **默认 local**：有休息提醒，但绝不自动调用模型；active 必须用户显式选择。
 DEFAULT_ASSIST = {
+    "mode": "local",
     "enabled": False,
     "interval_seconds": 300,
     "auto_explain": False,
+    "break_enabled": True,
+    "break_minutes": 50,
 }
 
 
@@ -1385,27 +1507,51 @@ def load_assist() -> dict:
         return data
     if not isinstance(raw, dict):
         return data
+    mode = str(raw.get("mode") or "").strip().lower()
+    if mode not in ASSIST_MODES:
+        # 旧配置迁移：以前勾了值守/自动解释 = 主动 AI，否则本地提醒
+        mode = "active" if (raw.get("enabled") or raw.get("auto_explain")) else "local"
+    data["mode"] = mode
     data["enabled"] = bool(raw.get("enabled", False))
     data["auto_explain"] = bool(raw.get("auto_explain", False))
+    data["break_enabled"] = bool(raw.get("break_enabled", True))
     try:
         interval = int(raw.get("interval_seconds", DEFAULT_ASSIST["interval_seconds"]))
     except (TypeError, ValueError):
         interval = DEFAULT_ASSIST["interval_seconds"]
     data["interval_seconds"] = max(60, min(3600, interval))
+    try:
+        minutes = int(raw.get("break_minutes", DEFAULT_ASSIST["break_minutes"]))
+    except (TypeError, ValueError):
+        minutes = DEFAULT_ASSIST["break_minutes"]
+    data["break_minutes"] = max(15, min(240, minutes))
     return data
 
 
 def save_assist(data: dict) -> dict:
-    """把 AI 助手设置写回（只写这三个键，原子替换）。"""
+    """把 AI 助手设置写回（模式 / 值守 / 自动解释 / 休息提醒，原子替换）。"""
     clean = load_assist()
     if isinstance(data, dict):
+        mode = str(data.get("mode") or clean["mode"]).strip().lower()
+        if mode in ASSIST_MODES:
+            clean["mode"] = mode
         clean["enabled"] = bool(data.get("enabled", clean["enabled"]))
         clean["auto_explain"] = bool(data.get("auto_explain", clean["auto_explain"]))
+        clean["break_enabled"] = bool(data.get("break_enabled", clean["break_enabled"]))
         try:
             interval = int(data.get("interval_seconds", clean["interval_seconds"]))
         except (TypeError, ValueError):
             interval = clean["interval_seconds"]
         clean["interval_seconds"] = max(60, min(3600, interval))
+        try:
+            minutes = int(data.get("break_minutes", clean["break_minutes"]))
+        except (TypeError, ValueError):
+            minutes = clean["break_minutes"]
+        clean["break_minutes"] = max(15, min(240, minutes))
+        if clean["mode"] != "active":
+            # 只读/本地提醒下不应留下"自动值守"的旧开关，避免误以为会调用
+            clean["enabled"] = False
+            clean["auto_explain"] = False
     try:
         core.ensure_data_dir()
         tmp = assist_path() + ".tmp"
@@ -1415,6 +1561,15 @@ def save_assist(data: dict) -> dict:
     except Exception:
         pass
     return clean
+
+
+def break_message(now: float, minutes: int) -> str:
+    """休息提醒的本地文案（0 token；区分白天/深夜）。"""
+    hour = time.localtime(now).tm_hour
+    clock = time.strftime("%H:%M", time.localtime(now))
+    if hour >= 23 or hour < 6:
+        return f"现在 {clock} 了，已经连续工作 {int(minutes)} 分钟；早点休息，别熬太晚。"
+    return f"已经连续工作 {int(minutes)} 分钟，起来走动一下、喝口水吧。"
 
 
 def build_work_context(windows: list, procs: dict | None = None,

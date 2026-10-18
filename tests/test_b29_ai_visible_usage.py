@@ -109,6 +109,14 @@ class TestThreeWayLedger(unittest.TestCase):
         row = self.usage.rows()[-1]
         self.assertEqual(row["token_source"], "estimated")
 
+    def test_status_reports_last_mcp_client(self):
+        self.usage.record(10, client="Claude Desktop", mode="mcp", now=NOW)
+        self.usage.record(20, client="WinMon direct", mode="direct", now=NOW + 1)
+        status = self.budget.status(NOW + 2)
+        self.assertEqual(status["mcp_calls"], 1)
+        self.assertEqual(status["last_mcp"]["client"], "Claude Desktop")
+        self.assertEqual(status["mcp_clients"], ["Claude Desktop"])
+
 
 class TestExactTokenizer(unittest.TestCase):
     def setUp(self):
@@ -218,16 +226,30 @@ class TestAssistSettings(unittest.TestCase):
         self.env.start()
         self.addCleanup(self.env.stop)
 
-    def test_default_off_and_round_trip(self):
-        self.assertFalse(ai.load_assist()["enabled"])
-        saved = ai.save_assist({"enabled": True, "auto_explain": True,
-                                "interval_seconds": 5})
+    def test_default_is_local_and_round_trip(self):
+        default = ai.load_assist()
+        self.assertEqual(default["mode"], "local", "默认必须是不花 token 的本地提醒")
+        self.assertTrue(default["break_enabled"])
+        saved = ai.save_assist({"mode": "active", "enabled": True,
+                                "auto_explain": True, "interval_seconds": 5})
+        self.assertEqual(saved["mode"], "active")
         self.assertTrue(saved["enabled"])
         self.assertEqual(saved["interval_seconds"], 60, "间隔必须夹到 ≥60 秒")
         loaded = ai.load_assist()
         self.assertTrue(loaded["auto_explain"])
-        ai.save_assist({"interval_seconds": 99999})
-        self.assertEqual(ai.load_assist()["interval_seconds"], 3600)
+        ai.save_assist({"interval_seconds": 99999, "break_minutes": 5})
+        after = ai.load_assist()
+        self.assertEqual(after["interval_seconds"], 3600)
+        self.assertEqual(after["break_minutes"], 15, "休息间隔夹到 ≥15 分钟")
+        local = ai.save_assist({"mode": "local", "enabled": True,
+                                "auto_explain": True})
+        self.assertFalse(local["enabled"], "切回本地提醒必须关掉自动调用开关")
+        self.assertFalse(local["auto_explain"])
+
+    def test_old_enabled_config_migrates_to_active(self):
+        with open(self.path, "w", encoding="utf-8") as fh:
+            json.dump({"enabled": True, "auto_explain": True}, fh)
+        self.assertEqual(ai.load_assist()["mode"], "active")
 
     def test_bad_file_falls_back_to_default(self):
         with open(self.path, "w", encoding="utf-8") as fh:
@@ -316,11 +338,18 @@ class TestAssistantWindow(unittest.TestCase):
                         "api_key_env": "WINMON_AI_API_KEY",
                         "follow_ai": "DeepSeek", "model": "deepseek-chat"}
 
-            def set_assist(self, enabled=None, auto_explain=None):
+            def set_assist(self, enabled=None, auto_explain=None, mode=None,
+                           break_enabled=None, break_minutes=None):
+                if mode is not None:
+                    self._ai_assist["mode"] = mode
                 if enabled is not None:
                     self._ai_assist["enabled"] = bool(enabled)
                 if auto_explain is not None:
                     self._ai_assist["auto_explain"] = bool(auto_explain)
+                if break_enabled is not None:
+                    self._ai_assist["break_enabled"] = bool(break_enabled)
+                if break_minutes is not None:
+                    self._ai_assist["break_minutes"] = int(break_minutes)
                 return dict(self._ai_assist)
 
             def ai_assistant_request(self, question="", force_handoff=False):
@@ -369,6 +398,10 @@ class TestAssistantWindow(unittest.TestCase):
         self.root.clipboard_append("AI 的回答")
         win.save_reply()
         self.assertEqual(self.app.saved[-1], "AI 的回答")
+        win.mode_var.set("主动 AI（会花 token）")
+        win.change_mode()
+        self.assertEqual(self.app._ai_assist.get("mode"), "active")
+        self.assertEqual(str(win.watch_chk.cget("state")), "normal")
         win.close()
         self.assertIsNone(self.app._ai_assistant_window)
 
