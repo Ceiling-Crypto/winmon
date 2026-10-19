@@ -1421,18 +1421,38 @@ CODING_PROCS = {
 CODING_HINTS = ("visual studio", "pycharm", "intellij", "android studio",
                 "sublime", "notepad++", "terminal", "powershell", "命令提示符",
                 "github", "gitlab", ".py", ".js", ".ts", ".java", ".cpp", ".rs")
+#: 常见游戏/启动器进程与标题线索。只用于本地"这是游戏"的归类，
+#: **不读内存、不注入、不判断输赢**；识别不到就按“一般使用”。
+GAME_PROCS = {
+    "steam.exe", "steamwebhelper.exe", "epicgameslauncher.exe", "wegame.exe",
+    "battle.net.exe", "riotclientservices.exe", "riotclientux.exe",
+    "leagueclient.exe", "league of legends.exe", "valorant.exe", "cs2.exe",
+    "dota2.exe", "minecraft.exe", "genshinimpact.exe", "yuanshen.exe",
+    "starrail.exe", "zenlesszonezero.exe", "wutheringwaves.exe",
+    "ffxiv_dx11.exe", "wow.exe", "overwatch.exe", "pubg.exe",
+    "apex_legends.exe", "eldenring.exe", "gta5.exe", "rdr2.exe",
+    "bg3.exe", "baldursgate3.exe", "stardew valley.exe", "terraria.exe",
+    "factorio.exe", "civ6.exe", "footballmanager.exe", "nba2k.exe",
+}
+GAME_HINTS = ("steam", "epic games", "wegame", "battle.net", "riot client",
+              "league of legends", "valorant", "minecraft", "原神", "崩坏",
+              "星穹铁道", "绝区零", "鸣潮", "英雄联盟")
 
 
 def work_kind_of(proc: str, title: str = "") -> str:
-    """本地判断"这一窗更像在干什么"（编程 / 文档 / 查资料 / 一般使用）。"""
+    """本地判断"这一窗更像在干什么"（游戏 / 编程 / 文档 / 查资料 / 一般使用）。"""
     p = (proc or "").lower()
     t = (title or "").lower()
+    if p in GAME_PROCS:
+        return "游戏"
+    if p in core.BROWSER_PROCESSES:
+        return "查资料"
+    if any(h in t for h in GAME_HINTS):
+        return "游戏"
     if p in CODING_PROCS or any(h in t for h in CODING_HINTS):
         return "编程"
     if p in ("winword.exe", "excel.exe", "powerpnt.exe", "wps.exe", "et.exe"):
         return "文档"
-    if p in core.BROWSER_PROCESSES:
-        return "查资料"
     return "一般使用"
 
 
@@ -1462,8 +1482,8 @@ def describe_work(windows: list, foreground_hwnd: int = 0,
     title, _ = sanitize_untrusted(getattr(fg, "title", "") or "", 80)
     name = getattr(fg, "real_name", "") or proc or "?"
     kind = work_kind_of(proc, title)
-    kind_text = ({"编程": "coding", "文档": "documents",
-                  "查资料": "research", "一般使用": "general use"}.get(kind, kind)
+    kind_text = ({"编程": "coding", "文档": "documents", "查资料": "research",
+                  "游戏": "gaming", "一般使用": "general use"}.get(kind, kind)
                  if en else kind)
     lines = [pick(f"当前工作：{kind_text} · {name}「{title or '（无标题）'}」",
                   f"Current work: {kind_text} · {name} “{title or '(untitled)'}”")]
@@ -1491,6 +1511,8 @@ def describe_work(windows: list, foreground_hwnd: int = 0,
                 "Documents: hand the context to your AI for proofreading; WinMon stays quiet."),
         "查资料": ("查资料场景：现场里已带浏览器标题，可直接交给 AI 帮你归纳。",
                   "Research: the context already includes browser titles; hand it to your AI."),
+        "游戏": ("游戏场景：WinMon 只读到应用名，不读画面、不评价输赢。",
+                "Gaming: WinMon only sees the app name; no screen, no judgement."),
         "一般使用": ("需要时把现场交给 AI；WinMon 默认不自动调用。",
                   "Hand the context to your AI when needed; WinMon does not auto-call."),
     }
@@ -1526,6 +1548,89 @@ def assist_mode_label(mode: str, lang: str | None = None) -> str:
     return labels.get(str(mode or ""), labels["local"])
 
 
+#: 人设只有三档：关心 / 损友 / 安静。**措辞交给 AI，边界由这里定。**
+PERSONA_TONES = {
+    "care": {
+        "zh": "关心型", "en": "Caring",
+        "style_zh": "像同事或朋友一样关心：先问一句，再给一个具体的小建议；不说教、不油腻。",
+        "style_en": "Care like a colleague or friend: one check-in, then one concrete small "
+                    "suggestion; never preachy.",
+    },
+    "tease": {
+        "zh": "损友型", "en": "Teasing",
+        "style_zh": "像熟人一样轻轻调侃：可以拿“又在摸鱼/又开着歌”开个玩笑，但要留台阶，"
+                    "不挖苦、不人身攻击。",
+        "style_en": "Tease like a close friend: a light joke about slacking or background "
+                    "music is fine, but always leave the user an easy out; no insults.",
+    },
+    "quiet": {
+        "zh": "安静型", "en": "Quiet",
+        "style_zh": "少说话：只报事实或一句极短的提醒，不调侃、不评价。",
+        "style_en": "Say little: facts or one very short reminder; no jokes, no judgement.",
+    },
+}
+DEFAULT_PERSONA = "care"
+PERSONA_RULES_ZH = (
+    "只使用 companion.facts 里的事实，不编造时长、曲名、游戏名；",
+    "一次最多一句（约 30–50 字），不要解释、不要复述整段素材；",
+    "用户在写代码/写文档/开会/共享屏幕/深夜时，不调侃，最多一句关心；",
+    "不评价健康、外貌、收入、感情、政治；不鼓励拖延、逃课或旷工；",
+    "不重复最近说过的话；不确定就沉默。",
+)
+PERSONA_RULES_EN = (
+    "Use only facts from companion.facts; never invent durations, songs, or game names.",
+    "At most one sentence (about 20–35 words); no explanation, no repeating the packet.",
+    "No teasing while the user codes, writes, is in a meeting, shares screen, or it is late.",
+    "Never comment on health, appearance, income, relationships, or politics; never encourage "
+    "procrastination.",
+    "Do not repeat recent lines; when unsure, stay silent.",
+)
+
+
+def persona_labels(lang: str | None = None) -> dict:
+    """人设 slug → 显示名（顺序固定：关心 / 损友 / 安静）。"""
+    lang = i18n.get_language() if lang is None else i18n.normalize_language(lang)
+    key = "en" if lang == "en" else "zh"
+    return {slug: info[key] for slug, info in PERSONA_TONES.items()}
+
+
+def persona_label(tone: str, lang: str | None = None) -> str:
+    labels = persona_labels(lang)
+    return labels.get(str(tone or ""), labels[DEFAULT_PERSONA])
+
+
+def persona_card(tone: str = DEFAULT_PERSONA, lang: str | None = None) -> dict:
+    """给 AI 的短人设卡：语气 + 边界；不包含固定台词。"""
+    lang = i18n.get_language() if lang is None else i18n.normalize_language(lang)
+    en = lang == "en"
+    slug = str(tone or DEFAULT_PERSONA).lower()
+    if slug not in PERSONA_TONES:
+        slug = DEFAULT_PERSONA
+    info = PERSONA_TONES[slug]
+    return {
+        "id": slug,
+        "label": info["en"] if en else info["zh"],
+        "style": info["style_en"] if en else info["style_zh"],
+        "rules": list(PERSONA_RULES_EN if en else PERSONA_RULES_ZH),
+    }
+
+
+def persona_prompt(tone: str = DEFAULT_PERSONA, lang: str | None = None) -> str:
+    """可复制到 AI 自定义指令的人设卡（也是交接提示词里的人设段）。"""
+    lang = i18n.get_language() if lang is None else i18n.normalize_language(lang)
+    en = lang == "en"
+    card = persona_card(tone, lang)
+    rules = "\n".join(f"- {r}" for r in card["rules"])
+    if en:
+        return (f"You are the user's desktop companion. Persona: {card['label']}.\n"
+                f"{card['style']}\nRules:\n{rules}\n"
+                "When WinMon gives you companion.facts, you may phrase the line yourself; "
+                "never copy a fallback sentence verbatim.")
+    return (f"你是用户的桌面搭子。人设：{card['label']}。\n{card['style']}\n"
+            f"规则：\n{rules}\n"
+            "WinMon 给你 companion.facts 时，措辞由你决定；不要逐字复制 fallback。")
+
+
 #: AI 助手（值守）的本地设置默认值。
 #: **默认 local**：只把休息提醒交给接入的 AI，绝不自动调用模型；active 必须用户显式选择。
 DEFAULT_ASSIST = {
@@ -1535,6 +1640,14 @@ DEFAULT_ASSIST = {
     "auto_explain": False,
     "break_enabled": True,
     "workspace_dir": "",
+    # 人设与素材边界（2026-10-19 用户定：默认关心型；媒体/游戏只读应用名；网页读标题）
+    "persona_tone": DEFAULT_PERSONA,
+    "read_media": True,
+    "read_game": True,
+    "read_web_title": True,
+    "focus_silent": True,
+    "quips_per_day": 3,
+    "quiet_hours": "23:30-08:00",
 }
 
 
@@ -1563,6 +1676,17 @@ def load_assist() -> dict:
     data["auto_explain"] = bool(raw.get("auto_explain", False))
     data["break_enabled"] = bool(raw.get("break_enabled", True))
     data["workspace_dir"] = str(raw.get("workspace_dir") or "")[:260]
+    tone = str(raw.get("persona_tone") or DEFAULT_PERSONA).strip().lower()
+    data["persona_tone"] = tone if tone in PERSONA_TONES else DEFAULT_PERSONA
+    data["read_media"] = bool(raw.get("read_media", True))
+    data["read_game"] = bool(raw.get("read_game", True))
+    data["read_web_title"] = bool(raw.get("read_web_title", True))
+    data["focus_silent"] = bool(raw.get("focus_silent", True))
+    try:
+        data["quips_per_day"] = max(0, min(20, int(raw.get("quips_per_day", 3))))
+    except (TypeError, ValueError):
+        data["quips_per_day"] = 3
+    data["quiet_hours"] = str(raw.get("quiet_hours") or "23:30-08:00")[:20]
     try:
         interval = int(raw.get("interval_seconds", DEFAULT_ASSIST["interval_seconds"]))
     except (TypeError, ValueError):
@@ -1583,6 +1707,18 @@ def save_assist(data: dict) -> dict:
         clean["break_enabled"] = bool(data.get("break_enabled", clean["break_enabled"]))
         clean["workspace_dir"] = str(data.get("workspace_dir",
                                              clean.get("workspace_dir", "")))[:260]
+        tone = str(data.get("persona_tone", clean.get("persona_tone", DEFAULT_PERSONA))
+                   or DEFAULT_PERSONA).strip().lower()
+        clean["persona_tone"] = tone if tone in PERSONA_TONES else DEFAULT_PERSONA
+        for key in ("read_media", "read_game", "read_web_title", "focus_silent"):
+            clean[key] = bool(data.get(key, clean.get(key, True)))
+        try:
+            clean["quips_per_day"] = max(0, min(20, int(data.get(
+                "quips_per_day", clean.get("quips_per_day", 3)))))
+        except (TypeError, ValueError):
+            clean["quips_per_day"] = 3
+        clean["quiet_hours"] = str(data.get("quiet_hours",
+                                          clean.get("quiet_hours", "23:30-08:00")))[:20]
         try:
             interval = int(data.get("interval_seconds", clean["interval_seconds"]))
         except (TypeError, ValueError):
@@ -1696,45 +1832,305 @@ def workspace_advice(workspace: str = "", lang: str | None = None) -> str:
     return text + (f"当前工作区：{path}。" if path else "")
 
 
-def companion_payload(now: float | None = None, break_enabled: bool = True,
-                      mode: str = "local", workspace: str = "",
-                      lang: str | None = None) -> dict:
+def media_facts(picked: dict | None = None) -> dict | None:
     """
-    “由接入的 AI 转达”的伴侣数据：当前时段 + 一句提醒 + 工作区建议 + 角色。
+    媒体会话 → 素材包里的 `media`（**只留应用名 + 是否在播**）。
 
-    · `local` / `active` 且用户没有关掉休息提醒时，才带 `reminder`；
-    · `passive` 只读，不带提醒；
-    · `once_key` 让 AI 自己去重（同一个时段每天只说一次）；
-    · `delivery` 固定为 `ai_chat`：说明 WinMon 不弹窗，由 AI 在对话里说。
+    2026-10-19 用户定：媒体/游戏先只读应用名，不读曲名/歌手。
+    `picked` 为空时按现有识别链路读一次（先常驻快照，失败才起助手），
+    绝不硬编码任何本机应用；识别不到就返回 None。
+    """
+    if picked is None:
+        try:
+            data = core.collect_media_sessions()
+            info = core.media_session_summary(data.get("sessions") or [])
+            picked = info.get("picked") if info.get("found") else None
+        except Exception:
+            return None
+    if not isinstance(picked, dict):
+        return None
+    app_id = str(picked.get("app") or "").strip()
+    if not app_id:
+        return None
+    if "status" in picked:
+        try:
+            playing = int(picked.get("status", -1)) == 4
+        except (TypeError, ValueError):
+            playing = False
+    else:
+        playing = bool(picked.get("playing"))
+    return {"app": core.media_app_display_name(app_id) or app_id,
+            "playing": playing}
+
+
+def foreground_facts(windows: list | None = None, foreground_hwnd: int = 0,
+                     read_web_title: bool = True,
+                     lang: str | None = None) -> dict | None:
+    """
+    当前前台窗口 → 素材包里的 `foreground`。
+
+    · 非浏览器只给**应用名 + 类型**，不给标题（隐私）；
+    · 浏览器按用户选择给**网页标题**（2026-10-19 用户定）；
+    · 游戏只给应用名，不读画面、不评价输赢。
     """
     lang = i18n.get_language() if lang is None else i18n.normalize_language(lang)
+    proc = ""
+    title = ""
+    app = ""
+    if windows is not None:
+        visible = [w for w in windows if not getattr(w, "is_hidden_surface", False)]
+        fg = next((w for w in visible if getattr(w, "hwnd", 0) == foreground_hwnd), None)
+        if fg is None:
+            return None
+        proc = str(getattr(fg, "proc", "") or "")
+        title = str(getattr(fg, "title", "") or "")
+        app = str(getattr(fg, "real_name", "") or proc or "?")
+    else:
+        hwnd = core.get_foreground_hwnd()
+        if not hwnd:
+            return None
+        title = str(core.get_window_title(hwnd) or "")
+        pid = core.get_window_pid(hwnd)
+        info = (core.snapshot_processes() or {}).get(pid, {}) if pid else {}
+        proc = str(info.get("name") or "")
+        app = proc or "?"
+    title, _ = sanitize_untrusted(title, 80)
+    kind = work_kind_of(proc, title)
+    is_browser = proc.lower() in core.BROWSER_PROCESSES
+    return {
+        "app": app,
+        "proc": proc,
+        "kind": kind,
+        "title": title if (is_browser and read_web_title) else "",
+    }
+
+
+def local_quip(companion: dict, lang: str | None = None) -> str:
+    """
+    没有直连/不想花 token 时的**本地兜底一句**（不是固定模板的唯一出路）。
+
+    它按人设、当前时间、前台应用、媒体/游戏应用名拼一句；AI 可用时仍由 AI 自由发挥。
+    不硬编码任何本机应用名。
+    """
+    lang = i18n.get_language() if lang is None else i18n.normalize_language(lang)
+    en = lang == "en"
+    facts = (companion or {}).get("facts") or {}
+    persona = (companion or {}).get("persona") or {}
+    tone = str(persona.get("id") or DEFAULT_PERSONA)
+    clock = str(facts.get("clock") or time.strftime("%H:%M"))
+    fg = facts.get("foreground") or {}
+    media = facts.get("media") or {}
+    game = facts.get("game") or {}
+    app = str(fg.get("app") or "")
+    media_app = str(media.get("app") or "")
+    game_app = str(game.get("app") or "")
+    fallback = str((companion or {}).get("fallback") or "")
+
+    if tone == "quiet":
+        return fallback or (f"Now {clock}." if en else f"现在 {clock}。")
+    if tone == "tease":
+        if media_app and app and fg.get("kind") in ("编程", "文档"):
+            if en:
+                return (f"{media_app} is on and {app} is open too — letting the playlist "
+                        "write your code today?")
+            return f"{media_app} 开着，{app} 也开着——今天想让歌单替你写吗？"
+        if media_app:
+            if en:
+                return (f"{media_app} is playing at {clock}. Slacking is fine; just don't "
+                        "let the progress bar slack too.")
+            return f"{media_app} 放着，{clock} 了；摸鱼可以，别让进度条也摸鱼。"
+        if game_app:
+            if en:
+                return f"{game_app} is open — I won't nag; come back after this round."
+            return f"{game_app} 都开了，我先不催；这局结束记得回来。"
+        if fallback:
+            return fallback
+        if app and fg.get("kind") == "查资料":
+            if en:
+                return (f"It's {clock} and the browser has a pile of tabs — research, "
+                        "or a very educational detour?")
+            return f"现在 {clock}，浏览器开了这么多页；查资料还是查摸鱼路线？"
+        if en:
+            return f"It's {clock}; you look busy — I'll keep an eye on the windows."
+        return f"现在 {clock}，看你这么忙，我先帮你盯着窗口。"
+    # care（默认）
+    if game_app:
+        if en:
+            return f"{game_app} is open at {clock}; stand up and stretch after this round."
+        return f"现在 {clock}，{game_app} 开着；这局打完记得站起来活动一下。"
+    if media_app:
+        if en:
+            return f"{media_app} is playing at {clock}; finish this bit, then get some water."
+        return f"现在 {clock}，{media_app} 在放；先把手头这段收个尾，起来倒杯水。"
+    if fallback:
+        return fallback
+    if app and fg.get("kind") == "查资料":
+        if en:
+            return f"It's {clock}; you're researching. Take a short stretch after this page."
+        return f"现在 {clock}，在查资料；看完这段就起来走两步。"
+    if app and fg.get("kind") == "编程":
+        if en:
+            return f"It's {clock} and you're still in {app}; save your work and take a sip."
+        return f"现在 {clock}，还在 {app} 里忙；先存个盘，喝口水。"
+    if app and fg.get("kind") == "文档":
+        if en:
+            return f"It's {clock} and you're still writing; save and stretch a little."
+        return f"现在 {clock}，还在写文档；先保存，起来活动一下。"
+    if en:
+        return f"It's {clock}; I'm here if you need me."
+    return f"现在 {clock}，我在；需要的时候叫我。"
+
+
+def companion_payload(now: float | None = None, break_enabled: bool = True,
+                      mode: str = "local", workspace: str = "",
+                      lang: str | None = None, foreground: dict | None = None,
+                      media: dict | None = None,
+                      persona: str = DEFAULT_PERSONA,
+                      read_media: bool = True, read_game: bool = True,
+                      read_web_title: bool = True,
+                      work_minutes: int = 0,
+                      intent: str = "ambient") -> dict:
+    """
+    “由接入的 AI 转达”的素材包：事实 + 人设 + 兜底，不规定逐字台词。
+
+    · `intent="ambient"`：只在休息时段 `speak=true`；
+    · `intent="quip"`：用户手动点“搭子说一句”，任何时间都可 `speak=true`；
+    · `fallback` 只给没有模型的路径（本地兜底/CLI/通知）；
+    · `facts` 只含：时间、前台应用类型、媒体应用名、游戏应用名、空闲/工作分钟；
+      不含曲名、歌手、非浏览器标题、截图。
+    """
+    lang = i18n.get_language() if lang is None else i18n.normalize_language(lang)
+    en = lang == "en"
     now = time.time() if now is None else float(now)
     clock = time.strftime("%H:%M", time.localtime(now))
+
+    fg = dict(foreground) if isinstance(foreground, dict) else None
+    if fg is not None and not read_web_title:
+        fg["title"] = ""
+    if fg is not None and not read_game and fg.get("kind") == "游戏":
+        fg["kind"] = "一般使用"
+    media_clean = media_facts(media) if (read_media and isinstance(media, dict)) else None
+    game = None
+    if fg is not None and fg.get("kind") == "游戏" and read_game:
+        game = {"app": str(fg.get("app") or "")}
+
     slot = None
     note = ""
-    if mode not in ("local", "active"):
-        note = ("只读模式：不提醒。" if lang != "en" else "Read-only mode: no reminders.")
+    if intent == "quip":
+        slot = time_slot(now, lang=lang)
+        note = "用户手动点了一次“搭子说一句”。" if not en else "Manual “say something”."
+    elif mode not in ("local", "active"):
+        note = "只读模式：不提醒。" if not en else "Read-only mode: no reminders."
     elif not break_enabled:
-        note = ("用户关闭了休息提醒。" if lang != "en" else "The user turned break reminders off.")
+        note = "用户关闭了休息提醒。" if not en else "The user turned break reminders off."
     else:
         slot = time_slot(now, lang=lang)
         if slot is None:
-            note = ("当前不在提醒时段。" if lang != "en" else "Outside reminder slots.")
-    return {
-        "role": "winmon_companion",
-        "delivery": "ai_chat",
+            note = "当前不在提醒时段。" if not en else "Outside reminder slots."
+
+    try:
+        idle = int(core.seconds_since_last_input())
+    except Exception:
+        idle = 0
+    facts = {
         "clock": clock,
         "slot": str((slot or {}).get("id") or ""),
         "slot_label": str((slot or {}).get("label") or ""),
-        "reminder": str((slot or {}).get("message") or ""),
-        "once_key": str((slot or {}).get("key") or ""),
+        "foreground": fg,
+        "media": media_clean,
+        "game": game,
+        "idle_seconds": max(0, idle),
+        "work_minutes": max(0, int(work_minutes or 0)),
+    }
+    if intent == "quip":
+        speak = True
+        moment = "manual_quip"
+    elif slot is not None:
+        speak = mode in ("local", "active")
+        moment = str(slot.get("id") or "slot")
+    else:
+        speak = False
+        if game:
+            moment = "game"
+        elif media_clean:
+            moment = "media"
+        elif fg and fg.get("kind") in ("编程", "文档"):
+            moment = "work"
+        else:
+            moment = "none"
+
+    fallback = str((slot or {}).get("message") or "")
+    base = {
+        "role": "winmon_companion",
+        "delivery": "ai_chat",
+        "moment": moment,
+        "clock": clock,
+        "slot": str((slot or {}).get("id") or ""),
+        "slot_label": str((slot or {}).get("label") or ""),
+        "facts": facts,
+        "persona": persona_card(persona, lang),
+        "persona_text": persona_prompt(persona, lang),
+        "speak": speak,
+        "reminder": fallback,
+        "fallback": fallback,
+        "once_key": str((slot or {}).get("key") or "") if slot else "",
         "workspace": str(workspace or ""),
         "workspace_advice": workspace_advice(workspace, lang),
         "role_text": companion_role(lang),
+        "instruction": (
+            "用户手动点了一次“搭子说一句”：用一句你自己的话关心或调侃，"
+            "不要解释，不要超过 50 字。" if intent == "quip" and not en else
+            "Manual “say something”: one sentence in your own voice, no explanation, "
+            "under 35 words." if intent == "quip" else
+            "只有 speak=true 才说；用一句你自己的话，不要逐字复述 fallback；"
+            "写代码/开会/共享屏幕/深夜不要调侃。" if not en else
+            "Speak only when speak=true; phrase it yourself, never copy fallback; "
+            "no teasing while coding, in meetings, screen sharing, or late at night."
+        ),
         "note": note,
         "source": "winmon",
     }
+    if not fallback:
+        base["fallback"] = local_quip(base, lang)
+    return base
 
+
+
+def format_companion_facts(companion: dict, lang: str | None = None) -> str:
+    """把素材包压成一行给 AI 读（不含固定台词）。"""
+    lang = i18n.get_language() if lang is None else i18n.normalize_language(lang)
+    en = lang == "en"
+    facts = (companion or {}).get("facts") or {}
+    parts = []
+    clock = str(facts.get("clock") or companion.get("clock") or "")
+    slot = str(facts.get("slot_label") or companion.get("slot_label") or "")
+    if clock:
+        parts.append(f"Now {clock}" if en else f"现在 {clock}")
+    if slot:
+        parts.append(slot)
+    fg = facts.get("foreground") or {}
+    if fg:
+        kind = str(fg.get("kind") or "")
+        if en:
+            kind = {"编程": "coding", "文档": "documents", "查资料": "research",
+                    "游戏": "gaming", "一般使用": "general"}.get(kind, kind)
+        parts.append(f"{fg.get('app') or '?'} ({kind})" if en
+                     else f"{fg.get('app') or '?'}（{kind}）")
+        if fg.get("title"):
+            parts.append(f"page: {fg['title']}" if en else f"网页：{fg['title']}")
+    media = facts.get("media") or {}
+    if media:
+        state = ("playing" if media.get("playing") else "open") if en else (
+            "播放中" if media.get("playing") else "已打开")
+        parts.append(f"media: {media.get('app')} ({state})" if en
+                     else f"媒体：{media.get('app')}（{state}）")
+    game = facts.get("game") or {}
+    if game:
+        parts.append(f"game: {game.get('app')}" if en else f"游戏：{game.get('app')}")
+    minutes = int(facts.get("work_minutes") or 0)
+    if minutes:
+        parts.append(f"session {minutes} min" if en else f"本次 {minutes} 分钟")
+    return "；".join(parts) if not en else " | ".join(parts)
 
 
 def build_work_context(windows: list, procs: dict | None = None,

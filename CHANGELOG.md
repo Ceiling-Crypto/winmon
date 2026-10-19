@@ -64,9 +64,13 @@
   新增**独立「接入 AI」窗口**（MCP 配置 / API key 只放环境变量 / 独立工作区 /
   AI 行为），AI 助手窗口精简为状态 + 输入 + 输出 + 记录；
   设置增加**语言（中文 / English）**，新增 `winmon_i18n.py`，主界面与 AI 窗口即时重译。
+- **阶段 8.1（2026-10-19）**：固定句式降级为 `fallback`，`companion` 改为
+  **事实 + 人设 + 自由措辞**；默认关心型（可切损友/安静）；
+  媒体/游戏只读应用名、浏览器读网页标题；新增 `--ai-quip` 和助手
+  「搭子说一句」（手动触发，本地兜底 0 token；active+key 直连一次）。
 - 测试：`test_b22`（23）、`test_b23`（15）、`test_b24`（22）、`test_b25`（15）、
   `test_b26`（12）、`test_b27`（9）、`test_b28`（2）、`test_b29`（18）、
-  `test_b30`（22）、`test_b31`（14）；全量 **881 用例**。
+  `test_b30`（22）、`test_b31`（14）、`test_b32`（8）；全量 **889 用例**。
 
 ### 说明
 
@@ -87,7 +91,7 @@
 
 | 项目 | 结果 |
 | --- | --- |
-| `py tests\run_tests.py` | 881 用例，失败 0 / 错误 0 / 跳过 7（约 97 秒，stderr 0 行） |
+| `py tests\run_tests.py` | 889 用例，失败 0 / 错误 0 / 跳过 7（约 94 秒，stderr 0 行） |
 | `py winmon.py --mcp-selftest` | 13/13 OK，退出 0 |
 | `py winmon.py --smoke` | 退出 0，stderr 0（中英文启动均验证） |
 | `--ai-usage` / `--ai-context --copy` | 正常；中文剪贴板实测通过 |
@@ -98,6 +102,8 @@
 | 提醒归属 | `test_b30` / `test_b31`：`companion_payload` 01:54 深夜、`once_key=night:…`、`delivery=ai_chat`；WinMon 无 `_ai_wellness_tick` |
 | 双语 | `test_b31`：`设置…` ↔ `Settings…` 往返、设置语言持久化、英文时段消息 |
 | 独立接入窗口 | `test_b31`：MCP 配置片段、key 只进本进程环境变量、工作区建议复制 |
+| 素材包 / 人设 | `test_b32`：媒体只留应用名、浏览器标题、游戏应用名、默认关心型、自由措辞 |
+| B「搭子说一句」 | `D:\test` + `--ai-quip`：本地兜底 0 token，按检测到的应用/网页说一句 |
 | GUI AI 助手 | 397 / 50 = 447 token；账本与状态条同步 |
 
 ---

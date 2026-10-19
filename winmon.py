@@ -2878,6 +2878,9 @@ class _AiAssistantWindow:
         self.connect_btn = ttk.Button(bottom, text=i18n.t("assistant.connect"),
                                       command=self.open_connect)
         self.connect_btn.pack(side="left", padx=2)
+        self.quip_btn = ttk.Button(bottom, text=i18n.t("assistant.quip"),
+                                   command=self.quip)
+        self.quip_btn.pack(side="left", padx=2)
         self.history_btn = ttk.Button(bottom, text=i18n.t("assistant.history"),
                                       command=self.show_history)
         self.history_btn.pack(side="left", padx=2)
@@ -2989,6 +2992,12 @@ class _AiAssistantWindow:
         if callable(opener):
             opener()
 
+    def quip(self) -> None:
+        """B：手动让搭子说一句（有直连就调一次，否则本地兜底）。"""
+        runner = getattr(self.app, "ai_quip_request", None)
+        if callable(runner):
+            runner()
+
     def show_history(self) -> None:
         _AiChatWindow(self.top)
 
@@ -3066,8 +3075,18 @@ class _AiConnectWindow:
         self.top.geometry(f"{w}x{h}")
         self.top.minsize(int(700 * scale), int(560 * scale))
         self.top.protocol("WM_DELETE_WINDOW", self.close)
-        wrap = ttk.Frame(self.top, padding=(12, 10))
-        wrap.pack(fill="both", expand=True)
+        # 可滚动：150% 缩放下人设/媒体开关会把内容顶出窗口，不能靠“看不见”
+        canvas = tk.Canvas(self.top, borderwidth=0, highlightthickness=0)
+        vs = ttk.Scrollbar(self.top, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=vs.set)
+        vs.pack(side="right", fill="y")
+        canvas.pack(side="left", fill="both", expand=True)
+        wrap = ttk.Frame(canvas, padding=(12, 10))
+        win_id = canvas.create_window((0, 0), window=wrap, anchor="nw")
+        wrap.bind("<Configure>",
+                  lambda _e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.bind("<Configure>",
+                    lambda e: canvas.itemconfigure(win_id, width=e.width))
 
         tk.Label(wrap, text=i18n.t("connect.head"),
                  font=("Microsoft YaHei UI", 11, "bold")).pack(anchor="w")
@@ -3137,9 +3156,40 @@ class _AiConnectWindow:
         beh = ttk.LabelFrame(wrap, text=i18n.t("connect.behavior"), padding=8)
         beh.pack(fill="x")
         assist = getattr(app, "_ai_assist", {}) or {}
+        persona_row = ttk.Frame(beh)
+        persona_row.pack(fill="x")
+        ttk.Label(persona_row, text=i18n.t("connect.persona"), font=UI_FONT).pack(side="left")
+        self._persona_by_label = {v: k for k, v in ai.persona_labels(
+            i18n.get_language()).items()}
+        self.persona_var = tk.StringVar(value=ai.persona_label(
+            str(assist.get("persona_tone") or ai.DEFAULT_PERSONA),
+            i18n.get_language()))
+        self.persona_combo = ttk.Combobox(
+            persona_row, textvariable=self.persona_var, state="readonly", width=10,
+            values=list(self._persona_by_label.keys()), font=UI_FONT)
+        self.persona_combo.pack(side="left", padx=(0, 6))
+        self.persona_combo.bind("<<ComboboxSelected>>", lambda _e: self.change_persona())
+        ttk.Button(persona_row, text=i18n.t("connect.persona_copy"),
+                   command=self.copy_persona).pack(side="left")
+        ttk.Label(beh, text=i18n.t("connect.persona_hint"), font=("Microsoft YaHei UI", 8),
+                  foreground="#777", wraplength=720).pack(anchor="w", pady=(2, 4))
+        facts_row = ttk.Frame(beh)
+        facts_row.pack(fill="x")
+        self.read_media_var = tk.BooleanVar(value=bool(assist.get("read_media", True)))
+        ttk.Checkbutton(facts_row, text=i18n.t("connect.read_media"),
+                        variable=self.read_media_var,
+                        command=self.toggle_facts).pack(side="left", padx=(0, 10))
+        self.read_game_var = tk.BooleanVar(value=bool(assist.get("read_game", True)))
+        ttk.Checkbutton(facts_row, text=i18n.t("connect.read_game"),
+                        variable=self.read_game_var,
+                        command=self.toggle_facts).pack(side="left", padx=(0, 10))
+        self.read_web_var = tk.BooleanVar(value=bool(assist.get("read_web_title", True)))
+        ttk.Checkbutton(facts_row, text=i18n.t("connect.read_web"),
+                        variable=self.read_web_var,
+                        command=self.toggle_facts).pack(side="left")
         self.break_var = tk.BooleanVar(value=bool(assist.get("break_enabled", True)))
         ttk.Checkbutton(beh, text=i18n.t("connect.break"), variable=self.break_var,
-                        command=self.toggle_break).pack(anchor="w")
+                        command=self.toggle_break).pack(anchor="w", pady=(4, 0))
         self.watch_var = tk.BooleanVar(value=bool(assist.get("enabled")))
         self.watch_chk = ttk.Checkbutton(beh, text=i18n.t("connect.watch"),
                                          variable=self.watch_var,
@@ -3278,6 +3328,21 @@ class _AiConnectWindow:
 
     def toggle_break(self) -> None:
         self.app.set_assist(break_enabled=bool(self.break_var.get()))
+
+    def change_persona(self) -> None:
+        tone = self._persona_by_label.get(self.persona_var.get(), ai.DEFAULT_PERSONA)
+        self.app.set_assist(persona_tone=tone)
+        self.status_text.set(ai.persona_card(tone, i18n.get_language())["style"])
+
+    def copy_persona(self) -> None:
+        tone = self._persona_by_label.get(self.persona_var.get(), ai.DEFAULT_PERSONA)
+        self._copy(ai.persona_prompt(tone, i18n.get_language()),
+                   i18n.t("connect.copied"))
+
+    def toggle_facts(self) -> None:
+        self.app.set_assist(read_media=bool(self.read_media_var.get()),
+                            read_game=bool(self.read_game_var.get()),
+                            read_web_title=bool(self.read_web_var.get()))
 
     def toggle_watch(self) -> None:
         data = self.app.set_assist(enabled=bool(self.watch_var.get()))
@@ -5438,20 +5503,47 @@ class WinMonApp:
             return i18n.pick("当前工作：（读取失败；WinMon 不会因此调用模型）",
                              "Current work: (read failed; WinMon will not call a model)")
 
-    def _ai_companion(self, now: float | None = None) -> dict:
+    def _ai_companion(self, now: float | None = None,
+                      intent: str = "ambient") -> dict:
         """
-        “由接入的 AI 转达”的伴侣数据（当前时段 + 提醒 + 工作区建议）。
+        “由接入的 AI 转达”的素材包：事实 + 人设 + 兜底。
 
         **WinMon 自己不弹提醒**：这里只把数据交给 MCP / 剪贴板 / 直连提示词，
-        由用户正在用的那个 AI 决定要不要在对话里说。
+        由用户正在用的那个 AI 按人设自由发挥。媒体只用界面已读到的那一份
+        （`_media_last_pick`），不额外起 PowerShell；只留应用名，不传曲名。
         """
         assist = getattr(self, "_ai_assist", {}) or {}
+        try:
+            fg = ai.foreground_facts(
+                getattr(self, "windows", []) or [],
+                getattr(self, "_fg_hwnd", 0),
+                read_web_title=bool(assist.get("read_web_title", True)),
+                lang=i18n.get_language())
+        except Exception:
+            fg = None
+        media = None
+        if assist.get("read_media", True) and getattr(self, "_media_found", False):
+            try:
+                media = ai.media_facts(self._media_last_pick)
+            except Exception:
+                media = None
+        if not assist.get("read_game", True) and fg is not None:
+            fg = dict(fg)
+            fg["kind"] = "一般使用" if fg.get("kind") == "游戏" else fg.get("kind")
         return ai.companion_payload(
             now=now,
             break_enabled=bool(assist.get("break_enabled", True)),
             mode=str(assist.get("mode") or "local"),
             workspace=str(assist.get("workspace_dir") or ""),
-            lang=i18n.get_language())
+            lang=i18n.get_language(),
+            foreground=fg,
+            media=media,
+            persona=str(assist.get("persona_tone") or ai.DEFAULT_PERSONA),
+            read_media=bool(assist.get("read_media", True)),
+            read_game=bool(assist.get("read_game", True)),
+            read_web_title=bool(assist.get("read_web_title", True)),
+            work_minutes=self._ai_work_minutes(),
+            intent=intent)
 
     def _ai_time_status(self) -> str:
         """界面上的"现在几点 / 当前时段"，24 小时制（提醒归 AI 说）。"""
@@ -5582,8 +5674,10 @@ class WinMonApp:
                 "tokens": total, "tokens_in": out.get("tokens_in", 0),
                 "tokens_out": out.get("tokens_out", 0),
             })
-            if job.get("kind") in ("watch", "incident"):
-                self._ai_notify_text(f"{ai_name} 的建议", body[:180], "info")
+            if job.get("kind") in ("watch", "incident", "quip"):
+                self._ai_notify_text(
+                    i18n.pick("搭子", "Companion") if job.get("kind") == "quip"
+                    else f"{ai_name} 的建议", body[:180], "info")
             if job.get("kind") == "incident" and job.get("key"):
                 self._ai_explained[str(job["key"])] = time.time()
         self._ai_pump_jobs()
@@ -5675,8 +5769,14 @@ class WinMonApp:
                    auto_explain: bool | None = None,
                    mode: str | None = None,
                    break_enabled: bool | None = None,
-                   workspace_dir: str | None = None) -> dict:
-        """改助手模式/值守/提醒/工作区（界面调用；只写本地设置文件）。"""
+                   workspace_dir: str | None = None,
+                   persona_tone: str | None = None,
+                   read_media: bool | None = None,
+                   read_game: bool | None = None,
+                   read_web_title: bool | None = None,
+                   focus_silent: bool | None = None,
+                   quips_per_day: int | None = None) -> dict:
+        """改助手模式/值守/提醒/工作区/人设（界面调用；只写本地设置文件）。"""
         data = dict(getattr(self, "_ai_assist", {}) or {})
         old_mode = str(data.get("mode") or "local")
         if mode is not None:
@@ -5694,6 +5794,18 @@ class WinMonApp:
             data["break_enabled"] = bool(break_enabled)
         if workspace_dir is not None:
             data["workspace_dir"] = str(workspace_dir or "")[:260]
+        if persona_tone is not None:
+            data["persona_tone"] = str(persona_tone or ai.DEFAULT_PERSONA)
+        for key, value in (("read_media", read_media), ("read_game", read_game),
+                           ("read_web_title", read_web_title),
+                           ("focus_silent", focus_silent)):
+            if value is not None:
+                data[key] = bool(value)
+        if quips_per_day is not None:
+            try:
+                data["quips_per_day"] = max(0, min(20, int(quips_per_day)))
+            except (TypeError, ValueError):
+                pass
         self._ai_assist = ai.save_assist(data)
         return self._ai_assist
 
@@ -5770,6 +5882,34 @@ class WinMonApp:
             if "key" not in bad and "API key" not in bad:
                 self._ai_log(f"{ai_name} 的直连不可用：{bad}；改用剪贴板交接。")
         return self._ai_handoff(question)
+
+    def ai_quip_request(self) -> bool:
+        """
+        B：用户手动点「搭子说一句」。
+
+        · active 且当前 AI 直连可用 → 调一次模型（显式、只此一次）；
+        · 否则本地按人设/事实兜底一句（0 token）。
+        **不主动、不后台、不受时间时段限制**（用户点一次才跑一次）。
+        """
+        comp = self._ai_companion(intent="quip")
+        cfg, ai_name = self._ai_direct_target()
+        mode = str((getattr(self, "_ai_assist", {}) or {}).get("mode") or "local")
+        if mode == "active" and cfg is not None and not cfg.validate():
+            if getattr(self, "_ai_busy", False) or self._ai_jobs:
+                self._ai_log("上一条还在处理，等它回来再说（避免并发烧 token）。")
+                return False
+            prompt = provider.quip_prompt(comp, i18n.get_language())
+            self._ai_log(f"已让 {ai_name} → {cfg.model} 说一句…")
+            self._ai_enqueue_job({
+                "kind": "quip", "ai": ai_name, "cfg": cfg,
+                "question": "搭子说一句", "prompt": prompt,
+            })
+            return True
+        line = ai.local_quip(comp, i18n.get_language())
+        self._ai_notify_text(i18n.pick("搭子", "Companion"), line, "info")
+        self._ai_log(f"[搭子] {line}")
+        self._set_status(line[:90])
+        return True
 
     def ai_save_reply(self, text: str = "") -> bool:
         """把用户从当前 AI 那边复制回来的回答存进本地记录。"""
@@ -8085,6 +8225,40 @@ def ai_usage_cli(as_json: bool = False) -> int:
     return 0
 
 
+def ai_quip_cli(as_json: bool = False) -> int:
+    """
+    命令行：B 的本地兜底一句（0 token，不需要 key）。
+
+    和 GUI 的「搭子说一句」共用同一份素材包/人设；GUI 在 active + 有 key 时
+    会直连当前 AI，这里只演示“没有模型也能按人设说一句”的兜底路径。
+    """
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+    assist = ai.load_assist()
+    fg = ai.foreground_facts(read_web_title=bool(assist.get("read_web_title", True)))
+    media = ai.media_facts() if assist.get("read_media", True) else None
+    comp = ai.companion_payload(
+        intent="quip", foreground=fg, media=media,
+        persona=str(assist.get("persona_tone") or ai.DEFAULT_PERSONA),
+        read_media=bool(assist.get("read_media", True)),
+        read_game=bool(assist.get("read_game", True)),
+        read_web_title=bool(assist.get("read_web_title", True)),
+        workspace=str(assist.get("workspace_dir") or ""))
+    line = ai.local_quip(comp, i18n.get_language())
+    if as_json:
+        print(json.dumps({"ok": True, "mode": "local_quip", "text": line,
+                          "persona": comp.get("persona"), "facts": comp.get("facts"),
+                          "tokens": 0}, ensure_ascii=False, indent=2))
+        return 0
+    print(line)
+    print(f"\n[素材] {ai.format_companion_facts(comp)}")
+    print(f"[人设] {ai.persona_label(str(assist.get('persona_tone') or ai.DEFAULT_PERSONA))}"
+          "（可用 设置 → 接入 AI → 人设 切换）")
+    return 0
+
+
 def ai_context_cli(copy_to_clip: bool = False) -> int:
     """命令行：生成一段给网页端 AI 的上下文包（剪贴板桥）。"""
     try:
@@ -8175,7 +8349,14 @@ def ai_assist_cli(question: str = "", as_json: bool = False,
     companion = ai.companion_payload(
         break_enabled=bool(assist.get("break_enabled", True)),
         mode=str(assist.get("mode") or "local"),
-        workspace=str(assist.get("workspace_dir") or ""))
+        workspace=str(assist.get("workspace_dir") or ""),
+        foreground=ai.foreground_facts(
+            wins, fg, read_web_title=bool(assist.get("read_web_title", True))),
+        media=(ai.media_facts() if assist.get("read_media", True) else None),
+        persona=str(assist.get("persona_tone") or ai.DEFAULT_PERSONA),
+        read_media=bool(assist.get("read_media", True)),
+        read_game=bool(assist.get("read_game", True)),
+        read_web_title=bool(assist.get("read_web_title", True)))
     cfg = provider.resolve_for_ai(name)
     bad = cfg.validate() if cfg is not None else "没有为这个 AI 配置直连"
     if cfg is not None and not bad:
@@ -8289,6 +8470,7 @@ AI / MCP（只读；直连 API 默认关闭）：
   --ai-chat             查看 AI 助手本地记录（直连回答 / 交接 / 手动保存）
   --ai-context          生成给网页 AI 的上下文包（--copy 复制到剪贴板）
   --ai-assist [问题]    跟随当前 AI 读窗口现场；无直连则生成交接文本
+--ai-quip             让搭子按人设说一句（本地兜底，0 token）
       --copy             交接文本复制到剪贴板（不调用任何模型）
   --ai-ask <问题>       直连模型 API（需 WINMON_AI_DIRECT=1 + API key）
   --ai-explain          让直连模型解释最近一条本地事件
@@ -8342,7 +8524,7 @@ def main() -> int:
              "--ai-sessions", "--incidents", "--mcp-stdio", "--mcp-selftest",
              "--mcp-http", "--port", "--expire-minutes",
              "--ai-usage", "--ai-chat", "--ai-context", "--copy", "--ai-ask", "--ai-explain",
-             "--ai-assist"}
+             "--ai-assist", "--ai-quip"}
 
     def _looks_like_flag(a: str) -> bool:
         """像个开关吗？（`-5` 这种**数字**不算 —— 它是 `--idle-minutes -5` 的值。）"""
@@ -8433,6 +8615,8 @@ def main() -> int:
             question = ""
         return ai_assist_cli(question or "", as_json=("--json" in args),
                              copy_to_clip=("--copy" in args))
+    if _has_flag("--ai-quip"):
+        return ai_quip_cli(as_json=("--json" in args))
     if _has_flag("--ai-ask"):
         if _need_value("--ai-ask"):
             return 2

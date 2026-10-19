@@ -652,6 +652,16 @@ def get_foreground_hwnd() -> int:
         return 0
 
 
+def get_window_pid(hwnd: int) -> int:
+    """窗口属于哪个进程（只读；取不到返回 0）。"""
+    try:
+        pid = w.DWORD(0)
+        user32.GetWindowThreadProcessId(w.HWND(int(hwnd)), ctypes.byref(pid))
+        return int(pid.value)
+    except Exception:
+        return 0
+
+
 def get_window_icon_handle(hwnd: int) -> int:
     """取窗口的大图标句柄（优先窗口自己的图标，其次窗口类图标）。借用，不销毁。"""
     for kind in (ICON_BIG, ICON_SMALL2, ICON_SMALL):

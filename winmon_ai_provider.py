@@ -387,24 +387,33 @@ def count_tokens(text: str, config: ProviderConfig | None = None,
 
 def _companion_block(companion: dict | None, lang: str) -> str:
     """
-    把“由接入的 AI 转达”的角色/时段提醒/工作区建议拼成一段。
+    把“事实 + 人设 + 兜底”拼成一段交给 AI 的上下文。
 
-    WinMon 自己**不弹**这些提醒；这段文字只是交给 AI 的上下文。
-    没有 companion 时返回空串（旧调用方行为不变）。
+    WinMon 自己**不弹**提醒；`fallback` 只是没有模型的路径用的，明确要求 AI
+    不要逐字复述，措辞由它按人设自由发挥。没有 companion 时返回空串。
     """
     if not isinstance(companion, dict) or not companion:
         return ""
     en = lang == "en"
-    role = str(companion.get("role_text") or "").strip()
     lines = []
+    role = str(companion.get("role_text") or "").strip()
     if role:
-        lines += ["## Your role (written by WinMon)" if en else "## 你的角色（WinMon 写入）", role, ""]
-    reminder = str(companion.get("reminder") or "").strip()
-    if reminder:
+        lines += ["## Your role (written by WinMon)" if en else "## 你的角色（WinMon 写入）",
+                  role, ""]
+    facts = ai.format_companion_facts(companion, lang)
+    if facts:
+        lines += ["## Facts right now" if en else "## 现在的事实", facts, ""]
+    persona = str(companion.get("persona_text") or "").strip()
+    if persona:
+        lines += ["## Persona chosen by the user" if en else "## 用户选的人设", persona, ""]
+    fallback = str(companion.get("fallback") or "").strip()
+    if fallback and companion.get("speak"):
         key = str(companion.get("once_key") or "")
-        lines += ["## Reminder for this conversation" if en else "## 这次对话里的提醒",
-                  reminder + (f" (once_key: {key}; say it once per day)" if en else
-                              f"（once_key: {key}；每天只说一次）"), ""]
+        label = "## Fallback cue (do not copy; say it your way)" if en else \
+            "## 兜底提示（不要逐字复制；用你的人设说）"
+        lines += [label,
+                  fallback + (f"\n(once_key: {key}; once per day)" if en and key else
+                              f"\n（once_key: {key}；每天只说一次）" if key else ""), ""]
     advice = str(companion.get("workspace_advice") or "").strip()
     if advice:
         lines += ["## Workspace advice" if en else "## 工作区建议", advice, ""]
@@ -497,6 +506,21 @@ def handoff_prompt(context: str, question: str = "",
         "回答尽量短（默认不超过 150 字）。\n\n"
         f"用户的问题：{ask}"
     )
+
+
+def quip_prompt(companion: dict | None, lang: str | None = None) -> str:
+    """用户手动点“搭子说一句”时的直连提示词：只要一句，不要解释。"""
+    lang = ai.i18n.get_language() if lang is None else ai.i18n.normalize_language(lang)
+    en = lang == "en"
+    block = _companion_block(companion, lang)
+    if en:
+        return (f"{block}\n"
+                "The user just clicked “say something”. Reply with exactly one short "
+                "sentence in the persona above, using only the facts. No explanation, "
+                "no quotes, no bullet list, under 35 words.")
+    return (f"{block}\n"
+            "用户刚点了「搭子说一句」。只回一句短语，按上面的人设和事实说；"
+            "不要解释、不要引号、不要列表，不超过 50 字。")
 
 
 def set_exact_tokens(flag: bool, path: str = "") -> bool:

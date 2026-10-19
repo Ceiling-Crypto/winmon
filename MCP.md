@@ -1362,16 +1362,26 @@ est_tokens ≈ ceil(ascii_chars / 4 + cjk_chars / 1.6 + 24)
 - `time_slot()` 只按**当前 24 小时制时段**
   （22:00–05:59 深夜 / 06:00–08:59 早上 / 11:00–13:59 中午 / 17:00–19:59 傍晚）
   产出 `label / message / once_key`，不按连续使用时长；
-- `companion_payload()` 产出 `{role, delivery:"ai_chat", clock, slot, reminder,
-  once_key, workspace, workspace_advice, role_text, note}`；
+- `companion_payload()` 产出 `{role, delivery:"ai_chat", moment, clock, slot,
+  facts, persona, persona_text, speak, reminder, fallback, once_key, workspace,
+  workspace_advice, role_text, instruction, note}`；
   `passive`、`break_enabled=false`、非时段时 `reminder` 为空；
+- **`facts` 只含事实**：时间/时段、前台应用类型、媒体**应用名**、游戏**应用名**、
+  浏览器**网页标题**、空闲/本次分钟；不含曲名/歌手、非浏览器标题、截图；
+- **`persona`**：`care`（默认）/ `tease` / `quiet`，带语气与边界；
+  `fallback` 只是没有模型的路径用的，**明确要求 AI 不要逐字复制**；
 - `initialize.instructions` 写入**角色记忆**：对话开始先调一次
-  `winmon_ai_sessions`，有 `companion.reminder` 才转达，按 `once_key` 每天一次；
+  `winmon_ai_sessions`；`facts` 是事实、`persona` 是人设、`fallback` 只是兜底；
+  措辞自己定；只有 `speak=true` 才说，按 `once_key` 每天一次；
   用户写代码/做项目时不要主动打断；
-- `winmon_ai_sessions` 的 `structuredContent.companion` 带同样数据，text 里追加
-  "伴侣提示（由你在回答中转达…）"；预算照常按整段结果记账；
-- 剪贴板交接 / 直连提示词（`handoff_prompt` / `assistant_prompt`）也带这段角色、
-  提醒与工作区建议，所以**没接 MCP 的网页 AI** 同样能按角色说话。
+- `winmon_ai_sessions` 的 `structuredContent.companion` 带同样数据（去掉
+  `role_text/persona_text` 省 token），text 里追加“伴侣素材：…”和
+  “伴侣提示：用你自己的话说…”；预算照常按整段结果记账；
+- 剪贴板交接 / 直连提示词（`handoff_prompt` / `assistant_prompt`）也带事实、人设、
+  兜底与工作区建议，所以**没接 MCP 的网页 AI** 同样能按人设自由发挥；
+- **B（手动）**：助手窗口「搭子说一句」/ `--ai-quip`。`active` + 有 key 时
+  `quip_prompt` 直连一次；否则 `local_quip()` 按人设和检测到的应用名本地兜底
+  （0 token）。不是主动推送，也不会后台自动调用。
 
 **独立工作区建议**：`winmon_ai_assist.json` 的 `workspace_dir` 只存路径，
 「接入 AI」窗口可选文件夹/打开/复制建议；提示词里会写“给新项目单独建工作区、
@@ -1399,7 +1409,7 @@ est_tokens ≈ ceil(ascii_chars / 4 + cjk_chars / 1.6 + 24)
 
 > **实现状态（2026-10-19）**：已注册 **四个 tools**
 > （`winmon_ai_sessions` / `winmon_incidents` / `winmon_playbooks` / `winmon_budget_status`）；
-> `winmon_ai_sessions` 额外返回 `companion`（角色/时段提醒/工作区建议）；
+> `winmon_ai_sessions` 额外返回 `companion`（事实/人设/兜底/工作区建议）；
 > 上表里的 `resources`、`winmon_window_text`、`winmon_browser_tab` **尚未注册**。
 
 ### 10.9 分阶段（插进 §五 的既有阶段之间）
@@ -1445,9 +1455,13 @@ est_tokens ≈ ceil(ascii_chars / 4 + cjk_chars / 1.6 + 24)
 >   `companion_payload` + MCP `instructions` 角色记忆，由接入的 AI 在对话里说；
 >   独立「接入 AI」窗口（MCP / key / 独立工作区 / 行为），助手窗口精简；
 >   设置增加语言（中文 / English），`winmon_i18n.py` 负责静态文案与 AI 提示词；
+> - **8.1（2026-10-19）**：固定句式降级为 `fallback`；`companion` 增加
+>   `facts/persona/persona_text/speak/instruction`，默认关心型；
+>   媒体/游戏只读应用名、浏览器读标题；接入窗口可切人设/复制人设/关素材；
+>   B「搭子说一句」+ `--ai-quip`（本地兜底 0 token；active+key 直连一次）；
 > - 测试：`test_b22`（23）、`test_b23`（15）、`test_b24`（22）、
 >   `test_b25`（15）、`test_b26`（12）、`test_b27`（9）、`test_b28`（2）、
->   `test_b29`（18）、`test_b30`（22）、`test_b31`（14）；全量 **881 用例**。
+>   `test_b29`（18）、`test_b30`（22）、`test_b31`（14）、`test_b32`（8）；全量 **889 用例**。
 > - 每日 token 预算默认 **1000 万**（`winmon_ai.DEFAULT_DAILY_TOKEN_BUDGET`）。
 
 ### 10.10 测试策略（不接真 AI 也能测）

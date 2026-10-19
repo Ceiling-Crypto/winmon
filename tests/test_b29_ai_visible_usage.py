@@ -325,6 +325,7 @@ class TestAssistantWindow(unittest.TestCase):
             def __init__(self, root):
                 self.root = root
                 self.asked = []
+                self.quips = 0
                 self.force_flags = []
                 self.saved = []
 
@@ -355,6 +356,10 @@ class TestAssistantWindow(unittest.TestCase):
 
             def ai_save_reply(self, text=""):
                 self.saved.append(text)
+                return True
+
+            def ai_quip_request(self):
+                self.quips += 1
                 return True
 
             def action_ai_usage(self):
@@ -391,6 +396,8 @@ class TestAssistantWindow(unittest.TestCase):
         win.mode_var.set("主动 AI（会花 token）")
         win.change_mode()
         self.assertEqual(self.app._ai_assist.get("mode"), "active")
+        win.quip()
+        self.assertEqual(self.app.quips, 1, "「搭子说一句」必须走手动入口")
         win.close()
         self.assertIsNone(self.app._ai_assistant_window)
 

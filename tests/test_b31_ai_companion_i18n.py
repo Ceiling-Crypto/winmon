@@ -108,7 +108,7 @@ class TestPromptsCarryRole(unittest.TestCase):
         text = provider.handoff_prompt("# context", "why?", ai_name="DeepSeek",
                                        companion=comp, lang="en")
         self.assertIn("Your role", text)
-        self.assertIn("Reminder for this conversation", text)
+        self.assertIn("Fallback cue", text)
         self.assertIn("Workspace advice", text)
 
     def test_assistant_prompt_still_marks_untrusted_data(self):
@@ -142,7 +142,7 @@ class TestMcpRoleMemory(unittest.TestCase):
         self.assertEqual(out["structuredContent"]["companion"]["slot"], "night")
         self.assertNotIn("role_text", out["structuredContent"]["companion"],
                          "角色说明已在 instructions，别每次工具调用都重复塞")
-        self.assertIn("伴侣提示", out["content"][0]["text"])
+        self.assertIn("伴侣素材", out["content"][0]["text"])
         self.assertIn("01:54", out["content"][0]["text"])
 
 
@@ -240,6 +240,14 @@ class TestConnectWindow(unittest.TestCase):
         win.break_var.set(False)
         win.toggle_break()
         self.assertIn({"break_enabled": False}, self.app.saved)
+        win.persona_var.set("损友型")
+        win.change_persona()
+        self.assertIn({"persona_tone": "tease"}, self.app.saved)
+        win.copy_persona()
+        self.assertIn("人设：损友型", self.root.clipboard_get())
+        win.read_media_var.set(False)
+        win.toggle_facts()
+        self.assertTrue(any(item.get("read_media") is False for item in self.app.saved))
         self.app._ai_assist["workspace_dir"] = "D:\\work\\demo"
         win.copy_advice()
         copied = self.root.clipboard_get()
