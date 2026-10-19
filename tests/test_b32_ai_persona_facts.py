@@ -16,6 +16,7 @@ from __future__ import annotations
 import io
 import os
 import sys
+import tempfile
 import time
 import unittest
 from contextlib import redirect_stdout
@@ -118,6 +119,152 @@ class TestPersona(unittest.TestCase):
         self.assertIn("逐字", comp["instruction"])
         self.assertTrue(comp["speak"])
         self.assertIn("01:54", comp["fallback"], "固定句只留在 fallback 里")
+
+
+class TestCustomPersona(unittest.TestCase):
+    def setUp(self):
+        i18n.set_language("zh")
+        self.addCleanup(i18n.set_language, "zh")
+
+    def test_txt_and_json_import_keep_user_text(self):
+        with tempfile.TemporaryDirectory(prefix="winmon-persona-") as tmp:
+            txt = os.path.join(tmp, "p.txt")
+            with open(txt, "w", encoding="utf-8") as fh:
+                fh.write("你是用户的老同事，说话直一点。\r\n别拐弯。")
+            text, err = ai.load_persona_file(txt)
+            self.assertEqual(err, "")
+            self.assertIn("老同事", text)
+            self.assertNotIn("\r", text)
+            js = os.path.join(tmp, "p.json")
+            with open(js, "w", encoding="utf-8") as fh:
+                fh.write('{"style": "像损友，但不挖苦。"}')
+            text, err = ai.load_persona_file(js)
+            self.assertEqual(err, "")
+            self.assertEqual(text, "像损友，但不挖苦。")
+
+    def test_empty_and_too_long_are_rejected(self):
+        with tempfile.TemporaryDirectory(prefix="winmon-persona-") as tmp:
+            empty = os.path.join(tmp, "e.txt")
+            open(empty, "w", encoding="utf-8").close()
+            self.assertEqual(ai.load_persona_file(empty)[1], "empty")
+            long = os.path.join(tmp, "l.txt")
+            with open(long, "w", encoding="utf-8") as fh:
+                fh.write("字" * (ai.PERSONA_CUSTOM_MAX + 1))
+            self.assertEqual(ai.load_persona_file(long)[1], "too_long")
+
+    def test_custom_card_and_prompt_keep_boundaries(self):
+        card = ai.persona_card("custom", "zh", "像老同事，语气直。")
+        self.assertEqual(card["id"], "custom")
+        self.assertIn("老同事", card["style"])
+        prompt = ai.persona_prompt("custom", "zh", "像老同事，语气直。")
+        self.assertIn("像老同事", prompt)
+        self.assertIn("不能覆盖", prompt)
+        self.assertIn("不评价健康", prompt)
+        long_text = "甲" * 1000
+        long_prompt = ai.persona_prompt("custom", "zh", long_text)
+        self.assertIn(long_text, long_prompt, "自定义人设不能只保留前 800 字")
+        with tempfile.TemporaryDirectory(prefix="winmon-persona-") as tmp:
+            path = os.path.join(tmp, "assist.json")
+            with mock.patch.dict(os.environ, {"WINMON_AI_ASSIST": path}):
+                ai.save_assist({"persona_tone": "custom",
+                                "persona_custom": "像老同事，语气直。"})
+                loaded = ai.load_assist()
+                self.assertEqual(loaded["persona_tone"], "custom")
+                self.assertIn("老同事", loaded["persona_custom"])
+
+
+class TestProactiveDecision(unittest.TestCase):
+    def setUp(self):
+        i18n.set_language("zh")
+        self.addCleanup(i18n.set_language, "zh")
+        self.now = time.mktime((2026, 10, 19, 15, 0, 0, 0, 0, -1))
+        self.base = {"proactive_enabled": True, "proactive_max_per_day": 3,
+                     "proactive_min_interval": 1800, "proactive_day": "",
+                     "proactive_count": 0, "proactive_last_ts": 0.0,
+                     "allow_focus": False, "allow_meeting": False, "allow_night": False}
+
+    def _comp(self, proc="Code.exe", title="x.py", hwnd=1, at=None, idle=10):
+        fg = ai.foreground_facts([W(hwnd, proc, title, proc)], hwnd)
+        return ai.companion_payload(at or self.now, foreground=fg,
+                                    idle_seconds=idle, intent="proactive")
+
+    def test_master_off_by_default(self):
+        self.assertFalse(ai.DEFAULT_ASSIST["proactive_enabled"])
+        self.assertFalse(ai.DEFAULT_ASSIST["allow_focus"])
+        self.assertFalse(ai.DEFAULT_ASSIST["allow_meeting"])
+        self.assertFalse(ai.DEFAULT_ASSIST["allow_night"])
+        comp = self._comp()
+        self.assertFalse(ai.proactive_decision(comp, {"proactive_enabled": False},
+                                               stable_seconds=9999)["allowed"])
+        with tempfile.TemporaryDirectory(prefix="winmon-pro-") as tmp:
+            path = os.path.join(tmp, "assist.json")
+            with mock.patch.dict(os.environ, {"WINMON_AI_ASSIST": path}):
+                ai.save_assist({"proactive_enabled": True, "allow_focus": True,
+                                "proactive_max_per_day": 5,
+                                "proactive_min_interval": 900})
+                loaded = ai.load_assist()
+                self.assertTrue(loaded["proactive_enabled"])
+                self.assertTrue(loaded["allow_focus"])
+                self.assertEqual(loaded["proactive_max_per_day"], 5)
+                self.assertEqual(loaded["proactive_min_interval"], 900)
+
+    def test_focus_meeting_night_are_gated(self):
+        focus = self._comp()
+        self.assertEqual(focus["context"], "focus")
+        self.assertFalse(ai.proactive_decision(
+            focus, self.base, stable_seconds=9999)["allowed"])
+        allow = dict(self.base, allow_focus=True)
+        self.assertTrue(ai.proactive_decision(
+            focus, allow, stable_seconds=1800)["allowed"])
+
+        meeting = self._comp("ms-teams.exe", "Microsoft Teams", hwnd=2)
+        self.assertEqual(meeting["context"], "meeting")
+        self.assertFalse(ai.proactive_decision(
+            meeting, self.base, stable_seconds=9999)["allowed"])
+        allow = dict(self.base, allow_meeting=True)
+        self.assertTrue(ai.proactive_decision(
+            meeting, allow, stable_seconds=300)["allowed"])
+
+        night = ai.companion_payload(
+            time.mktime((2026, 10, 19, 23, 30, 0, 0, 0, -1)),
+            foreground=ai.foreground_facts([W(3, "steam.exe", "Steam", "Steam")], 3),
+            idle_seconds=10, intent="proactive")
+        self.assertEqual(night["context"], "night")
+        self.assertFalse(ai.proactive_decision(
+            night, self.base, stable_seconds=9999)["allowed"])
+        allow = dict(self.base, allow_night=True)
+        self.assertTrue(ai.proactive_decision(
+            night, allow, stable_seconds=0)["allowed"])
+        # 场景开关是独立的：专注+深夜、会议+深夜都要同时允许。
+        night_focus = ai.companion_payload(
+            time.mktime((2026, 10, 19, 23, 30, 0, 0, 0, -1)),
+            foreground=ai.foreground_facts([W(5, "Code.exe", "x.py", "Code")], 5),
+            idle_seconds=10, intent="proactive")
+        self.assertFalse(ai.proactive_decision(
+            night_focus, allow, stable_seconds=9999)["allowed"])
+        night_meeting = ai.companion_payload(
+            time.mktime((2026, 10, 19, 23, 30, 0, 0, 0, -1)),
+            foreground=ai.foreground_facts([W(6, "ms-teams.exe", "Teams", "Teams")], 6),
+            idle_seconds=10, intent="proactive")
+        self.assertFalse(ai.proactive_decision(
+            night_meeting, dict(self.base, allow_meeting=True),
+            stable_seconds=9999)["allowed"])
+
+    def test_game_stability_and_caps(self):
+        game = self._comp("steam.exe", "Steam", hwnd=4)
+        self.assertEqual(game["context"], "game")
+        self.assertFalse(ai.proactive_decision(
+            game, self.base, stable_seconds=10)["allowed"])
+        self.assertTrue(ai.proactive_decision(
+            game, self.base, stable_seconds=300)["allowed"])
+        day = time.strftime("%Y-%m-%d", time.localtime(self.now))
+        capped = dict(self.base, proactive_count=3, proactive_day=day)
+        self.assertFalse(ai.proactive_decision(
+            game, capped, stable_seconds=300)["allowed"])
+        recent = dict(self.base, proactive_last_ts=self.now - 100,
+                      proactive_day=day, proactive_count=1)
+        self.assertFalse(ai.proactive_decision(
+            game, recent, stable_seconds=300, now=self.now)["allowed"])
 
 
 class TestLocalQuip(unittest.TestCase):

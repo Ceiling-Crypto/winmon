@@ -32,7 +32,7 @@
 | [`CHANGELOG.md`](CHANGELOG.md) | **改了什么**：按版本记功能与修复（含版本号怎么变的） | 想知道这版和上版的差别、某个改动是哪一版进的 |
 | [`HANDOFF.md`](HANDOFF.md) | **为什么是这样**：开发交接文档，2800 行，踩过的坑编号到 120+。**含内部设计讨论**（哪些方案试过、为什么放弃） | **改代码之前**（尤其别重复踩坑）；接手这个项目 |
 | [`MCP.md`](MCP.md) | 让 AI 客户端通过 **MCP** 接入 WinMon 的**方案**（**阶段 1.5–8 已实现**：只读工具 / 预算 / 直连 / 本地 HTTP / 跟随式助手 / 角色记忆）；§十 是 2026-10-19 的「AI 工作伴侣」修订 | 想用 AI 操作/观察这台机器上的窗口与进程 |
-| [`tests/`](tests) | 可重复运行的验证用例（889 个，纯标准库） | 改完代码跑一遍；想知道某条规矩被谁钉住 |
+| [`tests/`](tests) | 可重复运行的验证用例（895 个，纯标准库） | 改完代码跑一遍；想知道某条规矩被谁钉住 |
 | [`LICENSE`](LICENSE) | MIT 许可证 | 想用 / 改 / 分发这份代码 |
 
 一句话：**用**看 README，**对比**看 CHANGELOG，**改**看 HANDOFF，**接 AI** 看 MCP。
@@ -188,7 +188,7 @@ py winmon.py
 ### 跑测试（可选，纯标准库）
 
 ```bat
-py tests\run_tests.py            :: 全部用例（889 个，约 96 秒）
+py tests\run_tests.py            :: 全部用例（895 个，约 99 秒）
 py tests\run_tests.py -v         :: 详细输出
 py tests\run_tests.py -k capture :: 只跑名字里含 capture 的用例
 py tests\run_tests.py --list     :: 只列出会跑哪些用例
@@ -847,6 +847,14 @@ WinMon 的 AI 接入层：**本地识别 + 本地事件 + 用量预算 + 可选�
   写代码/开会/共享屏幕/深夜时不要调侃；不确定就沉默。
   一次最多一句，不重复上一句。
   ```
+- **自定义人设**：人设下拉选「自定义」→「导入人设…」，支持 `.txt` / `.md` /
+  `.json`（UTF-8，≤4000 字；JSON 取 `persona/style/text/prompt/content` 字段）。
+  导入后「复制人设」会带上你的全文；安全边界（不评价健康/收入/感情、
+  专注/会议/夜深不调侃）仍然生效，自定义只改语气。
+- **主动搭子（C，默认关）**：接入窗口第 5 节，必须用户手动打开。
+  默认连「专注/会议/夜深」也不允许，三个开关逐项打开；每天最多 3 句、
+  最短 30 分钟；只在「主动 AI」+ 当前 AI 有 key + 预算可用时才会直连。
+  没有本地兜底、不后台偷跑；不开启就完全不会主动调用。
 - **手动「搭子说一句」**（B）：助手窗口按钮或 `--ai-quip`。
   `active` + 当前 AI 有 key 时直连一次（会花 token，账本可见）；
   否则按人设/检测到的应用名本地兜底（0 token）。
@@ -970,8 +978,10 @@ py winmon.py --ai-assist                       :: 跟随当前 AI（见下）
   2. API key 建议（只放环境变量；本次运行临时输入也不写盘）；
   3. **独立工作区建议**：给新项目单独建工作区/新对话，避免旧上下文串味；
      可在这里选文件夹、打开、复制建议（WinMon 只记录路径，不自动建/移文件）；
-  4. AI 行为：人设（关心/损友/安静，可复制人设到 AI 自定义指令）、
-     读取媒体/游戏应用名、读取浏览器标题、允许提醒、值守、自动解释。
+  4. AI 行为：人设（关心/损友/安静/自定义导入，可复制到 AI 自定义指令）、
+     读取媒体/游戏应用名、读取浏览器标题、允许提醒、值守、自动解释；
+  5. 主动搭子（C，默认关）：总开关 + 专注/会议/夜深三个独立允许开关 +
+     每日上限/最短间隔。
 - **本地记录** `winmon_ai_chat.jsonl`：
   - 直连：问题 + 回答 + 真实 token；
   - 剪贴板交接：问题 + “WinMon 看不到这次回复”；
@@ -984,8 +994,10 @@ py winmon.py --ai-assist                       :: 跟随当前 AI（见下）
 
 ```json
 {"mode":"local","break_enabled":true,"workspace_dir":"",
- "persona_tone":"care","read_media":true,"read_game":true,"read_web_title":true,
- "focus_silent":true,"quips_per_day":3,"quiet_hours":"23:30-08:00",
+ "persona_tone":"care","persona_custom":"",
+ "read_media":true,"read_game":true,"read_web_title":true,
+ "proactive_enabled":false,"allow_focus":false,"allow_meeting":false,
+ "allow_night":false,"proactive_max_per_day":3,"proactive_min_interval":1800,
  "enabled":false,"auto_explain":false,"interval_seconds":300}
 ```
 
@@ -1012,12 +1024,12 @@ py winmon.py --ai-assist                       :: 跟随当前 AI（见下）
 
 ## 九、测试
 
-`tests/` 下是一套**可重复运行的验证用例**（889 个），只用 Python 标准库
+`tests/` 下是一套**可重复运行的验证用例**（895 个），只用 Python 标准库
 （`unittest`），与本体一样零依赖。它们把开发过程中一次性做过的验证固化了下来，
 以后改代码可以直接跑，不用重新手工试一遍。
 
 ```bat
-py tests\run_tests.py              :: 全部跑一遍（约 96 秒）
+py tests\run_tests.py              :: 全部跑一遍（约 99 秒）
 py tests\run_tests.py -v           :: 看每个用例的名字与结果
 py tests\run_tests.py -k capture   :: 只跑关心的部分
 py tests\lint_check.py             :: 代码复检（新增问题才退出码 1）

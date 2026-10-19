@@ -242,12 +242,34 @@ class TestConnectWindow(unittest.TestCase):
         self.assertIn({"break_enabled": False}, self.app.saved)
         win.persona_var.set("损友型")
         win.change_persona()
-        self.assertIn({"persona_tone": "tease"}, self.app.saved)
+        self.assertTrue(any(item.get("persona_tone") == "tease"
+                            for item in self.app.saved))
         win.copy_persona()
         self.assertIn("人设：损友型", self.root.clipboard_get())
+        with tempfile.TemporaryDirectory(prefix="winmon-persona-") as tmp:
+            path = os.path.join(tmp, "persona.txt")
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write("你是用户的桌面搭子，语气像老同事。")
+            with mock.patch.object(self.winmon.filedialog, "askopenfilename",
+                                   return_value=path):
+                win.import_persona()
+        self.assertEqual(self.app._ai_assist.get("persona_tone"), "custom")
+        self.assertIn("老同事", self.app._ai_assist.get("persona_custom"))
+        self.assertIn("自定义", win.persona_var.get())
         win.read_media_var.set(False)
         win.toggle_facts()
         self.assertTrue(any(item.get("read_media") is False for item in self.app.saved))
+        self.assertFalse(win.proactive_var.get(), "C 默认必须关")
+        self.assertFalse(win.allow_focus_var.get())
+        self.assertEqual(str(win.allow_focus_chk.cget("state")), "disabled")
+        win.proactive_var.set(True)
+        win.toggle_proactive()
+        self.assertTrue(any(item.get("proactive_enabled") is True
+                            for item in self.app.saved))
+        self.assertEqual(str(win.allow_focus_chk.cget("state")), "normal")
+        win.allow_focus_var.set(True)
+        win.toggle_proactive_gates()
+        self.assertTrue(any(item.get("allow_focus") is True for item in self.app.saved))
         self.app._ai_assist["workspace_dir"] = "D:\\work\\demo"
         win.copy_advice()
         copied = self.root.clipboard_get()

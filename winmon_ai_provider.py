@@ -508,8 +508,9 @@ def handoff_prompt(context: str, question: str = "",
     )
 
 
-def quip_prompt(companion: dict | None, lang: str | None = None) -> str:
-    """用户手动点“搭子说一句”时的直连提示词：只要一句，不要解释。"""
+def quip_prompt(companion: dict | None, lang: str | None = None,
+                proactive: bool = False) -> str:
+    """一句话提示词；`proactive=True` 表示 C 主动触发（用户已授权）。"""
     lang = ai.i18n.get_language() if lang is None else ai.i18n.normalize_language(lang)
     en = lang == "en"
     # 一句调侃不需要整段角色/工作区建议；只留事实 + 人设 + 兜底，省 token。
@@ -518,13 +519,17 @@ def quip_prompt(companion: dict | None, lang: str | None = None) -> str:
     compact["workspace_advice"] = ""
     block = _companion_block(compact, lang)
     if en:
-        return (f"{block}\n"
-                "The user just clicked “say something”. Reply with exactly one short "
-                "sentence in the persona above, using only the facts. No explanation, "
-                "no quotes, no bullet list, under 35 words.")
-    return (f"{block}\n"
-            "用户刚点了「搭子说一句」。只回一句短语，按上面的人设和事实说；"
-            "不要解释、不要引号、不要列表，不超过 50 字。")
+        lead = ("WinMon is allowed to proactively say one line now."
+                if proactive else "The user just clicked “say something”.")
+        return (f"{block}\n{lead}\n"
+                "Reply with exactly one short sentence in the persona above, using only "
+                "the facts. No explanation, no quotes, no bullet list, under 35 words. "
+                "If this is not a good moment, reply exactly “(skip)”.")
+    lead = ("WinMon 现在被允许主动说一句。" if proactive
+            else "用户刚点了「搭子说一句」。")
+    return (f"{block}\n{lead}\n"
+            "只回一句短语，按上面的人设和事实说；不要解释、不要引号、不要列表，"
+            "不超过 50 字。如果此刻不适合开口，只回“（不说）”。")
 
 
 def set_exact_tokens(flag: bool, path: str = "") -> bool:

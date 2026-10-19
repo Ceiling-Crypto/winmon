@@ -3171,8 +3171,17 @@ class _AiConnectWindow:
         self.persona_combo.bind("<<ComboboxSelected>>", lambda _e: self.change_persona())
         ttk.Button(persona_row, text=i18n.t("connect.persona_copy"),
                    command=self.copy_persona).pack(side="left")
+        self.persona_import_btn = ttk.Button(
+            persona_row, text=i18n.t("connect.persona_import"),
+            command=self.import_persona)
+        self.persona_import_btn.pack(side="left", padx=6)
+        self._persona_custom = ai.normalize_custom_persona(assist.get("persona_custom"))
+        self.persona_status = tk.StringVar(value="")
+        ttk.Label(beh, textvariable=self.persona_status, font=("Microsoft YaHei UI", 8),
+                  foreground="#2a4a66", wraplength=720).pack(anchor="w", pady=(2, 0))
         ttk.Label(beh, text=i18n.t("connect.persona_hint"), font=("Microsoft YaHei UI", 8),
                   foreground="#777", wraplength=720).pack(anchor="w", pady=(2, 4))
+        self._update_persona_status()
         facts_row = ttk.Frame(beh)
         facts_row.pack(fill="x")
         self.read_media_var = tk.BooleanVar(value=bool(assist.get("read_media", True)))
@@ -3202,6 +3211,8 @@ class _AiConnectWindow:
         self.explain_chk.pack(anchor="w")
         self._sync_behavior()
 
+        self._build_proactive_section(wrap, assist)
+
         btns = ttk.Frame(wrap)
         btns.pack(fill="x", pady=(10, 0))
         ttk.Button(btns, text=i18n.t("connect.close"),
@@ -3212,6 +3223,63 @@ class _AiConnectWindow:
             i18n.translate_widgets(self.top)
         except Exception:
             pass
+
+    def _build_proactive_section(self, wrap, assist) -> None:
+        # ---- 5) C：主动搭子（默认关，用户显式开启）----
+        pro = ttk.LabelFrame(wrap, text=i18n.t("connect.proactive"), padding=8)
+        pro.pack(fill="x", pady=(8, 0))
+        self.proactive_var = tk.BooleanVar(value=bool(assist.get("proactive_enabled", False)))
+        self.proactive_chk = ttk.Checkbutton(
+            pro, text=i18n.t("connect.proactive_enable"), variable=self.proactive_var,
+            command=self.toggle_proactive)
+        self.proactive_chk.pack(anchor="w")
+        gates = ttk.Frame(pro)
+        gates.pack(fill="x", pady=(4, 0))
+        self.allow_focus_var = tk.BooleanVar(value=bool(assist.get("allow_focus", False)))
+        self.allow_meeting_var = tk.BooleanVar(value=bool(assist.get("allow_meeting", False)))
+        self.allow_night_var = tk.BooleanVar(value=bool(assist.get("allow_night", False)))
+        self.allow_focus_chk = ttk.Checkbutton(
+            gates, text=i18n.t("connect.proactive_focus"), variable=self.allow_focus_var,
+            command=self.toggle_proactive_gates)
+        self.allow_focus_chk.pack(side="left", padx=(0, 10))
+        self.allow_meeting_chk = ttk.Checkbutton(
+            gates, text=i18n.t("connect.proactive_meeting"), variable=self.allow_meeting_var,
+            command=self.toggle_proactive_gates)
+        self.allow_meeting_chk.pack(side="left", padx=(0, 10))
+        self.allow_night_chk = ttk.Checkbutton(
+            gates, text=i18n.t("connect.proactive_night"), variable=self.allow_night_var,
+            command=self.toggle_proactive_gates)
+        self.allow_night_chk.pack(side="left")
+        limits = ttk.Frame(pro)
+        limits.pack(fill="x", pady=(4, 0))
+        ttk.Label(limits, text=i18n.t("connect.proactive_max"), font=UI_FONT).pack(side="left")
+        self.proactive_max_var = tk.StringVar(
+            value=str(int(assist.get("proactive_max_per_day", 3) or 3)))
+        self.proactive_max_combo = ttk.Combobox(
+            limits, textvariable=self.proactive_max_var, state="readonly", width=4,
+            values=["1", "2", "3", "5", "10"], font=UI_FONT)
+        self.proactive_max_combo.pack(side="left", padx=(2, 4))
+        self.proactive_max_combo.bind("<<ComboboxSelected>>",
+                                      lambda _e: self.change_proactive_limits())
+        ttk.Label(limits, text=i18n.t("connect.unit_per_day"), font=UI_FONT).pack(
+            side="left", padx=(0, 10))
+        ttk.Label(limits, text=i18n.t("connect.proactive_interval"), font=UI_FONT).pack(
+            side="left")
+        try:
+            _interval_min = max(5, int(assist.get("proactive_min_interval", 1800) or 1800) // 60)
+        except (TypeError, ValueError):
+            _interval_min = 30
+        self.proactive_interval_var = tk.StringVar(value=str(_interval_min))
+        self.proactive_interval_combo = ttk.Combobox(
+            limits, textvariable=self.proactive_interval_var, state="readonly", width=5,
+            values=["15", "30", "60", "90", "120"], font=UI_FONT)
+        self.proactive_interval_combo.pack(side="left", padx=(2, 4))
+        self.proactive_interval_combo.bind("<<ComboboxSelected>>",
+                                           lambda _e: self.change_proactive_limits())
+        ttk.Label(limits, text=i18n.t("connect.unit_min"), font=UI_FONT).pack(side="left")
+        ttk.Label(pro, text=i18n.t("connect.proactive_hint"), font=("Microsoft YaHei UI", 8),
+                  foreground="#777", wraplength=720).pack(anchor="w", pady=(3, 0))
+        self._sync_proactive()
 
     # ---- 数据 -------------------------------------------------------
     def _config_snippet(self) -> str:
@@ -3258,6 +3326,8 @@ class _AiConnectWindow:
                     chk.configure(state=state)
                 except Exception:
                     pass
+        if hasattr(self, "_sync_proactive"):
+            self._sync_proactive()
 
     def _sync_behavior(self) -> None:
         mode = str((getattr(self.app, "_ai_assist", {}) or {}).get("mode") or "local")
@@ -3331,18 +3401,88 @@ class _AiConnectWindow:
 
     def change_persona(self) -> None:
         tone = self._persona_by_label.get(self.persona_var.get(), ai.DEFAULT_PERSONA)
-        self.app.set_assist(persona_tone=tone)
-        self.status_text.set(ai.persona_card(tone, i18n.get_language())["style"])
+        self.app.set_assist(persona_tone=tone, persona_custom=self._persona_custom)
+        if tone == "custom" and not self._persona_custom:
+            self.persona_status.set(i18n.t("connect.persona_none"))
+        else:
+            self.persona_status.set(ai.persona_card(
+                tone, i18n.get_language(), self._persona_custom)["style"])
 
     def copy_persona(self) -> None:
         tone = self._persona_by_label.get(self.persona_var.get(), ai.DEFAULT_PERSONA)
-        self._copy(ai.persona_prompt(tone, i18n.get_language()),
+        self._copy(ai.persona_prompt(tone, i18n.get_language(), self._persona_custom),
                    i18n.t("connect.copied"))
+
+    def _update_persona_status(self) -> None:
+        tone = self._persona_by_label.get(self.persona_var.get(), ai.DEFAULT_PERSONA)
+        if tone == "custom" and not self._persona_custom:
+            self.persona_status.set(i18n.t("connect.persona_none") + "  "
+                                    + i18n.t("connect.persona_support"))
+        elif tone == "custom":
+            self.persona_status.set(i18n.t("connect.persona_loaded",
+                                           n=len(self._persona_custom)))
+        else:
+            self.persona_status.set(i18n.t("connect.persona_support"))
+
+    def import_persona(self) -> None:
+        try:
+            path = filedialog.askopenfilename(
+                parent=self.top, title=i18n.t("connect.persona_import"),
+                filetypes=[("Persona", "*.txt *.md *.json"), ("All files", "*.*")])
+        except Exception as exc:
+            self.persona_status.set(i18n.t("connect.persona_bad", err=str(exc)))
+            return
+        if not path:
+            return
+        text, err = ai.load_persona_file(path)
+        if err:
+            if err == "too_long":
+                msg = i18n.t("connect.persona_too_long")
+            elif err == "empty":
+                msg = i18n.t("connect.persona_empty")
+            else:
+                msg = i18n.t("connect.persona_bad", err=err)
+            self.persona_status.set(msg)
+            return
+        self._persona_custom = text
+        self.persona_var.set(ai.persona_label("custom", i18n.get_language()))
+        self.app.set_assist(persona_tone="custom", persona_custom=text)
+        self._update_persona_status()
 
     def toggle_facts(self) -> None:
         self.app.set_assist(read_media=bool(self.read_media_var.get()),
                             read_game=bool(self.read_game_var.get()),
                             read_web_title=bool(self.read_web_var.get()))
+
+    def toggle_proactive(self) -> None:
+        self.app.set_assist(proactive_enabled=bool(self.proactive_var.get()))
+        self._sync_proactive()
+
+    def toggle_proactive_gates(self) -> None:
+        self.app.set_assist(allow_focus=bool(self.allow_focus_var.get()),
+                            allow_meeting=bool(self.allow_meeting_var.get()),
+                            allow_night=bool(self.allow_night_var.get()))
+
+    def change_proactive_limits(self) -> None:
+        try:
+            per_day = int(self.proactive_max_var.get() or 3)
+        except ValueError:
+            per_day = 3
+        try:
+            minutes = int(self.proactive_interval_var.get() or 30)
+        except ValueError:
+            minutes = 30
+        self.app.set_assist(proactive_max_per_day=per_day,
+                            proactive_min_interval=max(300, minutes * 60))
+
+    def _sync_proactive(self) -> None:
+        state = "normal" if self.proactive_var.get() else "disabled"
+        for widget in (self.allow_focus_chk, self.allow_meeting_chk, self.allow_night_chk,
+                       self.proactive_max_combo, self.proactive_interval_combo):
+            try:
+                widget.configure(state=state)
+            except Exception:
+                pass
 
     def toggle_watch(self) -> None:
         data = self.app.set_assist(enabled=bool(self.watch_var.get()))
@@ -3761,6 +3901,11 @@ class WinMonApp:
         self._ai_session_tokens = 0
         #: 工作节律（本地计时，0 token；只用于"当前工作"显示，不用于提醒）
         self._work_since = time.time()
+        #: 前台窗口稳定时长（C 用来判断“游戏/专注已经持续多久”）
+        self._fg_since = time.time()
+        #: C 的进程内去重（key 含日期，重启后最多重复一次，另有持久化计数）
+        self._proactive_seen: set = set()
+        self._proactive_last_check = 0.0
         # 测试里把 WINMON_AI_NOTIFY 设为 0，避免弹系统通知打扰
         self._ai_notify_enabled = os.environ.get("WINMON_AI_NOTIFY", "1") not in (
             "", "0", "false", "False")
@@ -5340,6 +5485,7 @@ class WinMonApp:
             fg = core.get_foreground_hwnd()
             if fg != self._fg_hwnd:
                 self._fg_hwnd = fg
+                self._fg_since = time.time()
                 self._update_foreground_marks()
             self._ai_observe_foreground(fg)
         except Exception:
@@ -5389,6 +5535,7 @@ class WinMonApp:
             for inc in fresh:
                 self._ai_notify(inc)
             self._ai_assistant_tick(res, fresh)
+            self._ai_proactive_tick()
         except Exception:
             # 这一层坏了不能影响主界面：静默跳过，下一拍再试
             pass
@@ -5492,6 +5639,13 @@ class WinMonApp:
         except Exception:
             return 0
 
+    def _fg_stable_seconds(self) -> float:
+        """当前前台窗口已经稳定存在多少秒（C 的时长门槛）。"""
+        try:
+            return max(0.0, time.time() - self._fg_since)
+        except Exception:
+            return 0.0
+
     def _ai_work_text(self) -> str:
         """界面上的"当前工作"摘要（0 token，只读窗口）。"""
         try:
@@ -5539,6 +5693,7 @@ class WinMonApp:
             foreground=fg,
             media=media,
             persona=str(assist.get("persona_tone") or ai.DEFAULT_PERSONA),
+            persona_custom=str(assist.get("persona_custom") or ""),
             read_media=bool(assist.get("read_media", True)),
             read_game=bool(assist.get("read_game", True)),
             read_web_title=bool(assist.get("read_web_title", True)),
@@ -5661,6 +5816,12 @@ class WinMonApp:
             self._set_status(f"AI 助手：{out.get('error')}")
         else:
             body = (out.get("text") or "").strip() or "（模型没有返回文字）"
+            if (job.get("kind") == "proactive_quip"
+                    and body.strip().lower() in ("（不说）", "(skip)", "skip",
+                                                 "（跳过）")):
+                self._ai_log("搭子：这次先不说。")
+                self._ai_pump_jobs()
+                return
             total = int(out.get("tokens", 0) or 0)
             self._ai_session_calls += 1
             self._ai_session_tokens += max(0, total)
@@ -5674,9 +5835,10 @@ class WinMonApp:
                 "tokens": total, "tokens_in": out.get("tokens_in", 0),
                 "tokens_out": out.get("tokens_out", 0),
             })
-            if job.get("kind") in ("watch", "incident", "quip"):
+            if job.get("kind") in ("watch", "incident", "quip", "proactive_quip"):
                 self._ai_notify_text(
-                    i18n.pick("搭子", "Companion") if job.get("kind") == "quip"
+                    i18n.pick("搭子", "Companion")
+                    if job.get("kind") in ("quip", "proactive_quip")
                     else f"{ai_name} 的建议", body[:180], "info")
             if job.get("kind") == "incident" and job.get("key"):
                 self._ai_explained[str(job["key"])] = time.time()
@@ -5728,6 +5890,59 @@ class WinMonApp:
                                       "question": question, "prompt": prompt})
         self._ai_pump_jobs()
 
+    def _ai_proactive_tick(self) -> None:
+        """
+        C：用户显式开启后，WinMon 主动检测一个 moment 并直连说一句。
+
+        默认关；只在 active + 当前 AI 有 key + 预算可用时；受
+        `proactive_max_per_day / proactive_min_interval / allow_focus|meeting|night`
+        约束；同一天同一 moment 只一次。**没有本地兜底、没有后台偷跑**。
+        """
+        assist = getattr(self, "_ai_assist", {}) or {}
+        if not assist.get("proactive_enabled"):
+            return
+        if str(assist.get("mode") or "local") != "active":
+            return
+        if getattr(self, "_ai_busy", False) or self._ai_jobs:
+            return
+        now = time.time()
+        if now - float(getattr(self, "_proactive_last_check", 0.0) or 0.0) < 30.0:
+            return
+        self._proactive_last_check = now
+        try:
+            if core.seconds_since_last_input() >= 300:
+                return
+        except Exception:
+            pass
+        cfg, ai_name = self._ai_direct_target()
+        if cfg is None or cfg.validate():
+            return
+        comp = self._ai_companion(intent="proactive")
+        decision = ai.proactive_decision(comp, assist, self._fg_stable_seconds(), now)
+        if not decision.get("allowed"):
+            return
+        key = str(decision.get("key") or "")
+        if not key or key in getattr(self, "_proactive_seen", set()):
+            return
+        if not self._ai_budget.check(400).get("allowed"):
+            return
+        prompt = provider.quip_prompt(comp, i18n.get_language(), proactive=True)
+        self._proactive_seen.add(key)
+        try:
+            self._ai_assist = ai.save_assist({
+                **assist,
+                "proactive_day": str(decision.get("day") or ""),
+                "proactive_count": int(decision.get("count", 0) or 0) + 1,
+                "proactive_last_ts": now,
+            })
+        except Exception:
+            pass
+        self._ai_log(f"[主动搭子] {decision.get('context')} · {key}")
+        self._ai_enqueue_job({
+            "kind": "proactive_quip", "ai": ai_name, "cfg": cfg,
+            "question": "搭子主动说一句", "prompt": prompt,
+        })
+
     def _ai_header_text(self) -> str:
         """助手窗口顶部：**先写接入状态**，再写模式、花费与“提醒归 AI”。"""
         conn = self._ai_connection_snapshot()
@@ -5771,11 +5986,16 @@ class WinMonApp:
                    break_enabled: bool | None = None,
                    workspace_dir: str | None = None,
                    persona_tone: str | None = None,
+                   persona_custom: str | None = None,
                    read_media: bool | None = None,
                    read_game: bool | None = None,
                    read_web_title: bool | None = None,
-                   focus_silent: bool | None = None,
-                   quips_per_day: int | None = None) -> dict:
+                   proactive_enabled: bool | None = None,
+                   proactive_max_per_day: int | None = None,
+                   proactive_min_interval: int | None = None,
+                   allow_focus: bool | None = None,
+                   allow_meeting: bool | None = None,
+                   allow_night: bool | None = None) -> dict:
         """改助手模式/值守/提醒/工作区/人设（界面调用；只写本地设置文件）。"""
         data = dict(getattr(self, "_ai_assist", {}) or {})
         old_mode = str(data.get("mode") or "local")
@@ -5796,14 +6016,27 @@ class WinMonApp:
             data["workspace_dir"] = str(workspace_dir or "")[:260]
         if persona_tone is not None:
             data["persona_tone"] = str(persona_tone or ai.DEFAULT_PERSONA)
+        if persona_custom is not None:
+            data["persona_custom"] = ai.normalize_custom_persona(persona_custom)
         for key, value in (("read_media", read_media), ("read_game", read_game),
-                           ("read_web_title", read_web_title),
-                           ("focus_silent", focus_silent)):
+                           ("read_web_title", read_web_title)):
             if value is not None:
                 data[key] = bool(value)
-        if quips_per_day is not None:
+        for key, value in (("proactive_enabled", proactive_enabled),
+                           ("allow_focus", allow_focus),
+                           ("allow_meeting", allow_meeting),
+                           ("allow_night", allow_night)):
+            if value is not None:
+                data[key] = bool(value)
+        if proactive_max_per_day is not None:
             try:
-                data["quips_per_day"] = max(0, min(20, int(quips_per_day)))
+                data["proactive_max_per_day"] = max(1, min(20, int(proactive_max_per_day)))
+            except (TypeError, ValueError):
+                pass
+        if proactive_min_interval is not None:
+            try:
+                data["proactive_min_interval"] = max(
+                    300, min(7200, int(proactive_min_interval)))
             except (TypeError, ValueError):
                 pass
         self._ai_assist = ai.save_assist(data)
@@ -8242,6 +8475,7 @@ def ai_quip_cli(as_json: bool = False) -> int:
     comp = ai.companion_payload(
         intent="quip", foreground=fg, media=media,
         persona=str(assist.get("persona_tone") or ai.DEFAULT_PERSONA),
+        persona_custom=str(assist.get("persona_custom") or ""),
         read_media=bool(assist.get("read_media", True)),
         read_game=bool(assist.get("read_game", True)),
         read_web_title=bool(assist.get("read_web_title", True)),
@@ -8354,6 +8588,7 @@ def ai_assist_cli(question: str = "", as_json: bool = False,
             wins, fg, read_web_title=bool(assist.get("read_web_title", True))),
         media=(ai.media_facts() if assist.get("read_media", True) else None),
         persona=str(assist.get("persona_tone") or ai.DEFAULT_PERSONA),
+        persona_custom=str(assist.get("persona_custom") or ""),
         read_media=bool(assist.get("read_media", True)),
         read_game=bool(assist.get("read_game", True)),
         read_web_title=bool(assist.get("read_web_title", True)))

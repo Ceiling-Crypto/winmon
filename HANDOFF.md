@@ -3,7 +3,7 @@
 > 用途：在新的对话里快速恢复上下文。读这一份即可继续开发。
 > **正式发布名 `winmon1.0`**（`APP_VER = "1.0"`，查版本：`py winmon.py --version`）。
 > **先读 §一点五「WinMon 的定位与能力边界」** —— 输入注入已明确不再投入。
-> 代码状态：**889 个测试用例全绿**（约 96 秒）+ 代码复检 0 新增问题（基线为空）、
+> 代码状态：**895 个测试用例全绿**（约 99 秒）+ 代码复检 0 新增问题（基线为空）、
 > 自检 8/8、界面冒烟通过、
 > 桌面快捷方式可用、程序目录端到端可用、
 > 视频联动 = **监视当前窗口 / 停止监视 / 直接关闭视频**（自动识别与「用链接打开」已删掉）、
@@ -20,7 +20,7 @@
 
 | | |
 | --- | --- |
-| 测试 | **889 用例全绿**（`py tests\run_tests.py`，约 96 秒；含 7 条按环境 skip） |
+| 测试 | **895 用例全绿**（`py tests\run_tests.py`，约 99 秒；含 7 条按环境 skip） |
 | 代码复检 | `py tests\lint_check.py` → **新增问题 0**（基线已清空，见 §四） |
 | 自检 / 冒烟 | `py winmon.py --selftest` 8/8 通过；`--smoke` 通过 |
 | 规模 | `winmon_core.py` ~6700 行 / `winmon.py` ~8770 行 / 测试 44 个 .py（31 个测试模块） |
@@ -70,7 +70,7 @@
 1. **把媒体那一行做精**：常驻快照已经有了，可以顺手把"播放速率/时间线"接进来
    （当初删掉的进度显示，明确说过"以后再说" —— **动手前先确认**）；
 2. **托盘右键加播放控制**（上一首/播放暂停/下一首）+ 显示当前曲名，不用切回主窗口；
-3. **测试提速**：889 用例 94 秒里，`test_b5`/`test_b6` 的"真开窗+真抓画面"占大头，
+3. **测试提速**：895 用例 99 秒里，`test_b5`/`test_b6` 的"真开窗+真抓画面"占大头，
    可给它们打标记 + `run_tests.py --fast`；
 4. **GUI 拆分**：`winmon.py` 已 7000 行，可按标签页拆包（注意 §§布局不变量与 lint 的 200 行阈值）。
 
@@ -104,7 +104,7 @@
 | `winmon_mcp.py` | ~800 | **MCP 服务器**：双时代 stdio + 本地 HTTP + 四个只读工具 |
 | `winmon_ai_provider.py` | ~250 | **可选**直连模型 API（默认关；精确 usage；key 只从环境变量读） |
 | `media_session.ps1` | ~230 | 系统媒体会话（GSMTC）桥接脚本（PowerShell + Windows 自带 WinRT 投影；**必须纯 ASCII 无 BOM**） |
-| `tests/` | 45 个 .py | **可重复运行的测试**（889 用例，纯 unittest） + 开发辅助工具 + `lint_check.py` / `lint_baseline.txt` |
+| `tests/` | 45 个 .py | **可重复运行的测试**（895 用例，纯 unittest） + 开发辅助工具 + `lint_check.py` / `lint_baseline.txt` |
 | `启动WinMon.bat` | — | 菜单式启动器（纯 ASCII，避免批处理编码问题） |
 | `scan_windows.py` | — | 命令行窗口清单 |
 | `close_others.py` | — | 批量关闭除当前窗口外的窗口 |
@@ -157,7 +157,7 @@ python winmon.py --videos --open 3 --watch --close-window   :: 完整视频链�
 python winmon.py --version          :: 打印版本（winmon1.0）
 python winmon.py --idle             :: 列出"长期开着、没人用"的程序（只看，不关任何东西）
 python winmon.py --idle --idle-minutes 5   :: 换个闲置阈值（分钟）
-py tests\run_tests.py               :: 全部测试（889 用例，约 96 秒）
+py tests\run_tests.py               :: 全部测试（895 用例，约 99 秒）
 ```
 
 ---
@@ -1972,6 +1972,33 @@ AI 助手窗口太杂，API key 建议应单独一个窗口；设置里要加语
 角色/工作区段；`read_game=false` 时 `foreground.kind` 不再泄露“游戏”；
 浏览器标题不再被误判成游戏；接入窗口在 150% 下可滚动。
 
+#### 二点五、8.2：自定义人设 + C 主动搭子（2026-10-19 傍晚）
+
+用户定：
+
+1. 人设增加**自定义**，由用户导入；
+2. 专注/会议/夜深默认不开启，由用户逐项选择；
+3. C（WinMon 主动检测 + 直连）可以做，但**是否开启由用户决定**。
+
+落地：
+
+- `PERSONA_CUSTOM_MAX=4000`；`load_persona_file()` 支持 `.txt/.md/.json`
+  （UTF-8/BOM/GBK 回退，JSON 取 persona/style/text/prompt/content），
+  空/超长拒绝；`persona_card("custom", ..., custom)` 只保留前 800 字给 MCP，
+  `persona_prompt()` 保留全文；安全边界仍由 `PERSONA_RULES_*` 兜底。
+- 接入窗口人设下拉新增「自定义」+「导入人设…」+ 状态行；
+  `persona_custom` 存 `winmon_ai_assist.json`。
+- C 配置：`proactive_enabled`（默认 false）、`proactive_max_per_day=3`、
+  `proactive_min_interval=1800`、`allow_focus/meeting/night`（默认全 false）、
+  持久化 `proactive_day/count/last_ts`。
+- `proactive_decision()` 纯逻辑：master 开 + context + 三个独立 allow 开关 +
+  稳定时长（game 5min / media 10min / focus 30min / meeting 5min / night 0）+
+  每日上限 + 最短间隔。
+- `_ai_proactive_tick()` 只在 `active` + 当前 AI 有 key + 预算可用时跑；
+  没有本地兜底、没有后台偷跑；`_fg_since` 记录前台稳定时长。
+- 接入窗口第 5 节「主动搭子（C，默认关）」：总开关 + 三个 allow 复选框 +
+  每日上限 + 最短间隔；总开关关时其余控件禁用。
+
 #### 三、行为边界
 
 - `mode=passive`：`reminder` 为空，AI 不提醒；
@@ -1981,18 +2008,22 @@ AI 助手窗口太杂，API key 建议应单独一个窗口；设置里要加语
 - 非时段（如 15:00）：`reminder` 为空，`note` 写“当前不在提醒时段”；
 - 深夜跨午夜用开始日期做 `once_key`（23:59 与 00:01 同一段）；
 - **WinMon 没有任何时间提醒弹窗**；`_ai_tick` 只保留本地事件气泡与 `active` 值守。
+- **C 默认关**：`proactive_enabled=false`；`allow_focus/meeting/night` 全 false；
+  只有 `active` + 当前 AI 有 key + 预算可用才可能直连；没有本地兜底。
 
 #### 四、验收
 
 - `test_b29` 改为验证精简窗口；`test_b30` 的 `TestWellnessTick` 改为
-  `TestCompanionPayload`（数据、去重键、无弹窗）；新增 `test_b31`（14）、`test_b32`（8）：
+  `TestCompanionPayload`（数据、去重键、无弹窗）；新增 `test_b31`（14）、`test_b32`（14）：
   双语往返、设置语言、提示词带角色、MCP instructions/companion、独立接入窗口、
   key 只进进程环境变量；`test_b32` 另守素材包（媒体只留应用名、浏览器标题、
   游戏应用名）、人设卡/自由措辞、本地兜底不硬编码本机媒体、`--ai-quip`；
-- 全量 **889 用例，失败 0 / 错误 0 / 跳过 7**（`D:\winmon`，95.9 秒）；
+  `test_b32` 还守自定义人设导入/全文/边界、C 默认关/三个场景独立门控/
+  每日上限/最短间隔；
+- 全量 **895 用例，失败 0 / 错误 0 / 跳过 7**（`D:\winmon`，99.1 秒）；
 - `--mcp-selftest` 13/13；`--smoke` 中英文启动均通过；`lint_check` 0 新增问题；
 - `D:\test` 便携数据目录（`WINMON_DATA_DIR=D:\test\winmon-data`）全量
-  **889 用例，失败 0 / 错误 0 / 跳过 9**（96.5 秒；多出的 2 个 skip 是便携模式
+  **895 用例，失败 0 / 错误 0 / 跳过 9**（99.3 秒；多出的 2 个 skip 是便携模式
   下的默认数据目录检查）。
 
 ## 三、踩过的坑（**最重要，别重复踩**）
@@ -2547,7 +2578,7 @@ AI 助手窗口太杂，API key 建议应单独一个窗口；设置里要加语
 ## 四、测试体系（**改代码后先跑这个**）
 
 ```bat
-py tests\run_tests.py            :: 889 用例，约 96 秒
+py tests\run_tests.py            :: 895 用例，约 99 秒
 py tests\run_tests.py -v         :: 逐个看
 py tests\run_tests.py -k capture :: 只跑关心的
 py tests\lint_check.py           :: 代码复检（退出码 1 = 有新增问题）
@@ -2705,7 +2736,7 @@ py tests\lint_check.py           :: 代码复检（退出码 1 = 有新增问题
    把 `WinMonApp` 瘦成协调者。拆分时注意那些布局不变量（见坑 21~24），
    以及 `lint_check.py` 的"函数过长"（>200 行）阈值 —— `_build_ui` 已经贴着线走了，
    当时就是靠把视频联动那三行拆成 `_build_video_bars()` 才压下去的。
-5. **测试提速**：~~244 用例 17 秒~~ → 现在 **889 用例约 96 秒**。
+5. **测试提速**：~~244 用例 17 秒~~ → 现在 **895 用例约 99 秒**。
    变慢的是 `test_b5`/`test_b6` 里"真开窗、真抓画面、真关窗"的端到端用例
    （每次要采 2 秒画面，这是必要的 —— 播放判定本来就靠画面变化）。
    想快可以给它们打 `slow` 标记，`run_tests.py` 加 `--fast` 跳过
@@ -3228,7 +3259,7 @@ C 盘那份**保持原样、一字未改**（用户 2026-10-11 确认：暂不�
 
 > 继续开发 **WinMon 1.0（`winmon1.0`）** —— Windows 程序监控与终止工具，纯标准库，在 `项目根目录\`。
 > 请先读 `HANDOFF.md` 和 `README.md`，然后跑 `py tests\run_tests.py`
-> 确认基线是 **889 用例全绿**（需要哔哩哔哩/UIA 页面的用例会按需 skip）、
+> 确认基线是 **895 用例全绿**（需要哔哩哔哩/UIA 页面的用例会按需 skip）、
 > `py tests\lint_check.py` 退出码 0（无新增问题）。
 > **版式要另眼验收**：测试进程没有开 DPI 感知，布局检查看不到"真实 DPI 下控件被挤没"，
 > 所以改动界面后还要跑一次 `py winmon.py --smoke` 看截图（见 §9.15 第 14 条）。

@@ -68,9 +68,14 @@
   **事实 + 人设 + 自由措辞**；默认关心型（可切损友/安静）；
   媒体/游戏只读应用名、浏览器读网页标题；新增 `--ai-quip` 和助手
   「搭子说一句」（手动触发，本地兜底 0 token；active+key 直连一次）。
+- **阶段 8.2（2026-10-19）**：人设增加**自定义导入**（.txt/.md/.json，
+  ≤4000 字，JSON 支持 persona/style/text/prompt/content；复制时保留全文，
+  安全边界仍生效）；**C 主动搭子**实现但默认关：
+  `proactive_enabled` + `allow_focus/meeting/night` 默认全 false，
+  每日上限 / 最短间隔 / 前台稳定时长门控，只在 active+key 时直连。
 - 测试：`test_b22`（23）、`test_b23`（15）、`test_b24`（22）、`test_b25`（15）、
   `test_b26`（12）、`test_b27`（9）、`test_b28`（2）、`test_b29`（18）、
-  `test_b30`（22）、`test_b31`（14）、`test_b32`（8）；全量 **889 用例**。
+  `test_b30`（22）、`test_b31`（14）、`test_b32`（14）；全量 **895 用例**。
 
 ### 修复
 
@@ -96,7 +101,7 @@
 
 | 项目 | 结果 |
 | --- | --- |
-| `py tests\run_tests.py` | 889 用例，失败 0 / 错误 0 / 跳过 7（约 96 秒，stderr 0 行） |
+| `py tests\run_tests.py` | 895 用例，失败 0 / 错误 0 / 跳过 7（约 99 秒，stderr 0 行） |
 | `py winmon.py --mcp-selftest` | 13/13 OK，退出 0 |
 | `py winmon.py --smoke` | 退出 0，stderr 0（中英文启动均验证） |
 | `--ai-usage` / `--ai-context --copy` | 正常；中文剪贴板实测通过 |

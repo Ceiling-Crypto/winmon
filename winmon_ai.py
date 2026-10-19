@@ -1437,6 +1437,20 @@ GAME_PROCS = {
 GAME_HINTS = ("steam", "epic games", "wegame", "battle.net", "riot client",
               "league of legends", "valorant", "minecraft", "原神", "崩坏",
               "星穹铁道", "绝区零", "鸣潮", "英雄联盟")
+#: 常见会议/共享屏幕进程与标题线索。只用于 C 的“会议中默认不主动”判断。
+MEETING_PROCS = {
+    "teams.exe", "ms-teams.exe", "zoom.exe", "wemeetapp.exe", "wemeet.exe",
+    "dingtalk.exe", "feishu.exe", "lark.exe", "webex.exe", "webexmta.exe",
+    "gotomeeting.exe", "skype.exe", "voov.exe",
+}
+MEETING_HINTS = ("zoom meeting", "腾讯会议", "tencent meeting", "google meet",
+                 "webex", "microsoft teams", "钉钉会议", "飞书会议")
+
+
+def is_meeting_app(proc: str, title: str = "") -> bool:
+    p = (proc or "").lower()
+    t = (title or "").lower()
+    return p in MEETING_PROCS or any(h in t for h in MEETING_HINTS)
 
 
 def work_kind_of(proc: str, title: str = "") -> str:
@@ -1570,6 +1584,8 @@ PERSONA_TONES = {
     },
 }
 DEFAULT_PERSONA = "care"
+#: 自定义人设的最大长度（字符）。太长会把每次提示词撑爆，也难维护。
+PERSONA_CUSTOM_MAX = 4000
 PERSONA_RULES_ZH = (
     "只使用 companion.facts 里的事实，不编造时长、曲名、游戏名；",
     "一次最多一句（约 30–50 字），不要解释、不要复述整段素材；",
@@ -1587,11 +1603,21 @@ PERSONA_RULES_EN = (
 )
 
 
+def normalize_custom_persona(text) -> str:
+    """清洗用户导入的人设：BOM、换行、首尾空白、长度上限。"""
+    if not isinstance(text, str):
+        return ""
+    value = text.lstrip("\ufeff").replace("\r\n", "\n").replace("\r", "\n").strip()
+    return value[:PERSONA_CUSTOM_MAX]
+
+
 def persona_labels(lang: str | None = None) -> dict:
-    """人设 slug → 显示名（顺序固定：关心 / 损友 / 安静）。"""
+    """人设 slug → 显示名（顺序固定：关心 / 损友 / 安静 / 自定义）。"""
     lang = i18n.get_language() if lang is None else i18n.normalize_language(lang)
     key = "en" if lang == "en" else "zh"
-    return {slug: info[key] for slug, info in PERSONA_TONES.items()}
+    labels = {slug: info[key] for slug, info in PERSONA_TONES.items()}
+    labels["custom"] = "Custom" if key == "en" else "自定义"
+    return labels
 
 
 def persona_label(tone: str, lang: str | None = None) -> str:
@@ -1599,11 +1625,23 @@ def persona_label(tone: str, lang: str | None = None) -> str:
     return labels.get(str(tone or ""), labels[DEFAULT_PERSONA])
 
 
-def persona_card(tone: str = DEFAULT_PERSONA, lang: str | None = None) -> dict:
-    """给 AI 的短人设卡：语气 + 边界；不包含固定台词。"""
+def persona_card(tone: str = DEFAULT_PERSONA, lang: str | None = None,
+                 custom: str = "") -> dict:
+    """给 AI 的短人设卡：语气 + 边界；不含固定台词。`custom` 为用户导入文本。"""
     lang = i18n.get_language() if lang is None else i18n.normalize_language(lang)
     en = lang == "en"
     slug = str(tone or DEFAULT_PERSONA).lower()
+    if slug == "custom":
+        text = normalize_custom_persona(custom)
+        label = "Custom" if en else "自定义"
+        style = text or ("(no custom persona imported; caring fallback)" if en
+                         else "（未导入自定义人设，按关心型兜底）")
+        return {
+            "id": "custom",
+            "label": label,
+            "style": style[:800],
+            "rules": list(PERSONA_RULES_EN if en else PERSONA_RULES_ZH),
+        }
     if slug not in PERSONA_TONES:
         slug = DEFAULT_PERSONA
     info = PERSONA_TONES[slug]
@@ -1615,20 +1653,71 @@ def persona_card(tone: str = DEFAULT_PERSONA, lang: str | None = None) -> dict:
     }
 
 
-def persona_prompt(tone: str = DEFAULT_PERSONA, lang: str | None = None) -> str:
+def persona_prompt(tone: str = DEFAULT_PERSONA, lang: str | None = None,
+                   custom: str = "") -> str:
     """可复制到 AI 自定义指令的人设卡（也是交接提示词里的人设段）。"""
     lang = i18n.get_language() if lang is None else i18n.normalize_language(lang)
     en = lang == "en"
-    card = persona_card(tone, lang)
+    card = persona_card(tone, lang, custom)
+    body = (normalize_custom_persona(custom)
+            if str(tone or "").lower() == "custom" and normalize_custom_persona(custom)
+            else card["style"])
     rules = "\n".join(f"- {r}" for r in card["rules"])
     if en:
         return (f"You are the user's desktop companion. Persona: {card['label']}.\n"
-                f"{card['style']}\nRules:\n{rules}\n"
-                "When WinMon gives you companion.facts, you may phrase the line yourself; "
+                f"{body}\nRules:\n{rules}\n"
+                "The custom persona can set tone, but never overrides these boundaries. "
+                "When WinMon gives you companion.facts, phrase the line yourself; "
                 "never copy a fallback sentence verbatim.")
-    return (f"你是用户的桌面搭子。人设：{card['label']}。\n{card['style']}\n"
+    return (f"你是用户的桌面搭子。人设：{card['label']}。\n{body}\n"
             f"规则：\n{rules}\n"
+            "自定义人设只能改变语气，不能覆盖上述边界。"
             "WinMon 给你 companion.facts 时，措辞由你决定；不要逐字复制 fallback。")
+
+
+def load_persona_file(path: str) -> tuple[str, str]:
+    """
+    导入人设文件：`.txt` / `.md` 原文，或 `.json` 里的 persona/style/text/prompt/content。
+
+    返回 `(text, error)`；`error` 为空表示成功。支持 UTF-8（含 BOM）与 GBK 回退，
+    **不自动执行、不联网**。超过 `PERSONA_CUSTOM_MAX` 不截断，直接报错让用户知道。
+    """
+    try:
+        with open(path, "rb") as fh:
+            raw = fh.read()
+    except OSError as exc:
+        return "", f"{type(exc).__name__}: {exc}"
+    text = ""
+    for enc in ("utf-8-sig", "gbk"):
+        try:
+            text = raw.decode(enc)
+            break
+        except UnicodeDecodeError:
+            continue
+    else:
+        return "", "not text / unsupported encoding"
+    if str(path).lower().endswith(".json"):
+        try:
+            data = json.loads(text)
+        except Exception as exc:
+            return "", f"JSON: {exc}"
+        if isinstance(data, dict):
+            for key in ("persona", "style", "text", "prompt", "content"):
+                if isinstance(data.get(key), str) and data[key].strip():
+                    text = data[key]
+                    break
+            else:
+                return "", "JSON has no persona/style/text/prompt/content"
+        elif isinstance(data, str):
+            text = data
+        else:
+            return "", "JSON must be an object or string"
+    stripped = text.lstrip("\ufeff").replace("\r\n", "\n").replace("\r", "\n").strip()
+    if not stripped:
+        return "", "empty"
+    if len(stripped) > PERSONA_CUSTOM_MAX:
+        return "", "too_long"
+    return stripped, ""
 
 
 #: AI 助手（值守）的本地设置默认值。
@@ -1642,12 +1731,20 @@ DEFAULT_ASSIST = {
     "workspace_dir": "",
     # 人设与素材边界（2026-10-19 用户定：默认关心型；媒体/游戏只读应用名；网页读标题）
     "persona_tone": DEFAULT_PERSONA,
+    "persona_custom": "",
     "read_media": True,
     "read_game": True,
     "read_web_title": True,
-    "focus_silent": True,
-    "quips_per_day": 3,
-    "quiet_hours": "23:30-08:00",
+    # C：主动检测 + 直连（默认关，必须用户显式打开；专注/会议/夜深也默认不允许）
+    "proactive_enabled": False,
+    "proactive_max_per_day": 3,
+    "proactive_min_interval": 1800,
+    "allow_focus": False,
+    "allow_meeting": False,
+    "allow_night": False,
+    "proactive_day": "",
+    "proactive_count": 0,
+    "proactive_last_ts": 0.0,
 }
 
 
@@ -1677,16 +1774,35 @@ def load_assist() -> dict:
     data["break_enabled"] = bool(raw.get("break_enabled", True))
     data["workspace_dir"] = str(raw.get("workspace_dir") or "")[:260]
     tone = str(raw.get("persona_tone") or DEFAULT_PERSONA).strip().lower()
-    data["persona_tone"] = tone if tone in PERSONA_TONES else DEFAULT_PERSONA
+    data["persona_tone"] = (tone if tone in PERSONA_TONES or tone == "custom"
+                            else DEFAULT_PERSONA)
+    data["persona_custom"] = normalize_custom_persona(raw.get("persona_custom"))
     data["read_media"] = bool(raw.get("read_media", True))
     data["read_game"] = bool(raw.get("read_game", True))
     data["read_web_title"] = bool(raw.get("read_web_title", True))
-    data["focus_silent"] = bool(raw.get("focus_silent", True))
+    data["proactive_enabled"] = bool(raw.get("proactive_enabled", False))
     try:
-        data["quips_per_day"] = max(0, min(20, int(raw.get("quips_per_day", 3))))
+        data["proactive_max_per_day"] = max(
+            1, min(20, int(raw.get("proactive_max_per_day", 3))))
     except (TypeError, ValueError):
-        data["quips_per_day"] = 3
-    data["quiet_hours"] = str(raw.get("quiet_hours") or "23:30-08:00")[:20]
+        data["proactive_max_per_day"] = 3
+    try:
+        data["proactive_min_interval"] = max(
+            300, min(7200, int(raw.get("proactive_min_interval", 1800))))
+    except (TypeError, ValueError):
+        data["proactive_min_interval"] = 1800
+    data["allow_focus"] = bool(raw.get("allow_focus", False))
+    data["allow_meeting"] = bool(raw.get("allow_meeting", False))
+    data["allow_night"] = bool(raw.get("allow_night", False))
+    data["proactive_day"] = str(raw.get("proactive_day") or "")[:10]
+    try:
+        data["proactive_count"] = max(0, int(raw.get("proactive_count", 0)))
+    except (TypeError, ValueError):
+        data["proactive_count"] = 0
+    try:
+        data["proactive_last_ts"] = max(0.0, float(raw.get("proactive_last_ts", 0.0)))
+    except (TypeError, ValueError):
+        data["proactive_last_ts"] = 0.0
     try:
         interval = int(raw.get("interval_seconds", DEFAULT_ASSIST["interval_seconds"]))
     except (TypeError, ValueError):
@@ -1709,16 +1825,38 @@ def save_assist(data: dict) -> dict:
                                              clean.get("workspace_dir", "")))[:260]
         tone = str(data.get("persona_tone", clean.get("persona_tone", DEFAULT_PERSONA))
                    or DEFAULT_PERSONA).strip().lower()
-        clean["persona_tone"] = tone if tone in PERSONA_TONES else DEFAULT_PERSONA
-        for key in ("read_media", "read_game", "read_web_title", "focus_silent"):
+        clean["persona_tone"] = (tone if tone in PERSONA_TONES or tone == "custom"
+                                 else DEFAULT_PERSONA)
+        clean["persona_custom"] = normalize_custom_persona(
+            data.get("persona_custom", clean.get("persona_custom", "")))
+        for key in ("read_media", "read_game", "read_web_title"):
             clean[key] = bool(data.get(key, clean.get(key, True)))
+        clean["proactive_enabled"] = bool(data.get(
+            "proactive_enabled", clean.get("proactive_enabled", False)))
         try:
-            clean["quips_per_day"] = max(0, min(20, int(data.get(
-                "quips_per_day", clean.get("quips_per_day", 3)))))
+            clean["proactive_max_per_day"] = max(1, min(20, int(data.get(
+                "proactive_max_per_day", clean.get("proactive_max_per_day", 3)))))
         except (TypeError, ValueError):
-            clean["quips_per_day"] = 3
-        clean["quiet_hours"] = str(data.get("quiet_hours",
-                                          clean.get("quiet_hours", "23:30-08:00")))[:20]
+            clean["proactive_max_per_day"] = 3
+        try:
+            clean["proactive_min_interval"] = max(300, min(7200, int(data.get(
+                "proactive_min_interval", clean.get("proactive_min_interval", 1800)))))
+        except (TypeError, ValueError):
+            clean["proactive_min_interval"] = 1800
+        for key in ("allow_focus", "allow_meeting", "allow_night"):
+            clean[key] = bool(data.get(key, clean.get(key, False)))
+        clean["proactive_day"] = str(data.get(
+            "proactive_day", clean.get("proactive_day", "")))[:10]
+        try:
+            clean["proactive_count"] = max(0, int(data.get(
+                "proactive_count", clean.get("proactive_count", 0))))
+        except (TypeError, ValueError):
+            clean["proactive_count"] = 0
+        try:
+            clean["proactive_last_ts"] = max(0.0, float(data.get(
+                "proactive_last_ts", clean.get("proactive_last_ts", 0.0))))
+        except (TypeError, ValueError):
+            clean["proactive_last_ts"] = 0.0
         try:
             interval = int(data.get("interval_seconds", clean["interval_seconds"]))
         except (TypeError, ValueError):
@@ -1902,6 +2040,7 @@ def foreground_facts(windows: list | None = None, foreground_hwnd: int = 0,
         "proc": proc,
         "kind": kind,
         "title": title if (is_browser and read_web_title) else "",
+        "meeting": is_meeting_app(proc, title),
     }
 
 
@@ -1991,9 +2130,11 @@ def companion_payload(now: float | None = None, break_enabled: bool = True,
                       lang: str | None = None, foreground: dict | None = None,
                       media: dict | None = None,
                       persona: str = DEFAULT_PERSONA,
+                      persona_custom: str = "",
                       read_media: bool = True, read_game: bool = True,
                       read_web_title: bool = True,
                       work_minutes: int = 0,
+                      idle_seconds: int | None = None,
                       intent: str = "ambient") -> dict:
     """
     “由接入的 AI 转达”的素材包：事实 + 人设 + 兜底，不规定逐字台词。
@@ -2021,9 +2162,12 @@ def companion_payload(now: float | None = None, break_enabled: bool = True,
 
     slot = None
     note = ""
-    if intent == "quip":
+    if intent in ("quip", "proactive"):
         slot = time_slot(now, lang=lang)
-        note = "用户手动点了一次“搭子说一句”。" if not en else "Manual “say something”."
+        note = ("用户手动点了一次“搭子说一句”。" if intent == "quip"
+                else "WinMon 按用户设置主动说一句。") if not en else (
+                "Manual “say something”." if intent == "quip"
+                else "WinMon proactive line, enabled by the user.")
     elif mode not in ("local", "active"):
         note = "只读模式：不提醒。" if not en else "Read-only mode: no reminders."
     elif not break_enabled:
@@ -2034,7 +2178,8 @@ def companion_payload(now: float | None = None, break_enabled: bool = True,
             note = "当前不在提醒时段。" if not en else "Outside reminder slots."
 
     try:
-        idle = int(core.seconds_since_last_input())
+        idle = (int(core.seconds_since_last_input()) if idle_seconds is None
+                else max(0, int(idle_seconds)))
     except Exception:
         idle = 0
     facts = {
@@ -2047,9 +2192,24 @@ def companion_payload(now: float | None = None, break_enabled: bool = True,
         "idle_seconds": max(0, idle),
         "work_minutes": max(0, int(work_minutes or 0)),
     }
-    if intent == "quip":
+    if fg and fg.get("meeting"):
+        context = "meeting"
+    elif str((slot or {}).get("id") or "") == "night":
+        context = "night"
+    elif fg and fg.get("kind") in ("编程", "文档") and idle < 180:
+        context = "focus"
+    elif game:
+        context = "game"
+    elif media_clean:
+        context = "media"
+    elif idle >= 300:
+        context = "idle"
+    else:
+        context = "normal"
+    facts["context"] = context
+    if intent in ("quip", "proactive"):
         speak = True
-        moment = "manual_quip"
+        moment = "manual_quip" if intent == "quip" else "proactive"
     elif slot is not None:
         speak = mode in ("local", "active")
         moment = str(slot.get("id") or "slot")
@@ -2069,12 +2229,13 @@ def companion_payload(now: float | None = None, break_enabled: bool = True,
         "role": "winmon_companion",
         "delivery": "ai_chat",
         "moment": moment,
+        "context": context,
         "clock": clock,
         "slot": str((slot or {}).get("id") or ""),
         "slot_label": str((slot or {}).get("label") or ""),
         "facts": facts,
-        "persona": persona_card(persona, lang),
-        "persona_text": persona_prompt(persona, lang),
+        "persona": persona_card(persona, lang, persona_custom),
+        "persona_text": persona_prompt(persona, lang, persona_custom),
         "speak": speak,
         "reminder": fallback,
         "fallback": fallback,
@@ -2087,6 +2248,11 @@ def companion_payload(now: float | None = None, break_enabled: bool = True,
             "不要解释，不要超过 50 字。" if intent == "quip" and not en else
             "Manual “say something”: one sentence in your own voice, no explanation, "
             "under 35 words." if intent == "quip" else
+            "WinMon 按用户设置主动说一句：只回一句你自己的话，不要解释；"
+            "如果觉得此刻不适合开口，就只回“（不说）”。" if intent == "proactive" and not en else
+            "WinMon proactive line, enabled by the user: one sentence in your own voice, "
+            "no explanation; reply “(skip)” if this is not a good moment."
+            if intent == "proactive" else
             "只有 speak=true 才说；用一句你自己的话，不要逐字复述 fallback；"
             "写代码/开会/共享屏幕/深夜不要调侃。" if not en else
             "Speak only when speak=true; phrase it yourself, never copy fallback; "
@@ -2099,6 +2265,63 @@ def companion_payload(now: float | None = None, break_enabled: bool = True,
         base["fallback"] = local_quip(base, lang)
     return base
 
+
+
+def proactive_decision(companion: dict, settings: dict | None = None,
+                       stable_seconds: float = 0.0,
+                       now: float | None = None) -> dict:
+    """
+    C 的纯逻辑闸门：**默认关**，只有用户显式打开才可能返回 allowed。
+
+    条件：master 开、处在可调侃的 context、专注/会议/夜深对应 allow 开关、
+    最短间隔、每日上限。返回 `{allowed, reason, key, context, day}`。
+    """
+    settings = settings or {}
+    now = time.time() if now is None else float(now)
+    if not settings.get("proactive_enabled"):
+        return {"allowed": False, "reason": "off", "key": "", "context": ""}
+    facts = (companion or {}).get("facts") or {}
+    fg = facts.get("foreground") or {}
+    # 三个场景开关是**独立**的：会议+深夜、专注+深夜都要同时允许。
+    if fg.get("meeting") and not settings.get("allow_meeting"):
+        return {"allowed": False, "reason": "allow_meeting", "key": "", "context": ""}
+    if str(facts.get("slot") or "") == "night" and not settings.get("allow_night"):
+        return {"allowed": False, "reason": "allow_night", "key": "", "context": ""}
+    if (fg.get("kind") in ("编程", "文档")
+            and int(facts.get("idle_seconds", 0) or 0) < 180
+            and not settings.get("allow_focus")):
+        return {"allowed": False, "reason": "allow_focus", "key": "", "context": ""}
+    context = str((companion or {}).get("context") or facts.get("context") or "")
+    gate = {"meeting": "allow_meeting", "focus": "allow_focus",
+            "night": "allow_night"}.get(context)
+    if gate and not settings.get(gate):
+        return {"allowed": False, "reason": gate, "key": "", "context": context}
+    if context not in ("game", "media", "focus", "night", "meeting"):
+        return {"allowed": False, "reason": "context", "key": "", "context": context}
+    threshold = {"game": 300.0, "media": 600.0, "focus": 1800.0,
+                 "night": 0.0, "meeting": 300.0}[context]
+    if float(stable_seconds or 0.0) < threshold:
+        return {"allowed": False, "reason": "stable", "key": "", "context": context}
+    day = time.strftime("%Y-%m-%d", time.localtime(now))
+    count = int(settings.get("proactive_count", 0) or 0)
+    if str(settings.get("proactive_day") or "") != day:
+        count = 0
+    if count >= int(settings.get("proactive_max_per_day", 3) or 3):
+        return {"allowed": False, "reason": "daily_cap", "key": "", "context": context}
+    try:
+        last = float(settings.get("proactive_last_ts", 0.0) or 0.0)
+    except (TypeError, ValueError):
+        last = 0.0
+    interval = float(settings.get("proactive_min_interval", 1800) or 1800)
+    if last and now - last < interval:
+        return {"allowed": False, "reason": "interval", "key": "", "context": context}
+    app = str(fg.get("app") or (facts.get("media") or {}).get("app") or "moment")
+    if context == "night":
+        key = f"night:{day}"
+    else:
+        key = f"{context}:{app}:{day}"
+    return {"allowed": True, "reason": "", "key": key, "context": context,
+            "day": day, "count": count}
 
 
 def format_companion_facts(companion: dict, lang: str | None = None) -> str:

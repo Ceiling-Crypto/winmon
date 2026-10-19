@@ -1368,7 +1368,8 @@ est_tokens ≈ ceil(ascii_chars / 4 + cjk_chars / 1.6 + 24)
   `passive`、`break_enabled=false`、非时段时 `reminder` 为空；
 - **`facts` 只含事实**：时间/时段、前台应用类型、媒体**应用名**、游戏**应用名**、
   浏览器**网页标题**、空闲/本次分钟；不含曲名/歌手、非浏览器标题、截图；
-- **`persona`**：`care`（默认）/ `tease` / `quiet`，带语气与边界；
+- **`persona`**：`care`（默认）/ `tease` / `quiet` / `custom`（用户导入），
+  带语气与边界；自定义只改语气，不能覆盖安全边界；
   `fallback` 只是没有模型的路径用的，**明确要求 AI 不要逐字复制**；
 - `initialize.instructions` 写入**角色记忆**：对话开始先调一次
   `winmon_ai_sessions`；`facts` 是事实、`persona` 是人设、`fallback` 只是兜底；
@@ -1382,6 +1383,10 @@ est_tokens ≈ ceil(ascii_chars / 4 + cjk_chars / 1.6 + 24)
 - **B（手动）**：助手窗口「搭子说一句」/ `--ai-quip`。`active` + 有 key 时
   `quip_prompt` 直连一次；否则 `local_quip()` 按人设和检测到的应用名本地兜底
   （0 token）。不是主动推送，也不会后台自动调用。
+- **C（主动，默认关）**：用户显式打开 `proactive_enabled` 后，WinMon 才按
+  `context`（game/media/focus/night/meeting）+ 前台稳定时长 + 每日上限 +
+  最短间隔决定是否直连一句；`allow_focus/meeting/night` 默认全 false，
+  三个场景独立放行；没有本地兜底，不开就完全不会主动调用。
 
 **独立工作区建议**：`winmon_ai_assist.json` 的 `workspace_dir` 只存路径，
 「接入 AI」窗口可选文件夹/打开/复制建议；提示词里会写“给新项目单独建工作区、
@@ -1458,10 +1463,13 @@ est_tokens ≈ ceil(ascii_chars / 4 + cjk_chars / 1.6 + 24)
 > - **8.1（2026-10-19）**：固定句式降级为 `fallback`；`companion` 增加
 >   `facts/persona/persona_text/speak/instruction`，默认关心型；
 >   媒体/游戏只读应用名、浏览器读标题；接入窗口可切人设/复制人设/关素材；
+>   **自定义人设导入**（.txt/.md/.json，≤4000 字，安全边界仍生效）；
+>   **C 主动搭子默认关**，专注/会议/夜深三个 allow 开关默认 false，
+>   每日上限 + 最短间隔，只在 active+key 时直连；
 >   B「搭子说一句」+ `--ai-quip`（本地兜底 0 token；active+key 直连一次）；
 > - 测试：`test_b22`（23）、`test_b23`（15）、`test_b24`（22）、
 >   `test_b25`（15）、`test_b26`（12）、`test_b27`（9）、`test_b28`（2）、
->   `test_b29`（18）、`test_b30`（22）、`test_b31`（14）、`test_b32`（8）；全量 **889 用例**。
+>   `test_b29`（18）、`test_b30`（22）、`test_b31`（14）、`test_b32`（14）；全量 **895 用例**。
 > - 每日 token 预算默认 **1000 万**（`winmon_ai.DEFAULT_DAILY_TOKEN_BUDGET`）。
 
 ### 10.10 测试策略（不接真 AI 也能测）
