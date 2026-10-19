@@ -280,6 +280,9 @@ class TestConnectWindow(unittest.TestCase):
 
     def test_key_stays_in_process_env(self):
         win = self.winmon._AiConnectWindow(self.root, self.app)
+        # 新交互：先选直连对象（默认是占位项，不隐式绑定某个厂商）。
+        win.key_provider_var.set(i18n.t("connect.key_target_follow"))
+        win.change_key_provider()
         win.key_var.set("test-key-b31")
         win.use_key()
         self.assertEqual(os.environ.get("WINMON_AI_API_KEY"), "test-key-b31")

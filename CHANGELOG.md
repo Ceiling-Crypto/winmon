@@ -83,9 +83,10 @@
   `format_ai_summary()` 拆出 identity / connection / usage，`format_ai_bar()` 保持原整句；
   新增 `_GuideWindow`、`_Disclosure` 与 `test_b33`。
 - **阶段 8.4（2026-10-19 夜）**：字号 / 主题 / 左侧动作栏 / 直连对象。
-  - 接入窗口的 API key 增加「直连对象」下拉（默认跟随当前 AI，可手动
-    智谱 / OpenAI / Claude / DeepSeek）；`direct_provider` 持久化，
-    `_ai_direct_target()` 优先手动项，状态标“（手动）”，不再隐式写死 DeepSeek。
+  - 接入窗口的 API key 增加「直连对象」下拉：默认是**占位项**，不预绑定厂商；
+    选“跟随当前 AI”或手动智谱 / OpenAI / Claude / DeepSeek 后才出现 key 输入框。
+    `direct_provider` 持久化，`_ai_direct_target()` 优先手动项，状态标“（手动）”，
+    不再隐式写死 DeepSeek。
   - 设置新增「界面字号」（9/10/11/12，默认 10），保存后即时应用到主界面、
     AI 助手、用量、接入与说明窗口；`font_size` 写设置文件。
   - ttk 主题从 vista 换到 clam：浅蓝灰底、浅蓝按钮、accent 蓝，不再是全白按钮；

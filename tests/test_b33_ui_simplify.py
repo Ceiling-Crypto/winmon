@@ -274,9 +274,14 @@ class TestConnectWindowHierarchy(unittest.TestCase):
     def test_direct_target_is_user_choice_not_auto_deepseek(self):
         win = self.winmon._AiConnectWindow(self.root, self.app)
         try:
-            self.assertEqual(win.key_provider_var.get(),
-                             i18n.t("connect.key_target_follow"),
-                             "默认应是跟随当前 AI，不能直接写死某个厂商的 key")
+            self.assertEqual(win.key_provider_var.get(), win._key_target_placeholder,
+                             "默认应是占位项，不能直接写死某个厂商的 key")
+            self.assertEqual(win.key_env, "",
+                             "没选直连对象前不能显示/绑定任何 key 环境变量")
+            self.assertEqual(str(win.key_entry.cget("state")), "disabled")
+            win.key_provider_var.set(i18n.t("connect.key_target_follow"))
+            win.change_key_provider()
+            self.assertEqual(win.key_env, "WINMON_AI_API_KEY")
             with mock.patch.object(self.winmon.provider, "profile_key_env",
                                    return_value="WINMON_OPENAI_API_KEY"):
                 win.key_provider_var.set("OpenAI")

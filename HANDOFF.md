@@ -2080,8 +2080,9 @@ AI 助手窗口太杂，API key 建议应单独一个窗口；设置里要加语
 
 落地：
 
-- **直连对象由用户选**：key 卡新增「直连对象」下拉（默认“跟随当前 AI”，
-  也可手动智谱 / OpenAI / Claude / DeepSeek）。选中后写
+- **直连对象由用户选**：key 卡新增「直连对象」下拉（默认是**占位项**，
+  不预绑定厂商；选“跟随当前 AI”或手动智谱 / OpenAI / Claude / DeepSeek 后才出现
+  key 输入框）。选中后写
   `winmon_ai_assist.json` 的 `direct_provider`；`_ai_direct_target()` 优先用它，
   空串才跟随当前识别。手动直连在状态里标“（手动）”，不会悄悄换模型。
   `provider.resolve_profile()` / `profile_key_env()` / `profile_label()` 提供按 profile

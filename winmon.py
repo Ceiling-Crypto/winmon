@@ -3629,8 +3629,12 @@ class _AiConnectWindow:
                  font=("Microsoft YaHei UI", 9, "bold"), bg="#fff8ea",
                  fg="#a33b1f", anchor="w", justify="left",
                  wraplength=720).pack(fill="x", pady=(0, 5))
-        #: 直连对象由用户选：默认“跟随当前 AI”仍可见，但不是隐式绑定某个 key。
+        #: 直连对象必须由用户选：**默认是占位项**，不预先绑定某个厂商的 key。
+        #: 选「跟随当前 AI」后才按当前识别结果取环境变量；选具体项则手动指定。
+        self._key_target_placeholder = i18n.pick("请选择直连对象…",
+                                                 "Choose a direct target…")
         self._key_provider_by_label = {
+            self._key_target_placeholder: "__none__",
             i18n.t("connect.key_target_follow"): "",
             "智谱 GLM": "zhipu",
             "OpenAI": "openai",
@@ -3639,8 +3643,9 @@ class _AiConnectWindow:
         }
         manual = str((getattr(self.app, "_ai_assist", {}) or {}).get(
             "direct_provider") or "").strip()
-        selected = next((label for label, key in self._key_provider_by_label.items()
-                         if key == manual), i18n.t("connect.key_target_follow"))
+        selected = (next((label for label, key in self._key_provider_by_label.items()
+                          if key == manual), self._key_target_placeholder)
+                    if manual else self._key_target_placeholder)
         self.key_provider_var = tk.StringVar(value=selected)
         target_row = tk.Frame(body, bg="#fff8ea")
         target_row.pack(fill="x", pady=(0, 4))
@@ -3656,16 +3661,20 @@ class _AiConnectWindow:
         # 环境变量名可能很长（WINMON_ANTHROPIC_API_KEY 等），单独一行，
         # 输入框和按钮放下一行；否则 10 号字下按钮会被卡片边缘切掉。
         self.key_env_text = tk.StringVar(
-            value=f"{self.key_env}" + (": " if i18n.get_language() == "en" else "："))
+            value=(f"{self.key_env}" + (": " if i18n.get_language() == "en" else "：")
+                   if self.key_env else i18n.pick("先选择直连对象",
+                                                  "Choose a target first")))
         tk.Label(body, textvariable=self.key_env_text, font=UI_FONT,
                  bg="#fff8ea", fg="#6b4a12", anchor="w").pack(fill="x")
         key_row = tk.Frame(body, bg="#fff8ea")
         key_row.pack(fill="x", pady=(2, 0))
         self.key_var = tk.StringVar(value="")
-        ttk.Entry(key_row, textvariable=self.key_var, show="*").pack(
-            side="left", fill="x", expand=True, padx=(0, 6))
-        ttk.Button(key_row, text=i18n.t("connect.key_use"), width=12,
-                   command=self.use_key).pack(side="right")
+        self.key_entry = ttk.Entry(key_row, textvariable=self.key_var, show="*")
+        self.key_entry.pack(side="left", fill="x", expand=True, padx=(0, 6))
+        self.key_use_btn = ttk.Button(key_row, text=i18n.t("connect.key_use"),
+                                      width=12, command=self.use_key)
+        self.key_use_btn.pack(side="right")
+        self._sync_key_controls()
         self.key_disclosure = _Disclosure(
             body, i18n.t("connect.show_key_help"), bg="#fff8ea", fg="#a86b00")
         self.key_disclosure.pack(fill="x", pady=(4, 0))
@@ -3854,42 +3863,62 @@ class _AiConnectWindow:
             ensure_ascii=False, indent=1)
 
     def _selected_key_provider(self) -> str:
-        """下拉框当前选的是“跟随”还是某个手动 profile。"""
+        """下拉框当前选的是占位、跟随，还是某个手动 profile。"""
         mapping = getattr(self, "_key_provider_by_label", {}) or {}
         try:
-            return mapping.get(self.key_provider_var.get(), "")
+            return mapping.get(self.key_provider_var.get(), "__none__")
         except Exception:
-            return ""
+            return "__none__"
 
     def _key_env(self) -> str:
-        manual = self._selected_key_provider()
-        if manual:
+        selected = self._selected_key_provider()
+        if selected == "__none__":
+            return ""
+        if selected:
             try:
-                return provider.profile_key_env(manual)
+                return provider.profile_key_env(selected)
             except Exception:
-                return provider.PROFILE_KEY_ENVS.get(manual, "WINMON_AI_API_KEY")
+                return provider.PROFILE_KEY_ENVS.get(selected, "WINMON_AI_API_KEY")
         try:
             info = self.app._ai_provider_snapshot()
             return str(info.get("api_key_env") or "WINMON_AI_API_KEY")
         except Exception:
             return "WINMON_AI_API_KEY"
 
+    def _sync_key_controls(self) -> None:
+        state = "normal" if getattr(self, "key_env", "") else "disabled"
+        for widget in (getattr(self, "key_entry", None),
+                       getattr(self, "key_use_btn", None)):
+            if widget is not None:
+                try:
+                    widget.configure(state=state)
+                except Exception:
+                    pass
+
     def change_key_provider(self) -> None:
         """用户切换直连对象：保存选择，更新 key 变量名，不碰已存在的环境变量。"""
-        manual = self._selected_key_provider()
+        selected = self._selected_key_provider()
+        manual = "" if selected in ("__none__", "") else selected
         self.app.set_assist(direct_provider=manual)
-        self.key_env = self._key_env()
+        self.key_env = "" if selected == "__none__" else self._key_env()
         try:
             self.key_env_text.set(
-                f"{self.key_env}" + (": " if i18n.get_language() == "en" else "："))
+                (f"{self.key_env}" + (": " if i18n.get_language() == "en" else "："))
+                if self.key_env else i18n.pick("先选择直连对象",
+                                               "Choose a target first"))
         except Exception:
             pass
+        self._sync_key_controls()
         self._refresh()
         try:
             self.app._update_ai_bar()
         except Exception:
             pass
-        if manual:
+        if selected == "__none__":
+            self.status_text.set(i18n.pick(
+                "先选直连对象：跟随当前 AI，或手动指定一个。",
+                "Choose a direct target first: follow the current AI, or select one."))
+        elif manual:
             self.status_text.set(i18n.pick(
                 f"直连对象已手动指定为 {provider.profile_label(manual)}；"
                 "WinMon 不会再跟随当前识别结果换模型。",
@@ -3936,12 +3965,18 @@ class _AiConnectWindow:
                     "○ Not connected: click “Copy config” and paste it into your AI client"))
                 self.mcp_state_label.configure(fg="#5b7285")
         if hasattr(self, "key_state_text"):
-            has_key = bool(os.environ.get(getattr(self, "key_env", ""), "").strip())
-            self.key_state_text.set(i18n.pick(
-                "● key：已设置（只在主动 AI 模式使用）" if has_key
-                else "○ key：未设置（可选；只用 MCP 也能工作）",
-                "● key: set (Active AI mode only)" if has_key
-                else "○ key: not set (optional; MCP alone works)"))
+            env_name = getattr(self, "key_env", "")
+            if not env_name:
+                self.key_state_text.set(i18n.pick(
+                    "○ 先选择直连对象（可选；只用 MCP 也能工作）",
+                    "○ Choose a direct target first (optional; MCP alone works)"))
+            else:
+                has_key = bool(os.environ.get(env_name, "").strip())
+                self.key_state_text.set(i18n.pick(
+                    "● key：已设置（只在主动 AI 模式使用）" if has_key
+                    else "○ key：未设置（可选；只用 MCP 也能工作）",
+                    "● key: set (Active AI mode only)" if has_key
+                    else "○ key: not set (optional; MCP alone works)"))
         ws = str((getattr(self.app, "_ai_assist", {}) or {}).get("workspace_dir") or "")
         self.workspace_text.set(ws or i18n.t("connect.workspace_none"))
         try:
@@ -3977,6 +4012,11 @@ class _AiConnectWindow:
 
     # ---- 动作 -------------------------------------------------------
     def use_key(self) -> None:
+        if not getattr(self, "key_env", ""):
+            self.status_text.set(i18n.pick(
+                "请先在「直连对象」里选择跟随当前 AI 或一个具体 AI。",
+                "Choose “Follow current AI” or a specific AI under “Direct target” first."))
+            return
         key = (self.key_var.get() or "").strip()
         if not key:
             self.status_text.set(i18n.t("connect.key_empty"))
