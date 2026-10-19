@@ -60,7 +60,7 @@ def build_app(width: int, height: int):
     import winmon
 
     root = tk.Tk()
-    root.title(f"WinMon {winmon.APP_VER} — 桌面程序实时监控与终止")
+    root.title(f"WinMon {winmon.APP_VER}")
     root.geometry(f"{width}x{height}+0+0")
     app = winmon.WinMonApp.__new__(winmon.WinMonApp)
     app.root = root
@@ -86,6 +86,7 @@ def build_app(width: int, height: int):
     app.video_close_mode.set("smart")
     app._build_ui()
     root.update_idletasks()
+    winmon.set_dark_title_bar(root)
     root.update()
     return root, app
 
@@ -96,6 +97,8 @@ def main() -> int:
     ap.add_argument("--height", type=int, default=720)
     ap.add_argument("--font", type=int, default=0,
                     help="字号大小（0 = 用默认 9）")
+    ap.add_argument("--theme", choices=("light", "dark", "system"), default="light",
+                    help="界面颜色（默认普通白底）")
     ap.add_argument("--tab", type=int, default=0,
                     help="标签页序号：0 实时预览 / 1 实时总览 / 2 进程树 / 3 程序目录")
     ap.add_argument("--catalog", action="store_true",
@@ -108,8 +111,9 @@ def main() -> int:
     except Exception:
         pass
 
+    import winmon
+    winmon.apply_theme(args.theme)
     if args.font:
-        import winmon
         winmon.set_font_size(args.font)
     root, app = build_app(args.width, args.height)
     if args.tab:
@@ -125,6 +129,8 @@ def main() -> int:
     root.update()
     time.sleep(0.6)                                    # 等窗口真的画出来
     root.update()
+    import winmon
+    winmon.set_dark_title_bar(root)
 
     hwnd = core.H(core.user32.GetAncestor(core.w.HWND(root.winfo_id()), core.GA_ROOT))
     rc = core.w.RECT()

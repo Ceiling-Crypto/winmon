@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
 """
-B28 —— 「AI 用量」窗口（阶段 2.5 的本地恢复入口）。
+B28 —— 设置里的「AI 用量」标签页（阶段 2.5 的本地恢复入口）。
 
-这个窗口是**唯一**能暂停/恢复预算的地方；测试只验证接线与状态刷新，
-不真的点系统菜单、不打开数据目录。
+这个标签页是**唯一**能暂停/恢复预算的地方；测试只验证接线与状态刷新，
+不真的点系统菜单、不打开数据目录。2026-10-20 起它不再单独开窗，
+而是「设置」三合一窗口的一部分。
 """
 from __future__ import annotations
 
@@ -51,15 +52,17 @@ class TestAiUsageWindow(unittest.TestCase):
             },
         })()
 
-    def test_window_opens_refreshes_and_closes(self):
-        win = self.winmon._AiUsageWindow(self.root, self.app)
-        self.app._ai_usage_window = win
+    def test_panel_refreshes_and_closes(self):
+        import tkinter as tk
+        host = tk.Frame(self.root)
+        host.pack(fill="both", expand=True)
+        win = self.winmon._AiUsagePanel(host, self.app)
         self.assertIn("当前", win.state_text.get())
         win.refresh()
         text = win.body.get("1.0", "end")
         self.assertIn("预算", text)
         self.assertIn("当前识别", text)
-        self.assertIn("智谱清言", text, "打开窗口就必须看见现在识别到的 AI")
+        self.assertIn("智谱清言", text, "打开设置就必须看见现在识别到的 AI")
         self.assertIn("真实", text)
         self.assertIn("估算", text)
         win.toggle_pause()
@@ -70,10 +73,10 @@ class TestAiUsageWindow(unittest.TestCase):
         win.raise_limit()
         self.assertEqual(win.budget.status()["daily_tokens"], 20_000_000)
         win.close()
-        self.assertIsNone(self.app._ai_usage_window)
+        self.assertFalse(win._alive)
 
-    def test_tray_menu_id_is_distinct_and_present(self):
-        ids = {core.IDM_TRAY_SHOW, core.IDM_TRAY_EXIT, core.IDM_TRAY_AI_USAGE}
+    def test_tray_settings_id_is_distinct_and_present(self):
+        ids = {core.IDM_TRAY_SHOW, core.IDM_TRAY_EXIT, core.IDM_TRAY_SETTINGS}
         self.assertEqual(len(ids), 3)
 
 

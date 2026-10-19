@@ -4034,8 +4034,8 @@ WM_LBUTTONUP, WM_RBUTTONUP, WM_LBUTTONDBLCLK = 0x0202, 0x0205, 0x0203
 WM_CLOSE, WM_DESTROY = 0x0010, 0x0002
 #: 菜单命令
 IDM_TRAY_SHOW, IDM_TRAY_EXIT = 40001, 40002
-#: 托盘菜单里的「AI 用量…」（阶段 2.5；只读窗口）
-IDM_TRAY_AI_USAGE = 40003
+#: 托盘菜单里的「设置…」（AI 用量和使用说明都在设置里）
+IDM_TRAY_SETTINGS = 40003
 
 #: 窗口过程的原型（x64 上 LRESULT/WPARAM/LPARAM 都是 64 位；回调里拿到的是**无符号**值，
 #: 所以别把它原样再传给需要**有符号**参数的 API —— 会 OverflowError）
@@ -4125,7 +4125,7 @@ class TrayMessageWindow:
         try:
             hmenu = user32.CreatePopupMenu()
             user32.AppendMenuW(hmenu, 0x0000, IDM_TRAY_SHOW, "显示 WinMon")
-            user32.AppendMenuW(hmenu, 0x0000, IDM_TRAY_AI_USAGE, "AI 用量…")
+            user32.AppendMenuW(hmenu, 0x0000, IDM_TRAY_SETTINGS, "设置…")
             user32.AppendMenuW(hmenu, 0x0800, 0, None)          # MF_SEPARATOR
             user32.AppendMenuW(hmenu, 0x0000, IDM_TRAY_EXIT, "退出")
             pt = w.POINT()
@@ -5731,7 +5731,7 @@ def sample_cpu_percent(pids, seconds: float = 1.0) -> dict[int, float]:
     return out
 
 
-#: 自己人：WinMon 主窗口的标题前缀（`WinMon 1.0 — 桌面程序实时监控与终止`）。
+#: 自己人：WinMon 主窗口的标题前缀（`WinMon 1.0`）。
 #: 要排掉"自己"的地方不能只比 pid：**同一个程序可能开着不止一个实例**
 #: （界面在跑、命令行又在判定；或者用户就开了两个），那些实例的 pid 当然不等于本进程。
 WINMON_TITLE_PREFIX = "WinMon"

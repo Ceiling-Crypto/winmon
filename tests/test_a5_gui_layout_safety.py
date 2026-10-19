@@ -184,7 +184,7 @@ class TestMainWindowLayout(unittest.TestCase):
                          f"字号 {winmon.FONT_SIZE_MAX} 在 {MIN_W}×{MIN_H} 下挤坏了：{bad[:5]}")
         rail = self.app.action_rail
         last = rail.winfo_children()[-1]
-        self.assertEqual(str(last.cget("text")), "说明…")
+        self.assertEqual(str(last.cget("text")), "设置…")
         self.assertLessEqual(last.winfo_y() + last.winfo_height(),
                              rail.winfo_height() + 1,
                              "字号 12 时左侧竖栏最后一个动作被挤出可视区")

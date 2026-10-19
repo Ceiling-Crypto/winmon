@@ -96,6 +96,7 @@ class TestMainUiHierarchy(unittest.TestCase):
         import winmon
         import winmon_core as core
         cls.winmon = winmon
+        winmon.apply_theme("light")
         cls.root = tk.Tk()
         cls.root.geometry("1120x720+0+0")
         app = cls.app = winmon.WinMonApp.__new__(winmon.WinMonApp)
@@ -117,12 +118,12 @@ class TestMainUiHierarchy(unittest.TestCase):
         app._init_video_vars()
         app._build_ui()
         app.dpi_scale = 1.0
-        app._guide_window = None
         cls.root.update_idletasks()
 
     @classmethod
     def tearDownClass(cls):
         h.destroy_root(cls.root)
+        cls.winmon.apply_theme("light")
 
     def test_long_technical_hints_are_not_in_the_main_window(self):
         texts = []
@@ -147,8 +148,12 @@ class TestMainUiHierarchy(unittest.TestCase):
     def test_actions_live_in_the_left_rail(self):
         labels = [str(w.cget("text")) for w in walk(self.app.action_rail)
                   if w.winfo_class() in ("Button", "TButton")]
-        for label in ("加入总览", "移除总览", "AI 助手…", "设置…", "说明…"):
+        for label in ("加入总览", "移除总览", "AI 助手…", "接入…", "设置…"):
             self.assertIn(label, labels)
+        self.assertNotIn("AI 用量…", labels,
+                         "AI 用量已经并进设置，左侧不再单独列入")
+        self.assertNotIn("说明…", labels,
+                         "使用说明已经并进设置，左侧不再单独列入")
         self.assertGreater(self.app.action_rail.winfo_reqwidth(), 50)
         # 顶部不再重复这些动作（否则又回到“一排白按钮”的老路）。
         top_texts = [str(w.cget("text")) for w in walk(self.root)
@@ -172,32 +177,36 @@ class TestMainUiHierarchy(unittest.TestCase):
         self.assertIn("真实 10", self.app.ai_usage_text.get())
         self.assertEqual(str(self.app.ai_state_label.cget("bg")), "#e2f5e9")
 
-    def test_guide_button_opens_the_separate_help_window(self):
-        self.app.action_guide("main")
-        win = self.app._guide_window
-        self.assertIsNotNone(win)
-        try:
-            self.root.update()
-            self.assertEqual(len(win.nb.tabs()), 3)
-            text = win._texts[0].get("1.0", "end")
-            self.assertIn("预览和刷新速度", text)
-            self.assertIn("窗口标题", text)
-        finally:
-            win.close()
-        self.assertIsNone(self.app._guide_window)
+    def _settings_window(self):
+        with mock.patch.object(self.winmon.core, "get_autostart", return_value=False):
+            dlg = self.winmon._SettingsWindow(
+                self.root, self.app, "exit", False, False, 30, "zh", 9, "light")
+        self.addCleanup(dlg._cancel)
+        return dlg
+
+    def test_guide_is_a_tab_inside_settings(self):
+        dlg = self._settings_window()
+        dlg.select("guide", "main")
+        self.root.update()
+        win = dlg.guide
+        self.assertEqual(len(win.nb.tabs()), 3)
+        text = win._texts[0].get("1.0", "end")
+        self.assertIn("预览和刷新速度", text)
+        self.assertIn("窗口标题", text)
+        self.assertIn("设置与颜色", text)
+        self.assertEqual(dlg.nb.index("current"), 2,
+                         "说明必须是设置窗口的第三个标签页，不再单独开窗")
 
     def test_guide_follows_english(self):
         i18n.set_language("en")
         self.addCleanup(i18n.set_language, "zh")
-        self.app.action_guide("ai")
-        win = self.app._guide_window
-        try:
-            self.root.update()
-            self.assertEqual(win.nb.tab(0, "text"), "Main window")
-            self.assertIn("Preview and refresh speed", win._texts[0].get("1.0", "end"))
-            self.assertEqual(win.nb.index("current"), 1)
-        finally:
-            win.close()
+        dlg = self._settings_window()
+        dlg.select("guide", "ai")
+        self.root.update()
+        win = dlg.guide
+        self.assertEqual(win.nb.tab(0, "text"), "Main window")
+        self.assertIn("Preview and refresh speed", win._texts[0].get("1.0", "end"))
+        self.assertEqual(win.nb.index("current"), 1)
 
 
 @h.needs_tk
@@ -338,9 +347,22 @@ class TestFontSizeSetting(unittest.TestCase):
         self.assertLess(label.winfo_reqwidth(), bigger)
 
     def test_settings_dialog_returns_font_size(self):
+        class FakeApp:
+            dpi_scale = 1.0
+            _ai_sessions = None
+
+            def _ai_provider_snapshot(self):
+                return {}
+
+            def _set_status(self, _text):
+                pass
+
+            def action_ai_assistant(self):
+                pass
+
         with mock.patch.object(self.winmon.core, "get_autostart", return_value=False):
-            dlg = self.winmon._SettingsDialog(self.root, "exit", False, False, 30,
-                                              "zh", 10)
+            dlg = self.winmon._SettingsWindow(
+                self.root, FakeApp(), "exit", False, False, 30, "zh", 10, "light")
             dlg.font_size.set("11")
             dlg._ok()
         self.assertEqual(dlg.result["font_size"], 11)

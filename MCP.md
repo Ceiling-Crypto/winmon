@@ -1434,7 +1434,7 @@ est_tokens ≈ ceil(ascii_chars / 4 + cjk_chars / 1.6 + 24)
 > - **2.5**：`UsageLedger` / `Budget`（80% warn、100% exhausted、暂停、小时上限、
 >   04:00 重置）、`winmon_ai_usage.jsonl`、`winmon_ai_budget.json`、
 >   `winmon_budget_status` 工具、MCP 调用前闸门 + 调用后记账 + 单事件截断、
->   托盘「AI 用量…」窗口（恢复只能在这里）、`--ai-usage`；
+>   托盘「设置…」→「AI 用量」标签页（恢复只能在这里）、`--ai-usage`；
 > - **3.5**：`winmon_ai_provider.py`（OpenAI 兼容 / Anthropic / **智谱 GLM-5.3**
 >   三种请求形状，`usage` 精确入账；默认关闭；key 只从 `WINMON_AI_API_KEY` 读）、
 >   `--ai-ask` / `--ai-explain`；测试通过假 transport，不联网；
@@ -1443,7 +1443,8 @@ est_tokens ≈ ceil(ascii_chars / 4 + cjk_chars / 1.6 + 24)
 >   可选 `--expire-minutes`）、`--ai-context [--copy]` 剪贴板桥；
 >   **HTTP 是单次 JSON POST 简化版**（不含 SSE / 订阅），隧道需用户自己配；
 > - **5（2026-10-19）**：主界面 AI 状态条（当前 AI + 真实/精确/估算 + 直连状态）、
->   `--ai-usage` 先列当前识别再列三栏用量、`_AiUsageWindow` 自动刷新；
+>   `--ai-usage` 先列当前识别再列三栏用量、`_AiUsageWindow` 自动刷新
+>   （8.7 起改为设置里的 `_AiUsagePanel`）；
 >   `UsageLedger` 新增 `token_source="tokenizer"`（智谱 `/tokenizer` 精确计数，
 >   `exact_tokens` 开关，失败回落估算）；`--ai-assist` / `_AiAssistantWindow`
 >   （读窗口现场 + 真实 usage + 值守 + 自动解释事件）、`winmon_ai_assist.json`；
@@ -1474,7 +1475,7 @@ est_tokens ≈ ceil(ascii_chars / 4 + cjk_chars / 1.6 + 24)
 > - 测试：`test_b22`（23）、`test_b23`（15）、`test_b24`（22）、
 >   `test_b25`（15）、`test_b26`（12）、`test_b27`（9）、`test_b28`（2）、
 >   `test_b29`（18）、`test_b30`（22）、`test_b31`（14）、`test_b32`（14）、
->   `test_b33`（18）、`test_b34`（20）；全量 **934 用例**。
+>   `test_b33`（18）、`test_b34`（20）、`test_b35`（14）；全量 **948 用例**。
 > - 每日 token 预算默认 **1000 万**（`winmon_ai.DEFAULT_DAILY_TOKEN_BUDGET`）。
 
 ### 10.10 测试策略（不接真 AI 也能测）

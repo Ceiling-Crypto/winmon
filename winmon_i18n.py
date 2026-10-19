@@ -32,10 +32,13 @@ _current = DEFAULT_LANGUAGE
 #: 带 key 的整句（用于对话框标题、提示、动态拼接的段落）
 _STRINGS = {
     "zh": {
-        "app.title": "WinMon {ver} — 桌面程序实时监控与终止",
+        "app.title": "WinMon {ver}",
         "settings.title": "WinMon 设置",
         "settings.language": "语言 / Language",
-        "settings.language_hint": "切换后主界面与 AI 窗口立即生效；五个标签页里的详细说明逐步覆盖。",
+        "settings.language_hint": "切换后主界面与 AI 窗口立即生效；详细说明在「使用说明」标签页。",
+        "settings.theme": "界面颜色",
+        "settings.theme_hint": "普通是白底黑字，深色是黑底白字，跟随系统读取 Windows 的"
+                               "浅色/深色设置。保存后立即生效；彩色高亮卡片保留。",
         "assistant.title": "WinMon AI 助手",
         "assistant.header_reading": "正在读取当前 AI…",
         "assistant.time_reading": "正在读取时间…",
@@ -156,11 +159,15 @@ _STRINGS = {
         "common.save": "保存",
     },
     "en": {
-        "app.title": "WinMon {ver} — real-time desktop monitor and terminator",
+        "app.title": "WinMon {ver}",
         "settings.title": "WinMon Settings",
         "settings.language": "Language / 语言",
         "settings.language_hint": "Applies to the main window and AI windows immediately; "
-                                  "detailed text inside the five tabs is being translated.",
+                                  "details are in the Guide tab.",
+        "settings.theme": "Color",
+        "settings.theme_hint": "Light is white with dark text; Dark is black with white text; "
+                               "Follow system reads the Windows light/dark setting. Applies "
+                               "immediately; colored highlight cards stay visible.",
         "assistant.title": "WinMon AI Assistant",
         "assistant.header_reading": "Detecting the AI you are using…",
         "assistant.time_reading": "Reading local time…",
@@ -307,10 +314,12 @@ _STATIC_EN = {
     "★ 已收藏": "★ Favorited",
     "AI 识别与用量（真实 / 精确 / 估算分栏）":
         "AI identity and usage (provider / tokenizer / estimated)",
-    "AI 用量…": "AI usage…",
     "AI 助手…": "AI assist",
     "接入…": "Connect…",
     "WinMon 设置": "WinMon Settings",
+    "常规": "General",
+    "AI 用量": "AI usage",
+    "使用说明": "Guide",
     "按时间提醒（24 小时制）": "Time-based reminders (24h)",
     "保存 (Enter)": "Save (Enter)",
     "保存 AI 回复": "Save AI reply",
@@ -361,7 +370,6 @@ _STATIC_EN = {
     "关闭窗口": "Close window",
     "关闭选中的 (Enter)": "Close selected (Enter)",
     "刷新速度：": "Refresh:",
-    "说明…": "Guide…",
     "媒体": "Media",
     "恢复 AI 接入": "Resume AI access",
     "恢复预算只能在这里操作；MCP 没有改预算的工具。":
@@ -416,7 +424,7 @@ _STATIC_EN = {
     "上限 ×2": "Limit ×2",
     "稍后再说 (Esc)": "Later (Esc)",
     "设为类别…": "Set category…",
-    "设置…": "Setup…",
+    "设置…": "Settings…",
     "实时预览": "Live preview",
     "实时总览": "Live overview",
     "视频联动：": "Video link:",

@@ -94,7 +94,7 @@ def main():
         f"$sc.Arguments = '\"{SCRIPT}\"'; "
         f"$sc.WorkingDirectory = '{ROOT}'; "
         f"$sc.IconLocation = '{ICON},0'; "
-        f"$sc.Description = 'WinMon - 桌面程序实时监控与终止'; "
+        f"$sc.Description = 'WinMon'; "
         f"$sc.WindowStyle = 1; "
         f"$sc.Save(); "
         f"Write-Output 'saved'"

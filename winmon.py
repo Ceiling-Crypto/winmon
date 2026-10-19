@@ -1,17 +1,20 @@
 # -*- coding: utf-8 -*-
 """
-WinMon —— Windows 桌面程序实时监控与终止工具（图形界面 + 命令行）
-==================================================================
+WinMon —— Windows 桌面工具（图形界面 + 命令行）
+================================================
 
 功能
 ----
 1. 列出屏幕上正在运行的程序：程序图标 / 窗口标题 / PID / 内存 / CPU / 状态
-2. 选中即可看到该程序的**实时画面**（分辨率与刷新率可调）
+2. 选中即可看到该程序的**实时画面**（自动填满面板，按刷新速度取帧）
 3. 「实时总览」把多个程序画面排成一屏当监控墙
 4. 「进程树」按父子层级展示，结束进程树前能看清到底会波及哪些进程
 5. 一键终止：优雅关闭（发关闭消息）/ 强制结束 / 结束整棵进程树
-6. 操作历史：谁在什么时候被关闭/结束了，可复制、可导出
-7. 前台窗口实时高亮、置顶窗口标记、程序图标、隐藏窗口过滤
+6. 媒体会话控制、工作区快照、程序目录、可清理文件
+7. AI 工作伴侣：识别当前 AI、用量预算、MCP / 剪贴板 / 可选直连
+8. 操作历史：谁在什么时候被关闭/结束了，可复制、可导出
+9. 前台窗口实时高亮、置顶窗口标记、程序图标、隐藏窗口过滤
+10. 颜色可选普通（白底）/ 深色（黑底）/ 跟随系统；字号 9–12
 
 命令行
 ------
@@ -59,7 +62,6 @@ APP_NAME = "WinMon"
 APP_VER = "1.0"
 #: 发布名（用户看到的产品名）：winmon1.0
 APP_RELEASE = "winmon1.0"
-APP_TITLE = f"WinMon {APP_VER} — 桌面程序实时监控与终止"
 
 #: 设计稿窗口尺寸（**逻辑像素**，也就是"100% 缩放"下的版式基准）。
 #: 真正开窗时会按 DPI 放大（见 `scaled_window_size()`）：本进程是 DPI 感知的，
@@ -127,19 +129,181 @@ TITLE_FONT = ("Microsoft YaHei UI", UI_FONT_SIZE + 2, "bold")
 BIG_TITLE_FONT = ("Microsoft YaHei UI", UI_FONT_SIZE + 4, "bold")
 MONO_FONT = ("Consolas", max(9, UI_FONT_SIZE))
 
-# 纯白底 / 黑字主题（2026-10-20 用户要求改回）。
-# 高亮卡片（媒体 / AI / 接入卡片）继续用各自的浅色底，不会被纯白页面吃掉。
-UI_BG = "#ffffff"
-UI_SURFACE = "#ffffff"
-UI_SURFACE_ALT = "#f2f5f9"
-UI_INK = "#111827"
-UI_MUTED = "#5b6573"
-UI_LINE = "#d3dae4"
-UI_ACCENT = "#1f5f8b"
-UI_ACCENT_DARK = "#174a6c"
-#: 勾选填充色：浅色页面上选深一点的蓝，未选是白底灰框。
-UI_INDICATOR = "#2f7fc1"
-UI_INDICATOR_BORDER = "#1f5f8b"
+# ---- 界面颜色（普通 / 深色 / 跟随系统）----
+#
+# 颜色不是"写死一套再局部补丁"，而是**一套语义色板**：所有界面只引用
+# UI_BG / UI_INK / UI_LINE 这类名字，切换颜色时由 `apply_theme()` 整组替换。
+# 高亮卡片（媒体 / AI / 接入）保留各自的彩色底，不跟着页面一起反转 —— 这是
+# 用户明确要求保留的视觉锚点。
+THEME_LIGHT = "light"
+THEME_DARK = "dark"
+THEME_SYSTEM = "system"
+THEME_DEFAULT = THEME_LIGHT
+THEME_PREFERENCE = THEME_DEFAULT
+THEME_RESOLVED = THEME_DEFAULT
+
+_THEME_PALETTES = {
+    THEME_LIGHT: {
+        "UI_BG": "#ffffff",
+        "UI_SURFACE": "#ffffff",
+        "UI_SURFACE_ALT": "#f2f5f9",
+        "UI_INK": "#111827",
+        "UI_MUTED": "#5b6573",
+        "UI_LINE": "#d3dae4",
+        "UI_ACCENT": "#1f5f8b",
+        "UI_ACCENT_DARK": "#174a6c",
+        "UI_ON_ACCENT": "#ffffff",
+        "UI_INDICATOR": "#2f7fc1",
+        "UI_INDICATOR_BORDER": "#1f5f8b",
+        "UI_HOVER_BG": "#dde8f4",
+        "UI_SELECT_BG": "#d6e8f7",
+        "UI_SELECT_FG": "#111827",
+        "UI_OK": "#1b7a3a",
+        "UI_WARN": "#9a6700",
+        "UI_DANGER": "#c0392b",
+        "UI_PURPLE": "#7b3fa0",
+        "UI_HEADING": "#40566b",
+        "UI_PLACEHOLDER": "#5f6b7a",
+        #: 媒体行右侧的 3 个按键：深绿底 + 白字，在浅绿卡片上高对比。
+        "UI_MEDIA_BTN_BG": "#0f6b5c",
+        "UI_MEDIA_BTN_FG": "#ffffff",
+        "UI_MEDIA_BTN_ACTIVE": "#0b584b",
+    },
+    THEME_DARK: {
+        "UI_BG": "#000000",
+        "UI_SURFACE": "#0b0b0b",
+        "UI_SURFACE_ALT": "#151515",
+        "UI_INK": "#ffffff",
+        "UI_MUTED": "#b9c2ca",
+        "UI_LINE": "#333333",
+        "UI_ACCENT": "#5aa9e6",
+        "UI_ACCENT_DARK": "#174a6c",
+        "UI_ON_ACCENT": "#04121d",
+        "UI_INDICATOR": "#3f9bd8",
+        "UI_INDICATOR_BORDER": "#7cc4ff",
+        "UI_HOVER_BG": "#242424",
+        "UI_SELECT_BG": "#123a5a",
+        "UI_SELECT_FG": "#ffffff",
+        "UI_OK": "#4ade80",
+        "UI_WARN": "#fbbf24",
+        "UI_DANGER": "#f87171",
+        "UI_PURPLE": "#c4b5fd",
+        "UI_HEADING": "#c3d4e3",
+        "UI_PLACEHOLDER": "#9aa9b6",
+        #: 媒体卡片本身仍是浅绿（高亮色），按键继续用深绿，避免在卡片上消失。
+        "UI_MEDIA_BTN_BG": "#0f6b5c",
+        "UI_MEDIA_BTN_FG": "#ffffff",
+        "UI_MEDIA_BTN_ACTIVE": "#0b584b",
+    },
+}
+
+#: 设置里显示的顺序；值在保存时写成稳定的 slug（light / dark / system）。
+_THEME_LABELS = {
+    "zh": (
+        (THEME_LIGHT, "普通（白底）"),
+        (THEME_DARK, "深色（黑底）"),
+        (THEME_SYSTEM, "跟随系统"),
+    ),
+    "en": (
+        (THEME_LIGHT, "Light (white)"),
+        (THEME_DARK, "Dark (black)"),
+        (THEME_SYSTEM, "Follow system"),
+    ),
+}
+
+
+def normalize_theme_mode(mode) -> str:
+    """只认 light / dark / system；旧值或手改值一律回普通。"""
+    value = str(mode or "").strip().lower()
+    aliases = {"normal": THEME_LIGHT, "white": THEME_LIGHT, "auto": THEME_SYSTEM}
+    value = aliases.get(value, value)
+    return value if value in (THEME_LIGHT, THEME_DARK, THEME_SYSTEM) else THEME_DEFAULT
+
+
+def detect_system_theme() -> str:
+    """
+    读 Windows 的"应用使用浅色主题"设置；读不到就回普通（白底）。
+
+    只读 HKCU，不需要管理员权限；AppsUseLightTheme=0 表示系统正在用深色。
+    """
+    try:
+        import winreg
+        with winreg.OpenKey(
+                winreg.HKEY_CURRENT_USER,
+                r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize") as key:
+            value, _kind = winreg.QueryValueEx(key, "AppsUseLightTheme")
+        return THEME_LIGHT if int(value) else THEME_DARK
+    except Exception:
+        return THEME_LIGHT
+
+
+def theme_choices(lang: str = "") -> tuple[tuple[str, str], ...]:
+    """返回 (slug, 当前语言标签) 的有序元组。"""
+    language = lang if lang in _THEME_LABELS else i18n.get_language()
+    return _THEME_LABELS.get(language, _THEME_LABELS["zh"])
+
+
+def theme_display(mode, lang: str = "") -> str:
+    slug = normalize_theme_mode(mode)
+    return dict(theme_choices(lang)).get(slug, theme_choices(lang)[0][1])
+
+
+def apply_theme(mode) -> str:
+    """
+    按偏好换一整套颜色，返回**实际生效**的 light / dark。
+
+    注意：它只改模块级色板，**不会重画已经建出来的控件**。主界面由
+    `WinMonApp._rebuild_ui_for_theme()` 重建；设置/说明/用量窗口在下一次打开
+    时自然使用新色板。这样不会出现"一半白一半黑"的过渡状态。
+    """
+    global THEME_PREFERENCE, THEME_RESOLVED
+    preference = normalize_theme_mode(mode)
+    resolved = detect_system_theme() if preference == THEME_SYSTEM else preference
+    THEME_PREFERENCE = preference
+    THEME_RESOLVED = resolved
+    for name, value in _THEME_PALETTES[resolved].items():
+        globals()[name] = value
+    return resolved
+
+
+def read_theme_mode(path: str = "") -> str:
+    """启动前从设置文件读颜色偏好；坏文件/非法值回普通，不让设置挡住启动。"""
+    try:
+        with open(path or _settings_path(), encoding="utf-8") as fh:
+            data = json.load(fh)
+    except Exception:
+        return THEME_DEFAULT
+    return normalize_theme_mode(data.get("theme", THEME_DEFAULT))
+
+
+def set_dark_title_bar(widget, dark: bool | None = None) -> None:
+    """
+    让 Windows 原生标题栏跟随应用深浅色（Win10 1809+ / Win11）。
+
+    不做这一步时，深色页面上面会顶着一条纯白标题栏，截图和实际使用都很割裂。
+    DWM 属性号在旧版是 19、新版是 20；两个都试，失败就静默保持系统默认。
+    """
+    want = (THEME_RESOLVED == THEME_DARK) if dark is None else bool(dark)
+    try:
+        hwnd = core.user32.GetAncestor(
+            core.w.HWND(widget.winfo_id()), core.GA_ROOT)
+        if not hwnd:
+            return
+        dwm = ctypes.windll.dwmapi
+        value = ctypes.c_int(1 if want else 0)
+        for attr in (20, 19):
+            try:
+                if dwm.DwmSetWindowAttribute(
+                        core.w.HWND(hwnd), attr, ctypes.byref(value),
+                        ctypes.sizeof(value)) == 0:
+                    return
+            except Exception:
+                continue
+    except Exception:
+        pass
+
+
+apply_theme(THEME_DEFAULT)
 
 
 def set_font_size(size) -> int:
@@ -278,6 +442,28 @@ ICON_SIZE = int(os.environ.get("WINMON_ICON_SIZE") or 28)
 # 结束整树仍在右键菜单与进程树页，不再挤进预览工具条。
 PREVIEW_ACTIONS = (("close", "关闭窗口"), ("terminate", "结束进程"))
 PREVIEW_ACTION_DEFAULT = "close"
+#: 两个操作**本质不同**，不能合并：关闭是发 WM_CLOSE 请程序自己退（可保存），
+#: 结束是 TerminateProcess 强制终止（未保存内容会丢）。弹层里逐条写清楚。
+PREVIEW_ACTION_DETAILS = {
+    "close": ("发送关闭消息，程序可以先保存再退出",
+              "Ask the app to close; it can save first"),
+    "terminate": ("强制终止进程，未保存内容会丢失",
+                  "Force-stop the process; unsaved work is lost"),
+}
+
+
+#: 英文标签；中文标签仍在 PREVIEW_ACTIONS 里（测试与设置文件都以它为准）。
+PREVIEW_ACTION_LABELS_EN = {"close": "Close window", "terminate": "End process"}
+
+
+def preview_action_label(key: str) -> str:
+    return i18n.pick(dict(PREVIEW_ACTIONS).get(key, ""),
+                     PREVIEW_ACTION_LABELS_EN.get(key, ""))
+
+
+def preview_action_detail(key: str) -> str:
+    zh, en = PREVIEW_ACTION_DETAILS.get(key, ("", ""))
+    return i18n.pick(zh, en)
 
 
 def choose_initial_preview(windows, fg_hwnd: int = 0, self_pid: int | None = None):
@@ -769,7 +955,7 @@ class PreviewPane:
         self.lbl_title.grid(row=0, column=0, columnspan=2, sticky="ew")
         self.lbl_meta = ttk.Label(head, text="", font=UI_FONT, foreground=UI_MUTED, anchor="w")
         self.lbl_meta.grid(row=1, column=0, sticky="ew")
-        self.lbl_stats = ttk.Label(head, text="", font=MONO_FONT, foreground="#1b7a3a", anchor="e")
+        self.lbl_stats = ttk.Label(head, text="", font=MONO_FONT, foreground=UI_OK, anchor="e")
         self.lbl_stats.grid(row=1, column=1, sticky="e")
         #: 暂停刷新移到标题右侧：底部留给操作栏，
         #: 右侧预览变窄时也不会把暂停键挤成一条线。
@@ -797,7 +983,7 @@ class PreviewPane:
         self._display_mode: tuple[int, int] = (0, 0)
         self._display_canvas: tuple[int, int] = (0, 0)
         self.placeholder = self.canvas.create_text(
-            14, 14, anchor="nw", fill="#5f6b7a", font=UI_FONT, justify="left",
+            14, 14, anchor="nw", fill=UI_PLACEHOLDER, font=UI_FONT, justify="left",
             text=("请选择右侧窗口列表中的程序\n\n"
                   "· 选中后此处显示该程序的实时画面\n"
                   "· 双击画面 = 最小化/还原该程序（与列表一致）\n"
@@ -821,8 +1007,8 @@ class PreviewPane:
         self.run_button = ttk.Button(bar, text="执行", style="Accent.TButton",
                                      width=7, command=self.run_action)
         self.run_button.pack(side="left", padx=(6, 0))
-        self.action_hint = ttk.Label(bar, text="先选，再执行", font=SMALL_FONT,
-                                     foreground=UI_MUTED)
+        self.action_hint = ttk.Label(bar, text=self._action_hint_text(),
+                                     font=SMALL_FONT, foreground=UI_MUTED)
         self.action_hint.pack(side="left", padx=(8, 0))
 
         self.hint = ttk.Label(self.frame, text="", font=UI_FONT, foreground=UI_MUTED, anchor="w")
@@ -924,7 +1110,11 @@ class PreviewPane:
 
     # -- 操作选择（先选，再执行） --
     def _action_label(self) -> str:
-        return dict(PREVIEW_ACTIONS).get(self.action, PREVIEW_ACTIONS[0][1])
+        return preview_action_label(self.action)
+
+    def _action_hint_text(self) -> str:
+        """一行说清当前选择的后果；弹层里还会逐条写更完整的说明。"""
+        return f"{self._action_label()}：{preview_action_detail(self.action)}"
 
     def open_actions(self) -> None:
         """在操作按钮**上方**展开两个操作；选中项整行填充。"""
@@ -939,32 +1129,52 @@ class PreviewPane:
         self._action_rows = {}
         outer = tk.Frame(pop, bg=UI_BG, padx=1, pady=1)
         outer.pack(fill="both", expand=True)
-        for key, label in PREVIEW_ACTIONS:
+        for key, _label in PREVIEW_ACTIONS:
             selected = (key == self.action)
             row_bg = UI_ACCENT if selected else UI_BG
             row = tk.Frame(outer, bg=row_bg, cursor="hand2")
             row.pack(fill="x")
-            # 整格填充的小方块：选中 = 蓝底，未选 = 白底灰框。
+            # 整格填充的小方块：选中 = 实心，未选 = 空心灰框。
             box = tk.Frame(row, width=14, height=14, bg=(
-                "#ffffff" if selected else UI_BG),
+                UI_ON_ACCENT if selected else UI_BG),
                 highlightthickness=1,
-                highlightbackground=("#ffffff" if selected else "#8a94a3"))
+                highlightbackground=(UI_ON_ACCENT if selected else UI_MUTED))
             box.pack_propagate(False)
-            box.pack(side="left", padx=(9, 7), pady=6)
-            txt = tk.Label(row, text=label, font=UI_FONT, anchor="w",
-                           bg=row_bg, fg=("#ffffff" if selected else UI_INK),
-                           padx=2, pady=5, cursor="hand2")
-            txt.pack(side="left", fill="x", expand=True, padx=(0, 12))
-            self._action_rows[key] = (row, box, txt)
-            for widget in (row, box, txt):
+            box.pack(side="left", padx=(9, 7), pady=7)
+            text_col = tk.Frame(row, bg=row_bg, cursor="hand2")
+            text_col.pack(side="left", fill="x", expand=True, padx=(0, 12), pady=4)
+            txt = tk.Label(text_col, text=preview_action_label(key), font=UI_FONT,
+                           anchor="w", bg=row_bg,
+                           fg=(UI_ON_ACCENT if selected else UI_INK),
+                           padx=2, cursor="hand2")
+            txt.pack(fill="x")
+            detail = tk.Label(
+                text_col, text=preview_action_detail(key), font=SMALL_FONT,
+                anchor="w", justify="left", bg=row_bg,
+                fg=(UI_ON_ACCENT if selected else UI_MUTED),
+                padx=2, wraplength=300, cursor="hand2")
+            detail.pack(fill="x")
+            self._action_rows[key] = (row, box, txt, detail, text_col)
+
+            def paint(k, bg, fg, detail_fg):
+                r, b, t, d, c = self._action_rows[k]
+                for widget in (r, c, t, d):
+                    widget.configure(bg=bg)
+                t.configure(fg=fg)
+                d.configure(fg=detail_fg)
+                b.configure(bg=(UI_ON_ACCENT if k == self.action else UI_BG),
+                            highlightbackground=(
+                                UI_ON_ACCENT if k == self.action else UI_MUTED))
+
+            for widget in (row, box, text_col, txt, detail):
                 widget.bind("<Button-1>", lambda _e, k=key: self.choose_action(k))
                 if not selected:
-                    widget.bind("<Enter>", lambda _e, r=row, t=txt: (
-                        r.configure(bg="#eef4fa"), t.configure(bg="#eef4fa")))
-                    widget.bind("<Leave>", lambda _e, r=row, t=txt: (
-                        r.configure(bg=UI_BG), t.configure(bg=UI_BG)))
+                    widget.bind("<Enter>", lambda _e, k=key: paint(
+                        k, UI_HOVER_BG, UI_INK, UI_MUTED))
+                    widget.bind("<Leave>", lambda _e, k=key: paint(
+                        k, UI_BG, UI_INK, UI_MUTED))
         pop.update_idletasks()
-        w = max(180, self.action_button.winfo_width())
+        w = max(300, self.action_button.winfo_width())
         h = pop.winfo_reqheight()
         x = self.action_button.winfo_rootx()
         y = self.action_button.winfo_rooty() - h - 3
@@ -990,6 +1200,7 @@ class PreviewPane:
             return
         self.action = key
         self.action_button.configure(text=self._action_label() + "  ▾")
+        self.action_hint.configure(text=self._action_hint_text())
         self.close_actions()
         try:
             self.run_button.focus_set()
@@ -1270,9 +1481,9 @@ class ProcessTreePane:
         tv.configure(yscrollcommand=vs.set)
         tv.grid(row=1, column=0, sticky="nsew", padx=(6, 0), pady=(0, 6))
         vs.grid(row=1, column=1, sticky="ns", pady=(0, 6))
-        tv.tag_configure("haswin", foreground="#1b7a3a")
-        tv.tag_configure("self", background="#d6ecff")
-        tv.tag_configure("critical", foreground="#7b3fa0")
+        tv.tag_configure("haswin", foreground=UI_OK)
+        tv.tag_configure("self", background=UI_SELECT_BG, foreground=UI_SELECT_FG)
+        tv.tag_configure("critical", foreground=UI_PURPLE)
         tv.bind("<<TreeviewSelect>>", self._on_select)
 
     def _on_select(self, _event=None) -> None:
@@ -1347,7 +1558,7 @@ class WorkspacePane:
         tv.column("#0", width=320, anchor="w")
         tv.column("count", width=70, anchor="e", stretch=False)
         tv.column("saved", width=170, anchor="w")
-        tv.tag_configure("group", background="#eef2f6")
+        tv.tag_configure("group", background=UI_SURFACE_ALT)
         vs = ttk.Scrollbar(self.frame, orient="vertical", command=tv.yview)
         tv.configure(yscrollcommand=vs.set)
         tv.grid(row=3, column=0, sticky="nsew", padx=(8, 0), pady=(0, 4))
@@ -1596,9 +1807,9 @@ class ProgramCatalogPane:
         tv.configure(yscrollcommand=vs.set)
         tv.grid(row=3, column=0, sticky="nsew", padx=(6, 0), pady=(0, 6))
         vs.grid(row=3, column=1, sticky="ns", pady=(0, 6))
-        tv.tag_configure("running", background="#d6ecff")
-        tv.tag_configure("missing", foreground="#c0392b")
-        tv.tag_configure("group", background="#eef2f6")
+        tv.tag_configure("running", background=UI_SELECT_BG, foreground=UI_SELECT_FG)
+        tv.tag_configure("missing", foreground=UI_DANGER)
+        tv.tag_configure("group", background=UI_SURFACE_ALT)
         tv.tag_configure("fav", foreground="#9a6700")
         tv.bind("<Double-1>", lambda e: self.launch_selected())
         tv.bind("<<TreeviewSelect>>", lambda e: self._sync_fav_button())
@@ -2466,50 +2677,123 @@ class _CleanupDialog:
         return self.result
 
 
-class _SettingsDialog:
+class _SettingsWindow:
     """
-    **独立设置界面**（约定："winmon 设计一个独立的设置 UI"）。
+    **设置**：常规设置 + AI 用量 + 使用说明，全部收在同一个窗口。
 
-    目前放：开机自启动 / 关闭按钮行为 / 启动收进托盘 / 历史保留天数 /
-    界面语言（中文 / English）。
+    用户 2026-10-20 的要求：主界面只保留一个「设置…」入口；AI 用量和说明
+    本来就是设置的一部分，不该各占一个独立窗口。这里用标签页承载三块内容，
+    窗口标题始终是「设置」，不再出现「AI 用量」/「使用说明」两个并列入口。
 
+    常规页仍负责有副作用的动作：
       1. **开机自启动** —— 写 `HKCU\\...\\CurrentVersion\\Run`（**不需要管理员权限**）。
-         勾选框的初值**读的是注册表真实状态**，不是"上次点了什么"：
-         用户可能在任务管理器→启动里禁用过它。写完**回读核对**，失败如实说。
-      2. **关闭按钮的行为**：
-         · **隐藏到托盘**（用户指定为默认）—— 点 X 只是收起来，音乐照放、监控继续；
-         · 结束进程 —— 点 X 就真的退出（顺带把托盘图标清掉）。
-
-    结果通过 `apply()` 回给调用方（保持"只有主线程碰 Tk"的规矩）。
+         勾选框的初值**读的是注册表真实状态**，不是"上次点了什么"。
+      2. **关闭按钮的行为**：隐藏到托盘 / 真的退出。
+    结果通过 `show()` 回给调用方（保持"只有主线程碰 Tk"的规矩）。
     """
 
-    def __init__(self, parent: tk.Misc, close_mode: str, tray_available: bool,
+    def __init__(self, parent: tk.Misc, app, close_mode: str, tray_available: bool,
                  start_minimized: bool = False,
                  history_days: int = HISTORY_DAYS_DEFAULT,
                  language: str = "zh",
-                 font_size: int = UI_FONT_SIZE) -> None:
+                 font_size: int = UI_FONT_SIZE,
+                 theme: str = THEME_DEFAULT) -> None:
+        self.app = app
         self.result: dict | None = None
         self.top = tk.Toplevel(parent)
         top = self.top
         top.title(i18n.t("settings.title"))
         top.configure(bg=UI_BG)
-        top.attributes("-topmost", True)
-        top.resizable(False, False)
+        top.transient(parent)
+        scale = float(getattr(app, "dpi_scale", 1.0) or 1.0)
+        sw, sh = parent.winfo_screenwidth(), parent.winfo_screenheight()
+        win_w = min(int(980 * scale), int(sw * 0.94))
+        win_h = min(int(740 * scale), int(sh * 0.88))
+        top.geometry(f"{win_w}x{win_h}")
+        top.minsize(min(int(860 * scale), win_w), min(int(560 * scale), win_h))
+        # 点 × 必须走 _cancel：取消 AI 用量面板的定时器，并按“未保存”返回。
+        top.protocol("WM_DELETE_WINDOW", self._cancel)
 
-        wrap = tk.Frame(top, bg=UI_BG, padx=18, pady=18)
-        wrap.pack(fill="both", expand=True)
-        tk.Label(wrap, text="WinMon 设置", font=TITLE_FONT,
-                 bg=UI_BG, fg=UI_INK, anchor="w").pack(anchor="w")
+        head = ttk.Frame(top, padding=(18, 14, 18, 4))
+        head.pack(fill="x")
+        tk.Label(head, text=i18n.pick("设置", "Settings"), font=TITLE_FONT,
+                 bg=UI_BG, fg=UI_INK, anchor="w").pack(fill="x")
+        tk.Label(head, text=i18n.pick(
+                     "AI 用量和使用说明也在这里；主界面只留一个入口。",
+                     "AI usage and the guide live here too; the main window has one entry."),
+                 font=SMALL_FONT, bg=UI_BG, fg=UI_MUTED,
+                 anchor="w").pack(fill="x", pady=(2, 0))
 
+        self.nb = ttk.Notebook(top)
+        self.nb.pack(fill="both", expand=True, padx=14, pady=(6, 0))
+        self._section_tabs = {"general": 0, "ai": 1, "guide": 2}
+
+        general_tab = ttk.Frame(self.nb)
+        general_tab.rowconfigure(0, weight=1)
+        general_tab.columnconfigure(0, weight=1)
+        self.nb.add(general_tab, text=i18n.pick("常规", "General"))
+        canvas = tk.Canvas(general_tab, bg=UI_BG, highlightthickness=0)
+        scroll = ttk.Scrollbar(general_tab, orient="vertical", command=canvas.yview)
+        canvas.configure(yscrollcommand=scroll.set)
+        canvas.grid(row=0, column=0, sticky="nsew")
+        scroll.grid(row=0, column=1, sticky="ns")
+        wrap = tk.Frame(canvas, bg=UI_BG, padx=18, pady=12)
+        win_id = canvas.create_window((0, 0), window=wrap, anchor="nw")
+        wrap.bind("<Configure>",
+                  lambda _e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.bind("<Configure>",
+                    lambda e: canvas.itemconfigure(win_id, width=e.width))
+        self._build_general(wrap, close_mode, tray_available, start_minimized,
+                            history_days, language, font_size, theme)
+
+        self.usage = _AiUsagePanel(self.nb, app)
+        self.nb.add(self.usage.frame, text=i18n.pick("AI 用量", "AI usage"))
+        self.guide = _GuidePanel(self.nb, app, "main")
+        self.nb.add(self.guide.frame, text=i18n.pick("使用说明", "Guide"))
+
+        foot = ttk.Frame(top, padding=(18, 4, 18, 12))
+        foot.pack(fill="x")
+        self.status = tk.StringVar(value="")
+        tk.Label(foot, textvariable=self.status, font=SMALL_FONT,
+                 bg=UI_BG, fg=UI_OK, anchor="w", justify="left",
+                 wraplength=max(260, win_w - 240)).pack(
+            side="left", fill="x", expand=True)
+        btns = tk.Frame(foot, bg=UI_BG)
+        btns.pack(side="right")
+        ttk.Button(btns, text="保存 (Enter)", width=13,
+                   command=self._ok).pack(side="right")
+        ttk.Button(btns, text="取消 (Esc)", width=12,
+                   command=self._cancel).pack(side="right", padx=(0, 8))
+        top.bind("<Return>", lambda e: self._ok())
+        top.bind("<KP_Enter>", lambda e: self._ok())
+        top.bind("<Escape>", lambda e: self._cancel())
+        try:
+            i18n.translate_widgets(top)
+        except Exception:
+            pass
+
+        top.update_idletasks()
+        w, h = top.winfo_width(), top.winfo_height()
+        top.geometry(f"+{max(0, (sw - w) // 2)}+{max(0, (sh - h) // 3)}")
+        set_dark_title_bar(top)
+        try:
+            top.grab_set()
+        except tk.TclError:
+            pass
+        top.focus_force()
+
+    def _build_general(self, wrap, close_mode, tray_available, start_minimized,
+                       history_days, language, font_size, theme) -> None:
+        """常规页：所有会写盘 / 写注册表的设置。"""
         # ---- 1) 开机自启动 ----
         self.autostart = tk.BooleanVar(value=bool(core.get_autostart()))
         ttk.Checkbutton(wrap, text="开机自启动（登录后自动运行 WinMon）",
                         variable=self.autostart).pack(
-            anchor="w", fill="x", pady=(12, 0))
+            anchor="w", fill="x", pady=(2, 0))
         tk.Label(wrap, text=f"　　写入 HKCU 的 Run 项，不需要管理员权限；"
                             f"命令：{core.autostart_command()[:70]}…",
                  font=SMALL_FONT, bg=UI_BG, fg=UI_MUTED,
-                 anchor="w", justify="left", wraplength=560).pack(anchor="w", fill="x")
+                 anchor="w", justify="left", wraplength=640).pack(anchor="w", fill="x")
 
         # ---- 2) 关闭按钮行为 ----
         tk.Label(wrap, text="点右上角的 × 时：", font=UI_FONT, bg=UI_BG,
@@ -2527,7 +2811,7 @@ class _SettingsDialog:
                        anchor="w").pack(anchor="w", fill="x")
         if not tray_available:
             tk.Label(wrap, text="　（本机托盘不可用，选「隐藏到托盘」会自动退回结束进程）",
-                     font=SMALL_FONT, bg=UI_BG, fg="#9a6700",
+                     font=SMALL_FONT, bg=UI_BG, fg=UI_WARN,
                      anchor="w").pack(anchor="w", fill="x")
 
         # ---- 3) 启动时直接收进托盘 ----
@@ -2556,9 +2840,22 @@ class _SettingsDialog:
                             f"{HISTORY_DAYS_DEFAULT} 天）。"
                             f"清理前会把原文件另存一份 .bak，删错了还能找回来。",
                  font=SMALL_FONT, bg=UI_BG, fg=UI_MUTED,
-                 anchor="w", justify="left", wraplength=560).pack(anchor="w", fill="x")
+                 anchor="w", justify="left", wraplength=640).pack(anchor="w", fill="x")
 
-        # ---- 5) 语言（中文 / English）----
+        # ---- 5) 界面颜色（普通 / 深色 / 跟随系统）----
+        tk.Label(wrap, text=i18n.t("settings.theme"), font=UI_FONT, bg=UI_BG,
+                 fg=UI_INK, anchor="w").pack(anchor="w", pady=(14, 0))
+        self._theme_by_label = {label: slug for slug, label in theme_choices()}
+        self.theme = tk.StringVar(value=theme_display(theme))
+        theme_combo = ttk.Combobox(
+            wrap, textvariable=self.theme, state="readonly", width=20,
+            font=UI_FONT, values=list(self._theme_by_label.keys()))
+        theme_combo.pack(anchor="w", pady=(2, 0))
+        tk.Label(wrap, text="　　" + i18n.t("settings.theme_hint"),
+                 font=SMALL_FONT, bg=UI_BG, fg=UI_MUTED,
+                 anchor="w", justify="left", wraplength=640).pack(anchor="w", fill="x")
+
+        # ---- 6) 语言（中文 / English）----
         tk.Label(wrap, text=i18n.t("settings.language"), font=UI_FONT, bg=UI_BG,
                  fg=UI_INK, anchor="w").pack(anchor="w", pady=(14, 0))
         self._lang_by_label = {v: k for k, v in i18n.LANGUAGES.items()}
@@ -2569,9 +2866,9 @@ class _SettingsDialog:
         combo.pack(anchor="w", pady=(2, 0))
         tk.Label(wrap, text="　　" + i18n.t("settings.language_hint"),
                  font=SMALL_FONT, bg=UI_BG, fg=UI_MUTED,
-                 anchor="w", justify="left", wraplength=560).pack(anchor="w", fill="x")
+                 anchor="w", justify="left", wraplength=640).pack(anchor="w", fill="x")
 
-        # ---- 6) 字号大小（主界面 + 所有 WinMon 窗口一起变）----
+        # ---- 7) 字号大小（主界面 + 所有 WinMon 窗口一起变）----
         tk.Label(wrap, text=i18n.pick("字号大小", "Text size"),
                  font=UI_FONT, bg=UI_BG, fg=UI_INK,
                  anchor="w").pack(anchor="w", pady=(14, 0))
@@ -2585,41 +2882,36 @@ class _SettingsDialog:
         font_combo.pack(anchor="w", pady=(2, 0))
         tk.Label(wrap, text="　　" + i18n.pick(
                      "可选 9–12；12 是界面允许的最大字号。保存后主界面、AI 助手、"
-                     "用量、接入、说明、设置和弹窗一起变；不用重启。",
+                     "接入和弹窗一起变；不用重启。",
                      "9–12; 12 is the largest size the layout supports. Applies "
-                     "to the main window and every WinMon window immediately; "
+                     "to the main window, AI windows, and dialogs immediately; "
                      "no restart."),
                  font=SMALL_FONT, bg=UI_BG, fg=UI_MUTED,
-                 anchor="w", justify="left", wraplength=560).pack(anchor="w", fill="x")
+                 anchor="w", justify="left", wraplength=640).pack(anchor="w", fill="x")
 
-        #: 自启动那条要写注册表（有副作用），所以点"保存"才生效，并当场回报结果
-        self.status = tk.StringVar(value="")
-        tk.Label(wrap, textvariable=self.status, font=SMALL_FONT,
-                 bg=UI_BG, fg="#1b7a3a", anchor="w", justify="left",
-                 wraplength=560).pack(anchor="w", fill="x", pady=(10, 0))
+        # 状态行在窗口底部（三个标签页共用），由 `__init__` 统一创建。
 
-        btns = tk.Frame(wrap, bg=UI_BG)
-        btns.pack(fill="x", pady=(12, 0))
-        ttk.Button(btns, text="保存 (Enter)", width=13, command=self._ok).pack(side="right")
-        ttk.Button(btns, text="取消 (Esc)", width=12, command=self._cancel).pack(
-            side="right", padx=(0, 8))
-        top.bind("<Return>", lambda e: self._ok())
-        top.bind("<KP_Enter>", lambda e: self._ok())
-        top.bind("<Escape>", lambda e: self._cancel())
+    def select(self, section: str = "general", guide_section: str = "") -> None:
         try:
-            i18n.translate_widgets(top)
+            self.nb.select(self._section_tabs.get(section, 0))
+            if section == "guide" and getattr(self, "guide", None):
+                self.guide.select(guide_section or self.guide.section or "main")
+        except Exception:
+            pass
+        try:
+            self.top.deiconify()
+            self.top.lift()
+            self.top.focus_force()
         except Exception:
             pass
 
-        top.update_idletasks()
-        w, h = top.winfo_width(), top.winfo_height()
-        sw, sh = top.winfo_screenwidth(), top.winfo_screenheight()
-        top.geometry(f"+{max(0, (sw - w) // 2)}+{max(0, (sh - h) // 3)}")
-        try:
-            top.grab_set()
-        except tk.TclError:
-            pass
-        top.focus_force()
+    def _close_panels(self) -> None:
+        for panel in (getattr(self, "usage", None), getattr(self, "guide", None)):
+            try:
+                if panel is not None:
+                    panel.close()
+            except Exception:
+                pass
 
     def _ok(self) -> None:
         """
@@ -2635,20 +2927,36 @@ class _SettingsDialog:
             if not ok:
                 self.status.set(f"⚠ {msg}")
                 return
+        try:
+            history = int(self.history_days.get() or HISTORY_DAYS_DEFAULT)
+        except (TypeError, ValueError, tk.TclError):
+            history = HISTORY_DAYS_DEFAULT
         self.result = {"autostart": want, "close_mode": self.close_mode.get(),
                        "start_minimized": bool(self.start_minimized.get()),
-                       "history_days": int(self.history_days.get() or HISTORY_DAYS_DEFAULT),
+                       "history_days": history,
                        "language": self._lang_by_label.get(
                            self.language.get(), i18n.get_language()),
                        "font_size": self._font_by_label.get(
-                           self.font_size.get(), UI_FONT_SIZE)}
-        self.top.destroy()
+                           self.font_size.get(), UI_FONT_SIZE),
+                       "theme": self._theme_by_label.get(
+                           self.theme.get(), THEME_DEFAULT)}
+        self._close_panels()
+        try:
+            self.top.destroy()
+        except tk.TclError:
+            pass
 
     def _cancel(self) -> None:
         self.result = None
-        self.top.destroy()
+        self._close_panels()
+        try:
+            self.top.destroy()
+        except tk.TclError:
+            pass
 
-    def show(self) -> dict | None:
+    def show(self, section: str = "general",
+             guide_section: str = "") -> dict | None:
+        self.select(section, guide_section)
         self.top.wait_window()
         return self.result
 
@@ -2686,6 +2994,7 @@ class _HistoryWindow:
         top.minsize(760, 360)
         #: 关窗只是"收起来"，下次再点按钮还能打开（`app._history_window` 会被清空）
         top.protocol("WM_DELETE_WINDOW", self.close)
+        set_dark_title_bar(self.top)
         self._rows: list[dict] = []
         #: 当前**筛掉之后**还剩哪些（导出要跟着筛选走）；None = 还没刷新过
         self._kept: list[dict] | None = None
@@ -2750,8 +3059,8 @@ class _HistoryWindow:
         tv.configure(yscrollcommand=vs.set)
         tv.pack(side="left", fill="both", expand=True)
         vs.pack(side="left", fill="y")
-        tv.tag_configure("fail", foreground="#c0392b")
-        tv.tag_configure("ok", foreground="#1b7a3a")
+        tv.tag_configure("fail", foreground=UI_DANGER)
+        tv.tag_configure("ok", foreground=UI_OK)
 
         # ---- 底部：危险动作与说明 ----
         foot = ttk.Frame(wrap)
@@ -2954,33 +3263,28 @@ class _HistoryWindow:
             self.app._history_window = None
 
 
-class _AiUsageWindow:
+class _AiUsagePanel:
     """
-    「AI 用量」独立窗口（阶段 2.5 / 阶段 5）。
+    设置里的「AI 用量」标签页（阶段 2.5 / 阶段 5）。
 
     只读展示 + **本地**恢复手段：暂停 / 恢复、重置今日、上限翻倍。
     按设计，**MCP 没有任何改预算的工具** —— 钥匙只在人手里。
 
-    用户 2026-10-19 的要求：打开这个窗口必须一眼看见
+    用户 2026-10-19 的要求：打开后必须一眼看见
       · 现在识别到的是哪个 AI（以及依据）；
       · 这个 token 数是谁的（真实 API 回执 / 精确分词 / 估算）；
-      · 直连 GLM 有没有就绪。
+      · 直连模型有没有就绪。
+    2026-10-20：不再单独开窗，作为「设置」的一个标签页复用。
     """
 
     def __init__(self, parent: tk.Misc, app) -> None:
         self.app = app
-        self.top = tk.Toplevel(parent)
-        self.top.title("WinMon AI 识别与用量")
-        self.top.configure(bg=UI_BG)
-        scale = float(getattr(app, "dpi_scale", 1.0) or 1.0)
-        self.top.geometry(f"{int(920 * scale)}x{int(640 * scale)}")
-        self.top.minsize(int(720 * scale), int(480 * scale))
-        self.top.protocol("WM_DELETE_WINDOW", self.close)
+        self.frame = ttk.Frame(parent, padding=(12, 10))
         self.budget = ai.Budget()
         self._after_id = None
+        self._alive = True
 
-        wrap = ttk.Frame(self.top, padding=(10, 8))
-        wrap.pack(fill="both", expand=True)
+        wrap = self.frame
         head = ttk.Frame(wrap)
         head.pack(fill="x")
         ttk.Label(head, text="AI 识别与用量（真实 / 精确 / 估算分栏）",
@@ -3029,13 +3333,13 @@ class _AiUsageWindow:
         self._auto_refresh()
 
     def _auto_refresh(self) -> None:
-        """窗口开着时每 3 秒自刷新（关窗必须取消，否则会打 Tcl 噪音）。"""
+        """标签页开着时每 3 秒自刷新（关闭设置必须取消，否则会打 Tcl 噪音）。"""
         self._after_id = None
         try:
-            if not self.top.winfo_exists():
+            if not self._alive or not self.frame.winfo_exists():
                 return
             self.refresh()
-            self._after_id = self.top.after(3000, self._auto_refresh)
+            self._after_id = self.frame.after(3000, self._auto_refresh)
         except tk.TclError:
             self._after_id = None
 
@@ -3131,16 +3435,13 @@ class _AiUsageWindow:
             self.app._set_status(f"打不开数据目录：{type(exc).__name__}: {exc}")
 
     def close(self) -> None:
+        self._alive = False
         if self._after_id is not None:
             try:
-                self.top.after_cancel(self._after_id)
+                self.frame.after_cancel(self._after_id)
             except Exception:
                 pass
             self._after_id = None
-        try:
-            self.top.destroy()
-        finally:
-            self.app._ai_usage_window = None
 
 
 class _AiAssistantWindow:
@@ -3164,6 +3465,7 @@ class _AiAssistantWindow:
         self.top.geometry(f"{w}x{h}")
         self.top.minsize(int(700 * scale), int(460 * scale))
         self.top.protocol("WM_DELETE_WINDOW", self.close)
+        set_dark_title_bar(self.top)
 
         wrap = ttk.Frame(self.top, padding=(12, 10))
         wrap.pack(fill="both", expand=True)
@@ -3356,6 +3658,7 @@ class _AiChatWindow:
         self.top.title(i18n.t("chat.title"))
         self.top.configure(bg=UI_BG)
         self.top.geometry("760x540")
+        set_dark_title_bar(self.top)
         wrap = ttk.Frame(self.top, padding=10)
         wrap.pack(fill="both", expand=True)
         holder = ttk.Frame(wrap)
@@ -3458,6 +3761,7 @@ class _PersonaManager:
         self.top.configure(bg=UI_BG)
         self.top.transient(parent)
         self.top.protocol("WM_DELETE_WINDOW", self.close)
+        set_dark_title_bar(self.top)
 
         tk.Label(self.top, text=i18n.t("persona.title"), font=TITLE_FONT,
                  bg=UI_BG, fg=UI_INK, anchor="w").pack(fill="x", padx=12, pady=(10, 2))
@@ -3498,7 +3802,7 @@ class _PersonaManager:
 
         self.status = tk.StringVar(value="")
         tk.Label(self.top, textvariable=self.status, font=SMALL_FONT,
-                 bg=UI_BG, fg="#1b7a3a", anchor="w").pack(fill="x", padx=12)
+                 bg=UI_BG, fg=UI_OK, anchor="w").pack(fill="x", padx=12)
 
         btns = ttk.Frame(self.top, padding=(12, 8))
         btns.pack(fill="x")
@@ -3706,7 +4010,7 @@ class _PersonaManager:
                     pass
 
 
-#: 说明窗口的内容。放在模块级是为了让 `_GuideWindow` 只负责画，不堆逻辑。
+#: 说明窗口的内容。放在模块级是为了让 `_GuidePanel` 只负责画，不堆逻辑。
 #: 每项：`(标签页名, [(样式, 文本), ...])`；样式 `h` = 小标题，`p` = 正文。
 _GUIDE_CONTENT = {
     "zh": [
@@ -3717,8 +4021,14 @@ _GUIDE_CONTENT = {
             ("h", "预览和刷新速度"),
             ("p", "预览会自动跟随面板大小，按原分辨率显示，不需要再选“大小”。"
                   "刷新速度只影响预览，不改变被监控的程序；调低会更省电。"),
-            ("p", "预览下方先选「关闭窗口 / 结束进程」，再点「执行」；"
-                  "结束进程仍会先确认。"),
+            ("p", "预览下方先选「关闭窗口 / 结束进程」，再点「执行」。"
+                  "关闭窗口是发关闭消息，程序可以先保存再退出；结束进程是强制终止，"
+                  "未保存内容会丢。只有关闭无效时才用结束进程。"),
+            ("h", "设置与颜色"),
+            ("p", "「设置…」里同时有常规、AI 用量和使用说明；主界面不再单独放"
+                  "「AI 用量」和「说明」。"),
+            ("p", "颜色可选普通（白底）、深色（黑底）或跟随系统；保存后立即生效。"
+                  "深色模式下媒体行、AI 卡等彩色高亮仍然保留。"),
             ("h", "媒体这一行"),
             ("p", "WinMon 先读 Windows 的媒体会话，显示“应用：曲名 · 状态”。"),
             ("p", "有些播放器（例如网易云音乐）不向系统发布会话，WinMon 会退一步"
@@ -3780,8 +4090,16 @@ _GUIDE_CONTENT = {
             ("p", "The preview now follows the pane size and renders at native "
                   "resolution, so there is no size picker. Refresh speed only "
                   "affects the preview, not the monitored program."),
-            ("p", "Below the preview, choose Close or End process, then press Run. "
-                  "Ending a process still asks for confirmation."),
+            ("p", "Below the preview, choose Close window or End process, then press Run. "
+                  "Close sends a close message so the app can save first; End process "
+                  "force-stops it and unsaved work is lost. Use End process only when "
+                  "closing does not work."),
+            ("h", "Settings and color"),
+            ("p", "“Settings…” now contains General, AI usage, and the guide. The main "
+                  "window no longer has separate AI usage and guide entries."),
+            ("p", "Color can be Light (white), Dark (black), or Follow system. It applies "
+                  "immediately. Colored highlights such as the media and AI cards stay "
+                  "visible in dark mode."),
             ("h", "The media line"),
             ("p", "WinMon first reads the Windows media session: “app: track · state”."),
             ("p", "Some players (e.g. NetEase Cloud Music) do not publish a session, "
@@ -3848,34 +4166,20 @@ _GUIDE_CONTENT = {
 }
 
 
-class _GuideWindow:
-    """「使用说明」独立窗口：主界面与接入窗口共用，长解释只在这里出现。"""
+class _GuidePanel:
+    """设置里的「使用说明」标签页：长解释只在这里出现，主界面只留动作。"""
 
     def __init__(self, parent: tk.Misc, app, section: str = "main") -> None:
         self.app = app
         self.section = section
-        self.top = tk.Toplevel(parent)
-        self.top.title(i18n.pick("WinMon 使用说明", "WinMon guide"))
-        self.top.configure(bg=UI_BG)
-        scale = float(getattr(app, "dpi_scale", 1.0) or 1.0)
-        sw, sh = parent.winfo_screenwidth(), parent.winfo_screenheight()
-        w = min(int(820 * scale), int(sw * 0.92))
-        h = min(int(620 * scale), int(sh * 0.88))
-        self.top.geometry(f"{w}x{h}")
-        self.top.minsize(int(680 * scale), int(460 * scale))
-        self.top.protocol("WM_DELETE_WINDOW", self.close)
-
-        wrap = ttk.Frame(self.top, padding=(12, 10))
-        wrap.pack(fill="both", expand=True)
-        tk.Label(wrap, text=i18n.pick("WinMon 使用说明", "WinMon guide"),
-                 font=TITLE_FONT,
-                 anchor="w").pack(fill="x")
-        tk.Label(wrap, text=i18n.pick(
+        self.frame = ttk.Frame(parent, padding=(12, 10))
+        tk.Label(self.frame, text=i18n.pick(
             "主界面只留动作和数据；需要解释时再看这里。",
             "The main window keeps actions and data; read the details here when needed."),
-            font=UI_FONT, foreground=UI_MUTED, anchor="w").pack(fill="x", pady=(2, 8))
+            font=UI_FONT, foreground=UI_MUTED, anchor="w").pack(
+            fill="x", pady=(0, 6))
 
-        self.nb = ttk.Notebook(wrap)
+        self.nb = ttk.Notebook(self.frame)
         self.nb.pack(fill="both", expand=True)
         self._frames = {}
         self._texts = {}
@@ -3897,10 +4201,6 @@ class _GuideWindow:
             self._texts[idx] = text
             self.nb.add(frame, text="")
         self._render()
-        btns = ttk.Frame(wrap)
-        btns.pack(fill="x", pady=(8, 0))
-        ttk.Button(btns, text=i18n.pick("知道了", "Got it"),
-                   command=self.close).pack(side="right")
 
     def _render(self) -> None:
         lang = i18n.get_language() if i18n.get_language() in _GUIDE_CONTENT else "zh"
@@ -3919,18 +4219,13 @@ class _GuideWindow:
                  items[0][0]: 0, items[1][0]: 1, items[2][0]: 2}
         self.nb.select(names.get(self.section, 0))
 
-    def retranslate(self) -> None:
-        self.top.title(i18n.pick("WinMon 使用说明", "WinMon guide"))
+    def select(self, section: str = "main") -> None:
+        self.section = section
         self._render()
 
     def close(self) -> None:
-        try:
-            self.top.destroy()
-        finally:
-            try:
-                self.app._guide_window = None
-            except Exception:
-                pass
+        """面板本身没有独立窗口；保留这个方法让设置统一收尾。"""
+        return
 
 
 class _AiConnectWindow:
@@ -3955,6 +4250,7 @@ class _AiConnectWindow:
         self.top.geometry(f"{w}x{h}")
         self.top.minsize(int(700 * scale), int(520 * scale))
         self.top.protocol("WM_DELETE_WINDOW", self.close)
+        set_dark_title_bar(self.top)
         # 可滚动：折叠块展开后仍可能超过窗口高度，不能靠“看不见”
         canvas = tk.Canvas(self.top, borderwidth=0, highlightthickness=0,
                            bg=UI_BG)
@@ -5038,7 +5334,20 @@ class WinMonApp:
             set_font_size(read_font_size(_settings_path()))
         except Exception:
             set_font_size(FONT_SIZE_DEFAULT)
+        # 颜色同样要在建界面之前定：所有控件创建时就把 bg/fg 带走了。
+        try:
+            self.theme_pref = read_theme_mode(_settings_path())
+        except Exception:
+            self.theme_pref = THEME_DEFAULT
+        self.theme_resolved = apply_theme(self.theme_pref)
         root.title(i18n.t("app.title", ver=APP_VER))
+        try:
+            set_dark_title_bar(root, self.theme_resolved == THEME_DARK)
+            # 窗口刚创建时可能还没映射，DWM 属性要等消息循环跑起来再设一次。
+            root.after(80, lambda: set_dark_title_bar(
+                root, self.theme_resolved == THEME_DARK))
+        except Exception:
+            pass
         # 界面尺寸 = 设计稿 × DPI 缩放（理由见 `scaled_window_size`：DPI 感知的进程里
         # 字体是 1.5 倍，窗口不跟着放大就真有按钮被挤到看不见）。
         self.dpi_scale = self._dpi_scale()
@@ -5137,10 +5446,10 @@ class WinMonApp:
         self._ai_incidents = ai.IncidentStore(path=ai.incidents_path())
         self._ai_primary = None
         self._ai_sessions = None
-        self._ai_usage_window = None
         self._ai_assistant_window = None
         self._ai_connect_window = None
-        self._guide_window = None
+        #: 设置窗口（常规 / AI 用量 / 使用说明三合一）
+        self._settings_window = None
         # AI 用量的界面缓存（2 秒一拍，不必每拍都扫账本）
         self._ai_budget = ai.Budget()
         self._ai_usage_cache = (0.0, None)
@@ -5266,6 +5575,9 @@ class WinMonApp:
         self.history_days = tk.IntVar(value=HISTORY_DAYS_DEFAULT)
         #: 界面语言：zh / en（默认中文；切换后主界面与 AI 窗口立即重译）
         self.language = tk.StringVar(value=i18n.get_language())
+        #: 界面颜色：普通（白底）/ 深色（黑底）/ 跟随系统。存 slug，显示当前语言标签。
+        self.theme_mode = tk.StringVar(
+            value=theme_display(getattr(self, "theme_pref", THEME_DEFAULT)))
         #: 实时总览的**排列顺序**（B.3）：存**窗口标题**而不是 hwnd（hwnd 重启就变）
         self.gallery_order_saved: list[str] = []
         #: 托盘图标 / 托盘消息窗口 / 是否正在轮询托盘消息 / 托盘是否真的可用
@@ -5325,9 +5637,9 @@ class WinMonApp:
         self.ws_minimize_others = tk.BooleanVar(value=False)
 
     def _configure_style(self) -> None:
-        """纯白底 / 黑字主题；AI、媒体、接入卡片保留各自的浅色高亮。"""
+        """按当前色板配置 ttk；AI、媒体、接入卡片仍保留各自的彩色高亮。"""
         base_bg = UI_BG
-        panel_bg = "#e8eef6"
+        panel_bg = UI_SURFACE_ALT
         ink = UI_INK
         accent = UI_ACCENT
         line = UI_LINE
@@ -5348,24 +5660,34 @@ class WinMonApp:
         style.configure("TLabel", background=base_bg, foreground=ink)
         style.configure("TLabelframe", background=base_bg, bordercolor=line)
         style.configure("TLabelframe.Label", background=base_bg, foreground=accent)
-        style.configure("TButton", font=UI_FONT, background="#eef2f7",
+        style.configure("TButton", font=UI_FONT, background=UI_SURFACE_ALT,
                         foreground=ink, bordercolor=line, relief="flat",
                         padding=(6, 2))
         style.map("TButton",
-                  background=[("active", "#dde8f4"), ("pressed", "#cbdced"),
-                              ("disabled", "#f4f6f9")],
-                  foreground=[("disabled", "#9aa4b2")])
+                  background=[("active", UI_HOVER_BG), ("pressed", UI_LINE),
+                              ("disabled", UI_SURFACE_ALT)],
+                  foreground=[("disabled", UI_MUTED)])
         style.configure("Accent.TButton", font=UI_FONT, background=accent,
-                        foreground="#ffffff", bordercolor=UI_ACCENT_DARK,
+                        foreground=UI_ON_ACCENT, bordercolor=UI_ACCENT_DARK,
                         relief="flat", padding=(8, 3))
         style.map("Accent.TButton",
-                  background=[("active", "#2871a2"), ("pressed", UI_ACCENT_DARK)],
-                  foreground=[("disabled", "#eef4f8")])
+                  background=[("active", UI_HOVER_BG), ("pressed", UI_ACCENT_DARK)],
+                  foreground=[("disabled", UI_MUTED)])
+        # 媒体行右侧的 3 个按键（播放/暂停、上一首、下一首）单独一套高对比样式：
+        # 它们仍在**浅绿高亮卡片**上，不能用深色页面的默认按钮色，否则会糊成一块。
+        style.configure("Media.TButton", font=UI_FONT, background=UI_MEDIA_BTN_BG,
+                        foreground=UI_MEDIA_BTN_FG, bordercolor=UI_MEDIA_BTN_ACTIVE,
+                        relief="flat", padding=(6, 2))
+        style.map("Media.TButton",
+                  background=[("active", UI_MEDIA_BTN_ACTIVE),
+                              ("pressed", UI_MEDIA_BTN_ACTIVE),
+                              ("disabled", UI_LINE)],
+                  foreground=[("disabled", UI_MUTED)])
         style.configure("TCheckbutton", background=base_bg, foreground=ink,
                         padding=(2, 2))
         style.map("TCheckbutton",
                   background=[("active", base_bg)],
-                  foreground=[("disabled", "#9aa4b2")])
+                  foreground=[("disabled", UI_MUTED)])
         # 浅色高亮卡片里的勾选框：背景跟卡片走，否则会在卡片上挖出一块白底。
         for style_name, card_bg, card_fg in (
                 ("GreenCard", "#f1f8f4", "#2a4a66"),
@@ -5382,32 +5704,32 @@ class WinMonApp:
                         insertcolor=ink, bordercolor=line)
         style.map("TEntry",
                   fieldbackground=[("readonly", UI_BG)],
-                  foreground=[("disabled", "#9aa4b2")])
+                  foreground=[("disabled", UI_MUTED)])
         style.configure("TCombobox", fieldbackground=UI_BG, foreground=ink,
                         background=UI_BG, bordercolor=line, arrowcolor=ink)
         style.map("TCombobox",
                   fieldbackground=[("readonly", UI_BG),
-                                   ("disabled", "#f4f6f9")],
-                  foreground=[("readonly", ink), ("disabled", "#9aa4b2")],
+                                   ("disabled", UI_SURFACE_ALT)],
+                  foreground=[("readonly", ink), ("disabled", UI_MUTED)],
                   selectbackground=[("readonly", UI_BG)],
                   selectforeground=[("readonly", ink)])
         style.configure("TNotebook", background=base_bg, bordercolor=line)
         style.configure("TNotebook.Tab", font=UI_FONT, padding=(14, 6),
-                        background=panel_bg, foreground="#40566b")
+                        background=panel_bg, foreground=UI_HEADING)
         style.map("TNotebook.Tab",
-                  background=[("selected", UI_BG), ("active", "#f1f5fa")],
+                  background=[("selected", UI_BG), ("active", UI_HOVER_BG)],
                   foreground=[("selected", ink), ("active", ink)])
         style.configure("Treeview", font=UI_FONT, rowheight=ICON_SIZE + 6,
-                        background=UI_BG, fieldbackground=UI_BG,
+                        background=UI_SURFACE, fieldbackground=UI_SURFACE,
                         foreground=ink, bordercolor=line)
         style.configure("Treeview.Heading",
                         font=("Microsoft YaHei UI", UI_FONT_SIZE, "bold"),
                         background=panel_bg, foreground=accent, relief="flat")
-        style.map("Treeview.Heading", background=[("active", "#dce8f3")])
+        style.map("Treeview.Heading", background=[("active", UI_HOVER_BG)])
         style.map("Treeview",
-                  background=[("selected", "#d6e8f7")],
-                  foreground=[("selected", ink)])
-        style.configure("TScrollbar", background="#d9e2ec", troughcolor=base_bg,
+                  background=[("selected", UI_SELECT_BG)],
+                  foreground=[("selected", UI_SELECT_FG)])
+        style.configure("TScrollbar", background=UI_LINE, troughcolor=base_bg,
                         bordercolor=line, arrowcolor=accent)
         self._install_check_indicators(style)
         # 主界面里还有少量 tk.Label/tk.Frame 没有显式背景；统一成白底黑字。
@@ -5422,16 +5744,16 @@ class WinMonApp:
                     ("*Listbox.background", UI_BG),
                     ("*Listbox.foreground", ink),
                     ("*Menu.background", UI_BG), ("*Menu.foreground", ink),
-                    ("*Menu.activeBackground", "#d6e8f7"),
-                    ("*Menu.activeForeground", ink),
+                    ("*Menu.activeBackground", UI_SELECT_BG),
+                    ("*Menu.activeForeground", UI_SELECT_FG),
                     ("*Checkbutton.background", base_bg),
                     ("*Checkbutton.foreground", ink),
                     ("*Radiobutton.background", base_bg),
                     ("*Radiobutton.foreground", ink),
                     ("*TCombobox*Listbox.background", UI_BG),
                     ("*TCombobox*Listbox.foreground", ink),
-                    ("*TCombobox*Listbox.selectBackground", "#d6e8f7"),
-                    ("*TCombobox*Listbox.selectForeground", ink)):
+                    ("*TCombobox*Listbox.selectBackground", UI_SELECT_BG),
+                    ("*TCombobox*Listbox.selectForeground", UI_SELECT_FG)):
                 self.root.option_add(pattern, value)
         except Exception:
             pass
@@ -5446,20 +5768,28 @@ class WinMonApp:
         Tk root 销毁后 image 失效（测试里真实踩到过 pyimage 不存在）。
         """
         name = "WinMon.Checkbutton.indicator"
-        if name in style.element_names():
-            return
         size = 14
+
+        def paint(img, fill, border):
+            img.put(border, to=(0, 0, size, size))
+            img.put(fill, to=(1, 1, size - 1, size - 1))
 
         def square(fill, border):
             img = tk.PhotoImage(master=self.root, width=size, height=size)
-            img.put(border, to=(0, 0, size, size))
-            img.put(fill, to=(1, 1, size - 1, size - 1))
+            paint(img, fill, border)
             return img
 
+        existing = getattr(self.root, "_winmon_check_images", None)
+        if name in style.element_names() and existing:
+            # 主题切换时不能重建同名 style element，直接改图片颜色即可。
+            paint(existing["normal"], UI_SURFACE_ALT, UI_MUTED)
+            paint(existing["selected"], UI_INDICATOR, UI_INDICATOR_BORDER)
+            paint(existing["disabled"], UI_SURFACE_ALT, UI_LINE)
+            return
         images = {
-            "normal": square(UI_BG, "#8a94a3"),
+            "normal": square(UI_SURFACE_ALT, UI_MUTED),
             "selected": square(UI_INDICATOR, UI_INDICATOR_BORDER),
-            "disabled": square("#f4f6f9", "#c8ced8"),
+            "disabled": square(UI_SURFACE_ALT, UI_LINE),
         }
         #: 生命周期跟着 root；Tk 图片不能用完就丢。
         self.root._winmon_check_images = images
@@ -5515,7 +5845,7 @@ class WinMonApp:
         # ---- 顶部工具栏（第二行：刷新速度 / 跟随选择 / 总览刷新）----
         #
         # 长解释不再常驻：用户 2026-10-19 的意见是“太像技术文档”。这些设置还在，
-        # 但“只影响预览、越低越省电”收进「说明…」，这一行只留控件。
+        # 但“只影响预览、越低越省电”收进「设置 → 使用说明」，这一行只留控件。
         #
         # 2026-10-20 删掉「预览大小」：它实际只是抓取分辨率，画面仍由画布
         # 缩放，导致选“小”反而被放大成一张巨图。现在抓取尺寸自动跟随面板。
@@ -5534,12 +5864,15 @@ class WinMonApp:
         # ---- AI 状态条（识别到的 AI + 真实/估算用量 + 直连模型状态）----
         self._build_ai_bar()
 
-        for var in (self.show_hidden, self.show_no_window, self.only_windowed,
-                    self.follow_selection, self.live_gallery, self.fps_choice):
-            var.trace_add("write", self._schedule_save_settings)
-        for var in (self.video_close_mode, self.media_app_pin, self.media_auto_wake,
-                    self.close_mode, self.start_minimized, self.history_days):
-            var.trace_add("write", self._schedule_save_settings)
+        # 只绑一次：换主题会重建界面，重复 trace 会让每次改动触发多份保存任务。
+        if not getattr(self, "_settings_traces_bound", False):
+            self._settings_traces_bound = True
+            for var in (self.show_hidden, self.show_no_window, self.only_windowed,
+                        self.follow_selection, self.live_gallery, self.fps_choice):
+                var.trace_add("write", self._schedule_save_settings)
+            for var in (self.video_close_mode, self.media_app_pin, self.media_auto_wake,
+                        self.close_mode, self.start_minimized, self.history_days):
+                var.trace_add("write", self._schedule_save_settings)
 
         # ---- 主体：实时预览为主体，窗口列表收成右侧紧凑侧栏 ----
         # 用户 2026-10-19：主界面主体应该是实时预览，而不是进程/窗口读取。
@@ -5672,7 +6005,7 @@ class WinMonApp:
 
         def action(label, command):
             btn = tk.Button(rail, text=label, font=UI_FONT, fg=ink, bg=button_bg,
-                            activebackground="#d6e8f7", activeforeground=ink,
+                            activebackground=UI_SELECT_BG, activeforeground=UI_SELECT_FG,
                             relief="flat", borderwidth=0, highlightthickness=0,
                             anchor="w", padx=10, pady=2, cursor="hand2",
                             command=command)
@@ -5685,17 +6018,16 @@ class WinMonApp:
         action("刷新列表", self.refresh_all)
         group("AI")
         action("AI 助手…", self.action_ai_assistant)
-        action("AI 用量…", self.action_ai_usage)
         action("接入…", self.action_ai_connect)
         group(i18n.pick("工具", "Tools"))
         action("操作历史…", self.action_history)
+        #: 设置、AI 用量、使用说明三者合并：主界面只留一个「设置…」入口。
         action("设置…", self.action_settings)
-        action("说明…", self.action_guide)
         self._sync_action_rail_spacing()
 
     def _sync_action_rail_spacing(self) -> None:
         """
-        字号变大时收紧左侧竖栏的行距，保证 12 号字 + 最小窗口仍看得到「说明…」。
+        字号变大时收紧左侧竖栏的行距，保证 12 号字 + 最小窗口仍看得到「设置…」。
 
         为什么不能只把按钮字体改大：`apply_font_size_live()` 只改字体，不会动
         pack 的 pady；9 号字下的行距在 12 号字时会把最后一个动作挤出可视区。
@@ -5768,13 +6100,14 @@ class WinMonApp:
         left.columnconfigure(0, weight=1)
         self._build_left_extras(left)
 
-        tv.tag_configure("noresp", foreground="#c0392b")
-        tv.tag_configure("minimized", foreground="#6b7280")
-        tv.tag_configure("hidden", foreground="#8a94a3")
-        tv.tag_configure("critical", foreground="#7b3fa0")
-        tv.tag_configure("nowin", foreground="#6b7280")
-        tv.tag_configure("fg", background="#d6e8f7")          # 前台窗口高亮
-        tv.tag_configure("fg_hidden", background="#eef2f6", foreground="#6b7280")
+        tv.tag_configure("noresp", foreground=UI_DANGER)
+        tv.tag_configure("minimized", foreground=UI_MUTED)
+        tv.tag_configure("hidden", foreground=UI_MUTED)
+        tv.tag_configure("critical", foreground=UI_PURPLE)
+        tv.tag_configure("nowin", foreground=UI_MUTED)
+        tv.tag_configure("fg", background=UI_SELECT_BG,
+                         foreground=UI_SELECT_FG)          # 前台窗口高亮
+        tv.tag_configure("fg_hidden", background=UI_SURFACE_ALT, foreground=UI_MUTED)
 
     def _build_left_extras(self, left: tk.Misc) -> None:
         """
@@ -5883,14 +6216,21 @@ class WinMonApp:
             side="left", padx=(0, 4))
         # 「播放」/「暂停」按当前状态显示动作，而不是固定“播放/暂停”：
         # 2 个汉字在 12 号字下也放得下，且点之前就知道会发生什么。
-        self.media_play_btn = ttk.Button(mbar, text="播放", width=4,
-                                         command=self.media_toggle_play)
+        self.media_play_btn = ttk.Button(
+            mbar, text="播放", width=4, style="Media.TButton",
+            command=self.media_toggle_play)
         self.media_play_btn.pack(side="left", padx=(0, 2))
-        #: 「◀◀ / ▶▶」= 上一首 / 下一首，走的是同一条"唤醒→按应用→退回媒体键"的路
-        ttk.Button(mbar, text="◀◀", width=4,
-                   command=lambda: self.media_prev_next("previous")).pack(side="left", padx=1)
-        ttk.Button(mbar, text="▶▶", width=4,
-                   command=lambda: self.media_prev_next("next")).pack(side="left", padx=1)
+        #: 「◀◀ / ▶▶」= 上一首 / 下一首，走的是同一条"唤醒→按应用→退回媒体键"的路。
+        #: 三个键统一用 Media.TButton（深绿底白字）：深色模式下页面变黑，
+        #: 但它们仍坐在浅绿高亮卡片上，默认 ttk 按钮会糊成一块看不见的深灰。
+        self.media_prev_btn = ttk.Button(
+            mbar, text="◀◀", width=4, style="Media.TButton",
+            command=lambda: self.media_prev_next("previous"))
+        self.media_prev_btn.pack(side="left", padx=1)
+        self.media_next_btn = ttk.Button(
+            mbar, text="▶▶", width=4, style="Media.TButton",
+            command=lambda: self.media_prev_next("next"))
+        self.media_next_btn.pack(side="left", padx=1)
         # 清单要等控件建好才能填（`_reload_media_app_list` 会 configure 这个下拉框）
         self._reload_media_app_list()
 
@@ -5980,7 +6320,7 @@ class WinMonApp:
         outer = ttk.Frame(pop, padding=8)
         outer.pack(fill="both", expand=True)
         tk.Label(outer, text="可多选（不勾 = 自动跟随正在放的那个）", bg=UI_BG,
-                 fg="#1b7a3a", font=SMALL_FONT).pack(anchor="w")
+                 fg=UI_OK, font=SMALL_FONT).pack(anchor="w")
         vars_: dict[str, tk.BooleanVar] = {}
         for label in [MEDIA_APP_ANY] + labels:
             v = tk.BooleanVar(value=(label in current_labels))
@@ -6187,8 +6527,13 @@ class WinMonApp:
 
     @staticmethod
     def _media_combo_width() -> int:
-        """播放器下拉框宽度：12 号字时收窄，给播放/上一首/下一首留位置。"""
-        return max(13, 18 - max(0, UI_FONT_SIZE - 9))
+        """
+        播放器下拉框宽度：字号变大时略收，但仍要放得下「自动：正在放的那个」。
+
+        旧公式每大一号收 1 字，12 号时只剩 15，自动项会被截成「（自动：正在放的…」；
+        媒体曲名标签已经按字号收过宽度，这里不需要再收得那么狠。
+        """
+        return max(14, 18 - max(0, UI_FONT_SIZE - 9) // 2)
 
     def _sync_media_width(self) -> None:
         self.MEDIA_TEXT_WIDTH = self._media_text_width()
@@ -6538,20 +6883,8 @@ class WinMonApp:
         self._set_status(msg)
 
     def action_ai_usage(self) -> None:
-        """打开「AI 用量」窗口（已经开着就提到前台）。"""
-        win = getattr(self, "_ai_usage_window", None)
-        if win is not None:
-            try:
-                win.top.deiconify()
-                win.top.lift()
-                win.refresh()
-                return
-            except Exception:
-                self._ai_usage_window = None
-        try:
-            self._ai_usage_window = _AiUsageWindow(self.root, self)
-        except Exception as exc:
-            self._set_status(f"打不开「AI 用量」：{type(exc).__name__}: {exc}")
+        """「AI 用量」是设置的一部分：打开设置并切到该标签页。"""
+        self.action_settings("ai")
 
     def action_history(self) -> None:
         """
@@ -6630,6 +6963,12 @@ class WinMonApp:
             # 语言：启动时已按同一文件读过；这里同步到设置变量，保证保存时不丢
             lang = i18n.set_language(data.get("language", i18n.get_language()))
             self.language.set(lang)
+            # 颜色偏好在 `__init__` 建界面前已经应用过；这里只同步界面变量，
+            # 保存时不会把用户的选择丢掉。
+            self.theme_pref = normalize_theme_mode(
+                data.get("theme", getattr(self, "theme_pref", THEME_DEFAULT)))
+            if hasattr(self, "theme_mode"):
+                self.theme_mode.set(theme_display(self.theme_pref))
             try:
                 saved_font = int(data.get("font_size", UI_FONT_SIZE))
             except (TypeError, ValueError):
@@ -6747,9 +7086,12 @@ class WinMonApp:
                 # 与"启动时直接收进托盘"
                 "close_mode": self.close_mode.get(),
                 "start_minimized": bool(self.start_minimized.get()),
-                # 界面语言：zh / en（默认中文）与字号大小（9/10/11/12）
+                # 界面语言：zh / en（默认中文）、字号大小（9/10/11/12）
+                # 与颜色偏好（light / dark / system）
                 "language": self.language.get(),
                 "font_size": font_size,
+                "theme": normalize_theme_mode(
+                    getattr(self, "theme_pref", THEME_DEFAULT)),
                 # 工作区快照 + 应用时的附加选项
                 "workspaces": self.workspaces,
                 "ws_minimize_others": bool(self.ws_minimize_others.get()),
@@ -7838,23 +8180,8 @@ class WinMonApp:
             self._set_status(f"打不开「接入 AI」：{type(exc).__name__}: {exc}")
 
     def action_guide(self, section: str = "main") -> None:
-        """打开「使用说明」；已经开着就切到对应标签并提到前台。"""
-        win = getattr(self, "_guide_window", None)
-        if win is not None:
-            try:
-                win.top.deiconify()
-                win.top.lift()
-                win.top.focus_force()
-                win.section = section
-                win._render()
-                return
-            except Exception:
-                self._guide_window = None
-        try:
-            self._guide_window = _GuideWindow(self.root, self, section)
-            self._set_status("说明已打开：长解释都在这里，主界面只留动作和数据")
-        except Exception as exc:
-            self._set_status(f"打不开使用说明：{type(exc).__name__}: {exc}")
+        """「使用说明」是设置的一部分：打开设置并切到对应标签页。"""
+        self.action_settings("guide", guide_section=section)
 
     def _ai_notify(self, inc) -> None:
         """本地提醒：优先托盘气泡；托盘不可用就退回状态栏。"""
@@ -9556,8 +9883,8 @@ class WinMonApp:
                     return
                 if cmd == core.IDM_TRAY_SHOW:
                     self.restore_from_tray()
-                elif cmd == core.IDM_TRAY_AI_USAGE:
-                    self.action_ai_usage()
+                elif cmd == core.IDM_TRAY_SETTINGS:
+                    self.action_settings("general")
         except Exception as exc:
             self._set_status(f"托盘消息处理失败：{type(exc).__name__}: {exc}")
         if self._tray_polling:
@@ -9686,7 +10013,7 @@ class WinMonApp:
         except Exception:
             pass
         for attr in ("_ai_assistant_window", "_ai_connect_window",
-                     "_ai_usage_window", "_history_window", "_guide_window"):
+                     "_history_window"):
             win = getattr(self, attr, None)
             if win is not None and hasattr(win, "retranslate"):
                 try:
@@ -9695,40 +10022,181 @@ class WinMonApp:
                     pass
         self._update_ai_bar()
 
-    def action_settings(self) -> None:
+    def _rebuild_ui_for_theme(self, tab_index: int = 0) -> None:
         """
-        打开**独立设置界面**。
+        换主题后**整体重建主界面**，避免出现一半白一半黑的过渡状态。
 
-        目前五项：开机自启动 / 点 × 的行为 / 启动时直接收进托盘 /
-        操作历史日志保留天数 / 界面语言（中文 / English）。
+        为什么不用"遍历所有控件改 bg/fg"：颜色在创建控件时就被 Tk 复制走了，
+        而且媒体/AI 高亮卡片、Treeview tag、勾选图片、菜单各有各的色源，
+        逐个改必漏。重建是唯一能保证一致的做法；状态（选中窗口、标签页、
+        暂停、总览、设置变量）都在 `WinMonApp` 上，重建后按原值恢复。
         """
-        old_font = int(self.font_size.get() or UI_FONT_SIZE)
-        dlg = _SettingsDialog(self.root, self.close_mode.get(), self._tray_available(),
-                              bool(self.start_minimized.get()),
-                              int(self.history_days.get()),
-                              i18n.get_language(), old_font)
-        got = dlg.show()
-        if not got:
-            self._set_status("设置已取消（未做任何改动）")
-            return
+        selected = getattr(self, "selected_hwnd", None)
+        try:
+            tab = int(self.notebook.index("current"))
+        except Exception:
+            tab = int(tab_index or 0)
+        # 程序目录的筛选状态不在设置变量里，重建后必须显式带过去。
+        try:
+            cat_state = (set(self.catalog.selected_categories),
+                         bool(self.catalog.only_favorites.get()),
+                         bool(self.catalog.only_recent.get()))
+        except Exception:
+            cat_state = (set(), False, False)
+        # 总览墙的格子是 Tk 控件，不是设置变量；重建后要按原来的 key 重新加回去。
+        gallery_state = list(getattr(self, "gallery_keys", {}).items())
+        # 打开着的辅助窗口属于旧主题，先收掉；下次打开时自然用新色板。
+        for attr in ("_ai_assistant_window", "_ai_connect_window", "_history_window"):
+            win = getattr(self, attr, None)
+            if win is not None:
+                try:
+                    win.close()
+                except Exception:
+                    try:
+                        win.top.destroy()
+                    except Exception:
+                        pass
+                setattr(self, attr, None)
+        try:
+            self.menu.destroy()
+        except Exception:
+            pass
+        for child in list(self.root.winfo_children()):
+            try:
+                child.destroy()
+            except Exception:
+                pass
+        self._body_sash_ready = False
+        self._row_tip = None
+        self._last_preview_req = None
+        self.preview_key = None
+        self._initial_preview_done = selected is None
+        self._build_ui()
+        self._bind_events()
+        try:
+            self.root.configure(bg=UI_BG)
+        except Exception:
+            pass
+        try:
+            set_dark_title_bar(self.root)
+        except Exception:
+            pass
+        self.refresh_processes()
+        self.refresh_windows()
+        # 手工搭的测试 app 可能没有 program_prefs；此时不要触发筛选 trace，
+        # 否则会在 Tk 回调里抛 AttributeError（测试仍绿但 stderr 变脏）。
+        if hasattr(self, "program_prefs"):
+            try:
+                self.catalog.selected_categories = set(cat_state[0])
+                self.catalog.only_favorites.set(cat_state[1])
+                self.catalog.only_recent.set(cat_state[2])
+                self.catalog.btn_cats.configure(text=self.catalog._category_label())
+            except Exception:
+                pass
+        for hwnd, title in gallery_state:
+            wi = self.win_by_hwnd.get(hwnd)
+            if wi is None:
+                continue
+            try:
+                self.gallery.add(hwnd, f"{title} [{wi.pid}]",
+                                 core._fmt_mem(wi.mem_kb))
+            except Exception:
+                pass
+        if selected:
+            item = self.row_of_hwnd.get(selected)
+            if item:
+                try:
+                    self.tree.selection_set(item)
+                    self.tree.see(item)
+                except Exception:
+                    pass
+                self.selected_hwnd = selected
+                self.start_preview(selected)
+        try:
+            self.notebook.select(min(max(0, tab), len(self.notebook.tabs()) - 1))
+        except Exception:
+            pass
+        try:
+            self.preview.btn_pause.configure(
+                text="继续刷新" if self.paused else "暂停刷新")
+            self._sync_media_play_button()
+            self._sync_action_rail_spacing()
+        except Exception:
+            pass
+
+    def action_settings(self, section: str = "general",
+                        guide_section: str = "main") -> None:
+        """
+        打开唯一的「设置」：常规 / AI 用量 / 使用说明都在同一个窗口。
+
+        `section` 让其他入口（托盘、F1、接入窗口的「完整说明」）直接落到
+        对应标签页；不再有独立的「AI 用量」或「使用说明」窗口。
+        """
+        win = getattr(self, "_settings_window", None)
+        if win is not None:
+            try:
+                win.select(section, guide_section)
+                return
+            except Exception:
+                self._settings_window = None
+        old_font = int(getattr(self, "font_size").get() or UI_FONT_SIZE)
         old_lang = i18n.get_language()
+        old_theme = getattr(self, "theme_pref", THEME_DEFAULT)
+        try:
+            tab_index = int(self.notebook.index("current"))
+        except Exception:
+            tab_index = 0
+        try:
+            dlg = _SettingsWindow(
+                self.root, self, self.close_mode.get(), self._tray_available(),
+                bool(self.start_minimized.get()), int(self.history_days.get()),
+                old_lang, old_font, old_theme)
+        except Exception as exc:
+            self._set_status(f"打不开设置：{type(exc).__name__}: {exc}")
+            return
+        self._settings_window = dlg
+        try:
+            got = dlg.show(section, guide_section)
+        finally:
+            self._settings_window = None
+        if not got:
+            # AI 用量页里的暂停/重置是立即生效的，不能笼统说“未做任何改动”。
+            self._set_status("设置已关闭")
+            return
         self.close_mode.set(got["close_mode"])
         self.start_minimized.set(bool(got["start_minimized"]))
         self.history_days.set(int(got["history_days"]))
         new_font = int(got.get("font_size", old_font) or old_font)
-        self.font_size.set(str(new_font))
-        if new_font != old_font:
-            apply_font_size_live(self.root, new_font)
-            try:
-                self._sync_media_width()
-                self._sync_action_rail_spacing()
-            except Exception:
-                pass
+        new_theme = normalize_theme_mode(got.get("theme", old_theme))
         new_lang = i18n.set_language(got.get("language", old_lang))
         self.language.set(new_lang)
+        self.font_size.set(str(new_font))
+        self.theme_pref = new_theme
+        self.theme_mode.set(theme_display(new_theme))
+        resolved_theme = (detect_system_theme() if new_theme == THEME_SYSTEM
+                          else new_theme)
+        theme_changed = (new_theme != old_theme
+                         or resolved_theme != THEME_RESOLVED)
+        if theme_changed:
+            self.theme_resolved = apply_theme(new_theme)
+            # 新控件要用新字号创建；不需要再对旧控件做逐字缩放。
+            set_font_size(new_font)
+            self._rebuild_ui_for_theme(tab_index)
+        else:
+            if new_font != old_font:
+                apply_font_size_live(self.root, new_font)
+                try:
+                    self._sync_media_width()
+                    self._sync_action_rail_spacing()
+                except Exception:
+                    pass
+            if new_lang != old_lang:
+                self.retranslate()
         self._schedule_save_settings()
-        if new_lang != old_lang:
-            self.retranslate()
+        try:
+            self.save_settings_now()
+        except Exception:
+            pass
         tip = ("关闭窗口：隐藏到托盘" if got["close_mode"] == CLOSE_MODE_TRAY
                else "关闭窗口：结束进程")
         boot = "；启动时收进托盘" if got["start_minimized"] else ""
@@ -9745,12 +10213,13 @@ class WinMonApp:
                 self._history_window.reload()
             except Exception:
                 pass
+        color = theme_display(new_theme)
         self._set_status(f"设置已保存 —— {tip}{boot}；"
-                         f"字号 {new_font}；"
+                         f"颜色 {color}；字号 {new_font}；"
                          f"日志保留 {self.history_days.get()} 天{pruned}；"
                          f"开机自启动：{'开' if got['autostart'] else '关'}")
         self.log_action("设置", "系统设置",
-                        f"{tip}{boot}；字号 {new_font}；"
+                        f"{tip}{boot}；颜色 {color}；字号 {new_font}；"
                         f"日志保留 {self.history_days.get()} 天；"
                         f"自启动={'开' if got['autostart'] else '关'}")
 
@@ -10366,7 +10835,7 @@ def ai_explain_cli() -> int:
     return 0
 
 
-USAGE_TEXT = """WinMon 1.0 —— 桌面程序实时监控与终止（纯 ctypes + tkinter，零第三方依赖）
+USAGE_TEXT = """WinMon 1.0 —— Windows 桌面工具（纯 ctypes + tkinter，零第三方依赖）
 
 用法：python winmon.py [选项]
 

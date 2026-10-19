@@ -145,6 +145,7 @@ class TestLightThemeAndPreviewFirst(unittest.TestCase):
         import winmon_core as core
         cls.winmon = winmon
         cls.core = core
+        winmon.apply_theme("light")
         cls.root = tk.Tk()
         cls.root.geometry("1160x730+0+0")
         app = cls.app = winmon.WinMonApp.__new__(winmon.WinMonApp)
@@ -172,6 +173,7 @@ class TestLightThemeAndPreviewFirst(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         h.destroy_root(cls.root)
+        cls.winmon.apply_theme("light")
 
     def test_pure_white_theme_but_highlight_cards_stay_colored(self):
         self.assertEqual(str(self.root.cget("background")), self.winmon.UI_BG)
@@ -227,8 +229,8 @@ class TestLightThemeAndPreviewFirst(unittest.TestCase):
         self.assertEqual(pane.action, "close")
         pane.open_actions()
         self.assertIsNotNone(pane._action_popup)
-        row, _box, _txt = pane._action_rows["close"]
-        other, _box2, _txt2 = pane._action_rows["terminate"]
+        row, _box, _txt, _detail, _col = pane._action_rows["close"]
+        other, _box2, _txt2, _detail2, _col2 = pane._action_rows["terminate"]
         self.assertEqual(str(row.cget("bg")), self.winmon.UI_ACCENT,
                          "当前操作必须整行填充，用户一眼知道选了哪个")
         self.assertEqual(str(other.cget("bg")), self.winmon.UI_BG,
@@ -302,14 +304,28 @@ class TestFontAppliesToEveryWindow(unittest.TestCase):
         self.assertEqual(winmon.UI_FONT_SIZE, 12)
         self.assertIn("12", str(label.cget("font")))
 
+        class FakeApp:
+            dpi_scale = 1.0
+            _ai_sessions = None
+
+            def _ai_provider_snapshot(self):
+                return {}
+
+            def _set_status(self, _text):
+                pass
+
+            def action_ai_assistant(self):
+                pass
+
         with mock.patch.object(winmon.core, "get_autostart", return_value=False):
-            dlg = winmon._SettingsDialog(root, "exit", False, False, 30, "zh", 9)
+            dlg = winmon._SettingsWindow(root, FakeApp(), "exit", False, False,
+                                         30, "zh", 9, "light")
         try:
             texts = [str(w.cget("text")) for w in walk(dlg.top)
                      if w.winfo_class() == "Label"]
             self.assertIn("字号大小", texts)
         finally:
-            dlg.top.destroy()
+            dlg._cancel()
         winmon.set_font_size(9)
 
 

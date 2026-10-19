@@ -192,7 +192,7 @@ class TestTitleStrength(unittest.TestCase):
         self.assertEqual(
             core.video_title_strength("继续开发 winmon 监控工具 — 某个 AI 客户端"), "weak")
         self.assertEqual(
-            core.video_title_strength("WinMon — 桌面程序实时监控与终止"), "weak")
+            core.video_title_strength("WinMon 桌面监控工具"), "weak")
         self.assertEqual(core.video_title_strength("深度学习入门到放弃的第一课"), "weak")
 
     def test_not_video(self):

@@ -53,10 +53,10 @@ class TestBilingualBase(unittest.TestCase):
 
     def test_translate_text_round_trip(self):
         i18n.set_language("en")
-        self.assertEqual(i18n.translate_text("设置…"), "Setup…")
+        self.assertEqual(i18n.translate_text("设置…"), "Settings…")
         self.assertEqual(i18n.translate_text("实时预览"), "Live preview")
         i18n.set_language("zh")
-        self.assertEqual(i18n.translate_text("Setup…"), "设置…")
+        self.assertEqual(i18n.translate_text("Settings…"), "设置…")
         self.assertEqual(i18n.translate_text("不是界面文案"), "不是界面文案")
 
     def test_t_falls_back_safely(self):
@@ -174,7 +174,7 @@ class TestLanguageWidgets(unittest.TestCase):
         i18n.set_language("en")
         changed = i18n.translate_widgets(self.root)
         self.assertGreaterEqual(changed, 5)
-        self.assertEqual(label.cget("text"), "Setup…")
+        self.assertEqual(label.cget("text"), "Settings…")
         self.assertEqual(button.cget("text"), "Refresh")
         self.assertEqual(nb.tab(0, "text"), "Live preview")
         self.assertEqual(tree.heading("#0").get("text"), "Img")
@@ -186,9 +186,24 @@ class TestLanguageWidgets(unittest.TestCase):
 
     def test_settings_dialog_has_language_choice(self):
         import winmon
+
+        class FakeApp:
+            dpi_scale = 1.0
+            _ai_sessions = None
+
+            def _ai_provider_snapshot(self):
+                return {}
+
+            def _set_status(self, _text):
+                pass
+
+            def action_ai_assistant(self):
+                pass
+
         i18n.set_language("zh")
         with mock.patch.object(winmon.core, "get_autostart", return_value=False):
-            dlg = winmon._SettingsDialog(self.root, "exit", False, False, 30, "zh")
+            dlg = winmon._SettingsWindow(self.root, FakeApp(), "exit", False,
+                                         False, 30, "zh")
             self.assertEqual(dlg.language.get(), "中文")
             dlg.language.set("English")
             dlg._ok()
