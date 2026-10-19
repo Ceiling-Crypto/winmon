@@ -3,7 +3,7 @@
 > 用途：在新的对话里快速恢复上下文。读这一份即可继续开发。
 > **正式发布名 `winmon1.0`**（`APP_VER = "1.0"`，查版本：`py winmon.py --version`）。
 > **先读 §一点五「WinMon 的定位与能力边界」** —— 输入注入已明确不再投入。
-> 代码状态：**913 个测试用例全绿**（约 105 秒）+ 代码复检 0 新增问题（基线为空）、
+> 代码状态：**928 个测试用例全绿**（约 105 秒）+ 代码复检 0 新增问题（基线为空）、
 > 自检 8/8、界面冒烟通过、
 > 桌面快捷方式可用、程序目录端到端可用、
 > 视频联动 = **监视当前窗口 / 停止监视 / 直接关闭视频**（自动识别与「用链接打开」已删掉）、
@@ -20,10 +20,10 @@
 
 | | |
 | --- | --- |
-| 测试 | **913 用例全绿**（`py tests\run_tests.py`，约 105 秒；含 7 条按环境 skip） |
+| 测试 | **928 用例全绿**（`py tests\run_tests.py`，约 105 秒；含 7 条按环境 skip） |
 | 代码复检 | `py tests\lint_check.py` → **新增问题 0**（基线已清空，见 §四） |
 | 自检 / 冒烟 | `py winmon.py --selftest` 8/8 通过；`--smoke` 通过 |
-| 规模 | `winmon_core.py` ~6750 行 / `winmon.py` ~9700 行 / 测试 46 个 .py（33 个测试模块） |
+| 规模 | `winmon_core.py` ~6750 行 / `winmon.py` ~10600 行 / 测试 47 个 .py（34 个测试模块） |
 | 运行方式 | `py winmon.py`（GUI）或双击「WinMon 程序监控」快捷方式；**单实例**：第二个实例会把已有窗口带到前台后自己退出 |
 | 窗口尺寸 | 设计稿 **1160×730**，开窗时**按 DPI 缩放**（本机 150% → 1740×1095；见 §9.15 第 14 条） |
 | 数据文件 | `winmon_settings.json`（界面偏好/收藏）、`winmon_history.log`（操作留痕）、`winmon_catalog.json`（程序目录缓存）、`winmon_media.jsonl`（媒体快照缓存，可删） |
@@ -70,7 +70,7 @@
 1. **把媒体那一行做精**：常驻快照已经有了，可以顺手把"播放速率/时间线"接进来
    （当初删掉的进度显示，明确说过"以后再说" —— **动手前先确认**）；
 2. **托盘右键加播放控制**（上一首/播放暂停/下一首）+ 显示当前曲名，不用切回主窗口；
-3. **测试提速**：913 用例 105 秒里，`test_b5`/`test_b6` 的"真开窗+真抓画面"占大头，
+3. **测试提速**：928 用例 105 秒里，`test_b5`/`test_b6` 的"真开窗+真抓画面"占大头，
    可给它们打标记 + `run_tests.py --fast`；
 4. **GUI 拆分**：`winmon.py` 已 7000 行，可按标签页拆包（注意 §§布局不变量与 lint 的 200 行阈值）。
 
@@ -100,11 +100,11 @@
 | --- | --- | --- |
 | `winmon_core.py` | ~6750 | **核心层**：Win32 采集/捕获/终止/图标/程序目录/媒体会话/视频来源与视频操作/可清理文件。不依赖 tkinter，可当库用 |
 | `winmon.py` | ~7400 | GUI（5 个标签页）+ 命令行入口 |
-| `winmon_ai.py` | ~1300 | **AI 工作伴侣**：识别 / 本地事件 / 剧本 / 用量账本与预算 / token 估算。不依赖 tkinter |
+| `winmon_ai.py` | ~2800 | **AI 工作伴侣**：识别 / 本地事件 / 剧本 / 用量账本与预算 / token 估算 / 人设库。不依赖 tkinter |
 | `winmon_mcp.py` | ~800 | **MCP 服务器**：双时代 stdio + 本地 HTTP + 四个只读工具 |
 | `winmon_ai_provider.py` | ~250 | **可选**直连模型 API（默认关；精确 usage；key 只从环境变量读） |
 | `media_session.ps1` | ~230 | 系统媒体会话（GSMTC）桥接脚本（PowerShell + Windows 自带 WinRT 投影；**必须纯 ASCII 无 BOM**） |
-| `tests/` | 46 个 .py | **可重复运行的测试**（913 用例，纯 unittest） + 开发辅助工具 + `lint_check.py` / `lint_baseline.txt` |
+| `tests/` | 47 个 .py | **可重复运行的测试**（928 用例，纯 unittest） + 开发辅助工具 + `lint_check.py` / `lint_baseline.txt` |
 | `启动WinMon.bat` | — | 菜单式启动器（纯 ASCII，避免批处理编码问题） |
 | `scan_windows.py` | — | 命令行窗口清单 |
 | `close_others.py` | — | 批量关闭除当前窗口外的窗口 |
@@ -157,7 +157,7 @@ python winmon.py --videos --open 3 --watch --close-window   :: 完整视频链�
 python winmon.py --version          :: 打印版本（winmon1.0）
 python winmon.py --idle             :: 列出"长期开着、没人用"的程序（只看，不关任何东西）
 python winmon.py --idle --idle-minutes 5   :: 换个闲置阈值（分钟）
-py tests\run_tests.py               :: 全部测试（913 用例，约 105 秒）
+py tests\run_tests.py               :: 全部测试（928 用例，约 105 秒）
 ```
 
 ---
@@ -2118,6 +2118,61 @@ AI 助手窗口太杂，API key 建议应单独一个窗口；设置里要加语
 - `--smoke` 通过，主界面截图 1760×1150；接入窗口/设置窗口目视无裁切；
 - `lint_check` 0 新增问题。
 
+#### 三点七、8.5：纯黑主题 / 预览主体 / 字号 9 / 人设库（2026-10-19 深夜）
+
+用户反馈（七条）：
+
+1. 字号选择应叫「字号大小」，默认 9；
+2. 界面改纯黑底白字演示，但不能影响已定义的高亮卡片；
+3. 主界面主体应是实时预览，不是进程读取；
+4. 勾选后的「×」改为填充格子（颜色先演示，后续再定）；
+5. 字号要影响所有 WinMon 窗口；
+6. AI 助手不要再强调“当前工作”——接入的 AI 自己能读实时窗口；
+7. 人设下拉加「更多…」，社区导入的人设能命名、保存、删除。
+
+落地：
+
+- **字号**：`FONT_SIZE_DEFAULT=9`，选项 `9/10/11/12`；新增 `TITLE_FONT`、
+  `SMALL_BOLD_FONT`、`BIG_TITLE_FONT`，把全文件 30 多处硬编码 9/10/11/12/15 号字
+  改成从基准派生。`apply_font_size_live()` 同时更新 ttk 默认样式和
+  浅色卡片里的 `GreenCard/PurpleCard/MediaCard.TCheckbutton`。
+- **纯黑主题**：`UI_BG/UI_SURFACE/UI_INK/UI_MUTED/UI_LINE/UI_ACCENT`；
+  主界面、设置、说明、AI 助手/用量/对话、历史、确认/闲置/多选/清理弹窗全部黑底白字。
+  媒体浅绿卡、AI 浅蓝卡、接入窗口的 MCP/key/工作区/人设/C 卡保持原浅色，
+  `test_b34` 钉住“卡片底色不能等于窗口底色”。
+- **勾选框**：用 14×14 的 `PhotoImage` 创建 `WinMon.Checkbutton.indicator`，
+  重设 `TCheckbutton` layout；未选是深色空心方框、选中是**整块蓝色填充**
+  （`UI_INDICATOR="#3f9bd8"`，演示色，后续要改只改这一个常量）。
+  所有 `tk.Checkbutton` 也统一换成 ttk 版，避免各窗口行为不一致。
+- **预览主体**：Panedwindow 第一块改为预览（约 68%），窗口列表移到右侧 32%。
+  侧栏只显示图标/程序/标题/状态，完整 values（PID/内存/CPU）仍在，
+  悬停提示可看；表头与提示文案改成“右侧窗口列表”。
+- **AI 助手**：删除 `work_text` / `set_work()` / `_ai_work_text()` /
+  `ai.describe_work()` 与 `assistant.work_reading`；只保留接入状态、时间、对话、
+  提问与保存。`_ai_work_minutes()` 仍进入 `companion.facts`，不再占据界面。
+- **人设库**：
+  - 数据：`persona_library = [{id,name,text}]`，最多 30 条、每条 4000 字；
+    `persona_id/persona_name/persona_custom` 保存当前选择；旧版单份
+    `persona_custom` 在 `load_assist()` 时自动迁移成一条。
+  - 读取：`load_persona_document()` 支持 UTF-8/UTF-16/GB18030；JSON 兼容
+    `data.*` 角色卡（name/description/personality/scenario/system_prompt/
+    post_history_instructions）、扁平字段与消息数组；Markdown 去 YAML front matter
+    并从前言或一级标题猜名字。
+  - 界面：下拉列出内建 + 已保存名称 +「更多…」；导入后自动用角色卡名字，
+    「更多…」窗口可**导入 / 重命名 / 使用 / 删除**，删除当前项时回落到关心型。
+  - 提示词：`persona_card/persona_prompt/companion_payload` 都带自定义名称；
+    MCP、CLI、直连、剪贴板同一条链路。
+- **环境独立性复查**：
+  - MCP 配置片段的 `command` 改为 `sys.executable`（pythonw 时换回 python.exe），
+    不再假设 PATH 里有 `python`；
+  - 工作区建议不再写死 `D:\work`，改为“当前工作区旁边的项目文件夹/用户目录”；
+  - 删除重复的 `self._media_apps = mapping` 与 `describe_work` 死代码。
+- **验收**：新增 `test_b34` 14 条；全量 **928 用例，失败 0 / 错误 0 / 跳过 7**；
+  `D:\test` 便携数据目录 **928 用例，失败 0 / 错误 0 / 跳过 9**；
+  `lint_check` 0 新增问题；字号 9 与 12 主界面均无被挤坏的控件（12 号下动作栏
+  收紧 padding 后完整可见）；设置/接入/人设库窗口目视无裁切；150% 冒烟截图里
+  预览页正常显示，侧栏状态列按 DPI 缩放后完整。
+
 ## 三、踩过的坑（**最重要，别重复踩**）
 
 ### 编码类（最容易毁掉成果）
@@ -2670,7 +2725,7 @@ AI 助手窗口太杂，API key 建议应单独一个窗口；设置里要加语
 ## 四、测试体系（**改代码后先跑这个**）
 
 ```bat
-py tests\run_tests.py            :: 913 用例，约 105 秒
+py tests\run_tests.py            :: 928 用例，约 105 秒
 py tests\run_tests.py -v         :: 逐个看
 py tests\run_tests.py -k capture :: 只跑关心的
 py tests\lint_check.py           :: 代码复检（退出码 1 = 有新增问题）
@@ -2828,7 +2883,7 @@ py tests\lint_check.py           :: 代码复检（退出码 1 = 有新增问题
    把 `WinMonApp` 瘦成协调者。拆分时注意那些布局不变量（见坑 21~24），
    以及 `lint_check.py` 的"函数过长"（>200 行）阈值 —— `_build_ui` 已经贴着线走了，
    当时就是靠把视频联动那三行拆成 `_build_video_bars()` 才压下去的。
-5. **测试提速**：~~244 用例 17 秒~~ → 现在 **913 用例约 105 秒**。
+5. **测试提速**：~~244 用例 17 秒~~ → 现在 **928 用例约 105 秒**。
    变慢的是 `test_b5`/`test_b6` 里"真开窗、真抓画面、真关窗"的端到端用例
    （每次要采 2 秒画面，这是必要的 —— 播放判定本来就靠画面变化）。
    想快可以给它们打 `slow` 标记，`run_tests.py` 加 `--fast` 跳过
@@ -3353,7 +3408,7 @@ C 盘那份**保持原样、一字未改**（用户 2026-10-11 确认：暂不�
 
 > 继续开发 **WinMon 1.0（`winmon1.0`）** —— Windows 程序监控与终止工具，纯标准库，在 `项目根目录\`。
 > 请先读 `HANDOFF.md` 和 `README.md`，然后跑 `py tests\run_tests.py`
-> 确认基线是 **913 用例全绿**（需要哔哩哔哩/UIA 页面的用例会按需 skip）、
+> 确认基线是 **928 用例全绿**（需要哔哩哔哩/UIA 页面的用例会按需 skip）、
 > `py tests\lint_check.py` 退出码 0（无新增问题）。
 > **版式要另眼验收**：测试进程没有开 DPI 感知，布局检查看不到"真实 DPI 下控件被挤没"，
 > 所以改动界面后还要跑一次 `py winmon.py --smoke` 看截图（见 §9.15 第 14 条）。

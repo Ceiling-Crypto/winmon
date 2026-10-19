@@ -43,7 +43,7 @@ import sys
 import threading
 import time
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, messagebox, simpledialog, ttk
 
 import winmon_ai as ai
 import winmon_ai_provider as provider
@@ -107,20 +107,38 @@ def scaled_window_size(scale: float, screen=(0, 0),
         h = max(design[1], min(h, int(sh * 0.92)))
     return w, h
 
-# 界面排版常量。字号是**用户可调**的（设置 → 界面字号）：
-# 默认 10 比原来的 9 大一号；所有窗口都按这里的基准字号创建。
-FONT_SIZE_DEFAULT = 10
-FONT_SIZE_CHOICES = ((9, "小"), (10, "标准"), (11, "大"), (12, "特大"))
+# 界面排版常量。字号是**用户可调**的（设置 → 字号大小）：
+# 默认 9；所有窗口（主界面 / AI 助手 / 用量 / 接入 / 说明 / 设置 / 弹窗）
+# 都按这里的基准字号创建，保存后由 `apply_font_size_live` 当场重设。
+FONT_SIZE_DEFAULT = 9
+FONT_SIZE_CHOICES = ((9, "9"), (10, "10"), (11, "11"), (12, "12"))
 UI_FONT_SIZE = FONT_SIZE_DEFAULT
 UI_FONT = ("Microsoft YaHei UI", UI_FONT_SIZE)
 BOLD_FONT = ("Microsoft YaHei UI", UI_FONT_SIZE + 1, "bold")
 SMALL_FONT = ("Microsoft YaHei UI", max(8, UI_FONT_SIZE - 1))
+SMALL_BOLD_FONT = ("Microsoft YaHei UI", max(8, UI_FONT_SIZE - 1), "bold")
+TITLE_FONT = ("Microsoft YaHei UI", UI_FONT_SIZE + 2, "bold")
+BIG_TITLE_FONT = ("Microsoft YaHei UI", UI_FONT_SIZE + 4, "bold")
 MONO_FONT = ("Consolas", max(9, UI_FONT_SIZE))
+
+# 纯黑底 / 白字主题。高亮卡片（媒体 / AI / 接入卡片）继续用各自的浅色底，
+# 不跟着变成黑底 —— 用户要求「不得影响定义的高亮卡片」。
+UI_BG = "#000000"
+UI_SURFACE = "#0b0b0b"
+UI_SURFACE_ALT = "#151515"
+UI_INK = "#ffffff"
+UI_MUTED = "#b9c2ca"
+UI_LINE = "#333333"
+UI_ACCENT = "#5aa9e6"
+UI_ACCENT_DARK = "#174a6c"
+UI_INDICATOR = "#3f9bd8"
+UI_INDICATOR_BORDER = "#7cc4ff"
 
 
 def set_font_size(size) -> int:
     """改全局基准字号（新控件立即用它；已有窗口由 `apply_font_size_live` 重设）。"""
-    global UI_FONT_SIZE, UI_FONT, BOLD_FONT, SMALL_FONT, MONO_FONT
+    global UI_FONT_SIZE, UI_FONT, BOLD_FONT, SMALL_FONT, SMALL_BOLD_FONT
+    global TITLE_FONT, BIG_TITLE_FONT, MONO_FONT
     valid = [value for value, _label in FONT_SIZE_CHOICES]
     try:
         value = int(size)
@@ -130,6 +148,9 @@ def set_font_size(size) -> int:
     UI_FONT = ("Microsoft YaHei UI", UI_FONT_SIZE)
     BOLD_FONT = ("Microsoft YaHei UI", UI_FONT_SIZE + 1, "bold")
     SMALL_FONT = ("Microsoft YaHei UI", max(8, UI_FONT_SIZE - 1))
+    SMALL_BOLD_FONT = ("Microsoft YaHei UI", max(8, UI_FONT_SIZE - 1), "bold")
+    TITLE_FONT = ("Microsoft YaHei UI", UI_FONT_SIZE + 2, "bold")
+    BIG_TITLE_FONT = ("Microsoft YaHei UI", UI_FONT_SIZE + 4, "bold")
     MONO_FONT = ("Consolas", max(9, UI_FONT_SIZE))
     return UI_FONT_SIZE
 
@@ -182,7 +203,8 @@ def apply_font_size_live(root, size) -> None:
     为什么不是只改全局常量：Tk 控件在创建时就把字体描述复制走了，改常量只对
     **新开**的窗口有效；用户改设置时必须当场看见，所以这里逐个重设。
     """
-    global UI_FONT, BOLD_FONT, MONO_FONT
+    global UI_FONT, BOLD_FONT, SMALL_FONT, SMALL_BOLD_FONT, TITLE_FONT
+    global BIG_TITLE_FONT, MONO_FONT
     old = UI_FONT_SIZE
     ratio = float(size) / float(old or FONT_SIZE_DEFAULT)
     if abs(ratio - 1.0) < 0.01:
@@ -222,7 +244,9 @@ def apply_font_size_live(root, size) -> None:
                         font=("Microsoft YaHei UI", UI_FONT_SIZE, "bold"))
         style.configure("TNotebook.Tab", font=UI_FONT, padding=(14, 6))
         for name in ("TButton", "TLabel", "TEntry", "TCombobox", "TCheckbutton",
-                     "TRadiobutton", "TMenubutton", "TLabelframe.Label"):
+                     "TRadiobutton", "TMenubutton", "TLabelframe.Label",
+                     "GreenCard.TCheckbutton", "PurpleCard.TCheckbutton",
+                     "MediaCard.TCheckbutton"):
             style.configure(name, font=UI_FONT)
     except Exception:
         pass
@@ -522,8 +546,8 @@ class _RowTip:
             self.top = tk.Toplevel(self.widget)
             self.top.overrideredirect(True)
             self.top.attributes("-topmost", True)
-            self.label = tk.Label(self.top, font=("Microsoft YaHei UI", 9),
-                                  bg="#243040", fg="#eaf2f8", justify="left",
+            self.label = tk.Label(self.top, font=SMALL_FONT,
+                                  bg=UI_SURFACE_ALT, fg=UI_INK, justify="left",
                                   bd=1, relief="solid", padx=8, pady=5)
             self.label.pack()
             self.top.withdraw()
@@ -721,9 +745,9 @@ class PreviewPane:
         head.columnconfigure(1, weight=1)
         self.lbl_title = ttk.Label(head, text="（未选择程序）", font=BOLD_FONT, anchor="w")
         self.lbl_title.grid(row=0, column=0, columnspan=2, sticky="ew")
-        self.lbl_meta = ttk.Label(head, text="", font=UI_FONT, foreground="#666", anchor="w")
+        self.lbl_meta = ttk.Label(head, text="", font=UI_FONT, foreground=UI_MUTED, anchor="w")
         self.lbl_meta.grid(row=1, column=0, sticky="ew")
-        self.lbl_stats = ttk.Label(head, text="", font=MONO_FONT, foreground="#0a7", anchor="e")
+        self.lbl_stats = ttk.Label(head, text="", font=MONO_FONT, foreground="#52d273", anchor="e")
         self.lbl_stats.grid(row=1, column=1, sticky="e")
         #: 暂停刷新移到标题右侧：底部留给“关闭/结束”这类动作，
         #: 右侧预览变窄时也不会把暂停键挤成一条线。
@@ -750,8 +774,8 @@ class PreviewPane:
         self.scale = 1
         self._display_mode: tuple[int, int] = (0, 0)
         self.placeholder = self.canvas.create_text(
-            12, 12, anchor="nw", fill="#5a6a78", font=UI_FONT, justify="left",
-            text=("请选择左侧列表中的程序\n\n"
+            12, 12, anchor="nw", fill="#9aa9b6", font=UI_FONT, justify="left",
+            text=("请选择右侧窗口列表中的程序\n\n"
                   "· 选中后此处显示该程序的实时画面\n"
                   "· 双击画面 = 最小化/还原该程序（与列表一致）\n"
                   "· 列表里单击只选中；Enter / 中键切到前台\n"
@@ -768,7 +792,7 @@ class PreviewPane:
         #: “切到前台”不再占一个按钮：Enter / 中键 / 右键菜单都能做，
         #: 底部只留给关闭与结束这类不可逆动作。
 
-        self.hint = ttk.Label(self.frame, text="", font=UI_FONT, foreground="#888", anchor="w")
+        self.hint = ttk.Label(self.frame, text="", font=UI_FONT, foreground=UI_MUTED, anchor="w")
         self.hint.grid(row=3, column=0, sticky="ew", padx=8, pady=(2, 6))
 
     # -- 画面显示 --
@@ -892,10 +916,10 @@ class GalleryPane:
         self._drag_key = None
         self._drag_hover = None
         self.empty_label = ttk.Label(
-            self.inner, font=UI_FONT, foreground="#7a8a99", justify="left",
+            self.inner, font=UI_FONT, foreground=UI_MUTED, justify="left",
             wraplength=310,
             text=("实时总览为空\n\n"
-                  "在左侧列表中按住 Ctrl 或 Shift 多选程序，\n"
+                  "在右侧窗口列表中按住 Ctrl 或 Shift 多选程序，\n"
                   "然后点左侧「加入总览」即可把它们同时显示在这里。"))
         self.empty_label.pack(padx=16, pady=16, anchor="w")
         self._cols = 0
@@ -924,10 +948,10 @@ class GalleryPane:
         holder = tk.Frame(cell, bg="#000", width=TILE_W, height=TILE_H - 40)
         holder.pack(padx=2)
         holder.pack_propagate(False)
-        lbl = tk.Label(holder, bg="#000", text="等待画面…", fg="#556", font=UI_FONT)
+        lbl = tk.Label(holder, bg="#000", text="等待画面…", fg="#8a949c", font=UI_FONT)
         lbl.pack(fill="both", expand=True)
         foot = ttk.Label(cell, text=meta, font=SMALL_FONT,
-                         foreground="#777", anchor="w")
+                         foreground=UI_MUTED, anchor="w")
         foot.pack(fill="x", padx=2)
         self.tiles[key] = {"cell": cell, "photo": None, "label": lbl,
                            "foot": foot, "w": 0, "h": 0, "title": title}
@@ -1063,7 +1087,7 @@ class ProcessTreePane:
 
         top = ttk.Frame(self.frame)
         top.grid(row=0, column=0, sticky="ew", padx=6, pady=(6, 2))
-        self.info = ttk.Label(top, text="", font=UI_FONT, foreground="#555")
+        self.info = ttk.Label(top, text="", font=UI_FONT, foreground=UI_MUTED)
         self.info.pack(side="left")
         ttk.Button(top, text="刷新", width=7,
                    command=lambda: self.app.refresh_process_tree(force=True)).pack(side="right", padx=2)
@@ -1089,7 +1113,7 @@ class ProcessTreePane:
         tv.configure(yscrollcommand=vs.set)
         tv.grid(row=1, column=0, sticky="nsew", padx=(6, 0), pady=(0, 6))
         vs.grid(row=1, column=1, sticky="ns", pady=(0, 6))
-        tv.tag_configure("haswin", foreground="#1b5e20")
+        tv.tag_configure("haswin", foreground="#69d98c")
         tv.tag_configure("self", background="#d6ecff")
         tv.tag_configure("critical", foreground="#8e44ad")
         tv.bind("<<TreeviewSelect>>", self._on_select)
@@ -1134,7 +1158,7 @@ class WorkspacePane:
         head.grid(row=0, column=0, sticky="ew", padx=8, pady=(8, 2))
         tk.Label(head, text="工作区快照", font=BOLD_FONT, anchor="w").pack(side="left")
         tk.Label(head, text="　存一套窗口布局，之后一键切回",
-                 font=UI_FONT, foreground="#777").pack(side="left")
+                 font=UI_FONT, foreground=UI_MUTED).pack(side="left")
 
         bar = ttk.Frame(self.frame)
         bar.grid(row=1, column=0, sticky="ew", padx=8, pady=(2, 4))
@@ -1174,7 +1198,7 @@ class WorkspacePane:
         tv.bind("<<TreeviewSelect>>", lambda _e: self._show_detail())
         tv.bind("<Double-1>", lambda _e: self.action_apply())
 
-        self.info = ttk.Label(self.frame, text="", font=UI_FONT, foreground="#555",
+        self.info = ttk.Label(self.frame, text="", font=UI_FONT, foreground=UI_MUTED,
                               anchor="w", justify="left", wraplength=330)
         self.info.grid(row=4, column=0, columnspan=2, sticky="ew", padx=8, pady=(0, 8))
         self._detail_ids: list[str] = []
@@ -1364,7 +1388,7 @@ class ProgramCatalogPane:
         self.only_recent = tk.BooleanVar(value=False)
         ttk.Checkbutton(cats, text="只看最近使用", variable=self.only_recent,
                         command=self.apply_filter).pack(side="left", padx=2)
-        self.filter_info = ttk.Label(cats, text="", font=UI_FONT, foreground="#555")
+        self.filter_info = ttk.Label(cats, text="", font=UI_FONT, foreground=UI_MUTED)
         self.filter_info.pack(side="right")
         #: 多选出来的类别集合（空集 = 全部类别）
         self.selected_categories: set[str] = set()
@@ -1416,9 +1440,9 @@ class ProgramCatalogPane:
         tv.grid(row=3, column=0, sticky="nsew", padx=(6, 0), pady=(0, 6))
         vs.grid(row=3, column=1, sticky="ns", pady=(0, 6))
         tv.tag_configure("running", background="#d6ecff")
-        tv.tag_configure("missing", foreground="#c0392b")
+        tv.tag_configure("missing", foreground="#ff7b72")
         tv.tag_configure("group", background="#eef2f6")
-        tv.tag_configure("fav", foreground="#c47f00")
+        tv.tag_configure("fav", foreground="#e3b341")
         tv.bind("<Double-1>", lambda e: self.launch_selected())
         tv.bind("<<TreeviewSelect>>", lambda e: self._sync_fav_button())
         # 右键菜单（B.4）：以前程序目录没有右键菜单，只能靠底部那几个按钮；
@@ -1959,22 +1983,22 @@ class _TextInputDialog:
         self.top = tk.Toplevel(parent)
         top = self.top
         top.title(title)
-        top.configure(bg="#1b2027")
+        top.configure(bg=UI_BG)
         top.attributes("-topmost", True)
         top.resizable(False, False)
 
         wrap = ttk.Frame(top, padding=18)
         wrap.pack(fill="both", expand=True)
-        tk.Label(wrap, text=message, font=("Microsoft YaHei UI", 11, "bold"),
-                 bg="#1b2027", fg="#eaf2f8", anchor="w", justify="left").pack(anchor="w")
+        tk.Label(wrap, text=message, font=TITLE_FONT,
+                 bg=UI_BG, fg=UI_INK, anchor="w", justify="left").pack(anchor="w")
         # 可选的提示行（B.4「用参数启动」用它给出常见参数例子）
         if hint:
-            tk.Label(wrap, text=hint, font=SMALL_FONT, bg="#1b2027",
-                     fg="#8fa8bd", anchor="w", justify="left").pack(
+            tk.Label(wrap, text=hint, font=SMALL_FONT, bg=UI_BG,
+                     fg=UI_MUTED, anchor="w", justify="left").pack(
                 anchor="w", pady=(4, 0))
         self.var = tk.StringVar(value=initial)
         self.entry = tk.Entry(wrap, textvariable=self.var, font=UI_FONT, width=38,
-                              bg="#0f1418", fg="#eaf2f8", insertbackground="#eaf2f8",
+                              bg=UI_SURFACE_ALT, fg=UI_INK, insertbackground=UI_INK,
                               relief="flat", highlightthickness=1,
                               highlightbackground="#3a4a5a")
         self.entry.pack(fill="x", pady=(10, 12))
@@ -2028,18 +2052,18 @@ class _ChoiceDialog:
         self.top = tk.Toplevel(parent)
         top = self.top
         top.title(title)
-        top.configure(bg="#1b2027")
+        top.configure(bg=UI_BG)
         top.attributes("-topmost", True)
         top.resizable(False, False)
 
         wrap = ttk.Frame(top, padding=18)
         wrap.pack(fill="both", expand=True)
-        tk.Label(wrap, text=message, font=("Microsoft YaHei UI", 11, "bold"),
-                 bg="#1b2027", fg="#eaf2f8", anchor="w").pack(anchor="w")
+        tk.Label(wrap, text=message, font=TITLE_FONT,
+                 bg=UI_BG, fg=UI_INK, anchor="w").pack(anchor="w")
 
         self.listbox = tk.Listbox(wrap, height=min(10, max(3, len(choices))),
                                  font=UI_FONT, activestyle="none",
-                                 bg="#0f1418", fg="#cfe3f0",
+                                 bg=UI_SURFACE_ALT, fg=UI_INK,
                                  selectbackground="#2d6ea8", selectforeground="#ffffff",
                                  relief="flat", highlightthickness=0)
         for c in choices:
@@ -2106,25 +2130,23 @@ class _MultiSelectDialog:
         self.top = tk.Toplevel(parent)
         top = self.top
         top.title(title)
-        top.configure(bg="#1b2027")
+        top.configure(bg=UI_BG)
         top.attributes("-topmost", True)
         top.resizable(False, False)
 
         wrap = ttk.Frame(top, padding=18)
         wrap.pack(fill="both", expand=True)
-        tk.Label(wrap, text=message, font=("Microsoft YaHei UI", 11, "bold"),
-                 bg="#1b2027", fg="#eaf2f8", anchor="w").pack(anchor="w")
+        tk.Label(wrap, text=message, font=TITLE_FONT,
+                 bg=UI_BG, fg=UI_INK, anchor="w").pack(anchor="w")
 
-        body = tk.Frame(wrap, bg="#1b2027")
+        body = tk.Frame(wrap, bg=UI_BG)
         body.pack(fill="both", expand=True, pady=(10, 12))
         self.vars: dict[str, tk.BooleanVar] = {}
         for key, label in options:
             var = tk.BooleanVar(value=key in selected)
             self.vars[key] = var
-            tk.Checkbutton(body, text=label, variable=var, font=UI_FONT,
-                           bg="#1b2027", fg="#eaf2f8", selectcolor="#0f1418",
-                           activebackground="#1b2027", activeforeground="#ffffff",
-                           anchor="w").pack(anchor="w", fill="x")
+            ttk.Checkbutton(body, text=label, variable=var,
+                            font=UI_FONT).pack(anchor="w", fill="x")
 
         btns = ttk.Frame(wrap)
         btns.pack(fill="x")
@@ -2222,21 +2244,21 @@ class _CleanupDialog:
         self.top = tk.Toplevel(parent)
         top = self.top
         top.title("清理程序文件")
-        top.configure(bg="#1b2027")
+        top.configure(bg=UI_BG)
         top.attributes("-topmost", True)
         top.resizable(False, False)
 
         wrap = ttk.Frame(top, padding=18)
         wrap.pack(fill="both", expand=True)
         tk.Label(wrap, text="以下都是 WinMon 自己产生的文件，勾选后点「清理选中」",
-                 font=("Microsoft YaHei UI", 11, "bold"),
-                 bg="#1b2027", fg="#eaf2f8", anchor="w").pack(anchor="w")
+                 font=TITLE_FONT,
+                 bg=UI_BG, fg=UI_INK, anchor="w").pack(anchor="w")
         tk.Label(wrap, text="默认只勾选「删了会自动重建 / 本来就没用」的项；"
                             "设置文件是你的用户数据，默认不勾。",
-                 font=("Microsoft YaHei UI", 9), bg="#1b2027", fg="#a9bfd2",
+                 font=SMALL_FONT, bg=UI_BG, fg=UI_MUTED,
                  anchor="w", justify="left").pack(anchor="w", pady=(6, 10))
 
-        body = tk.Frame(wrap, bg="#1b2027")
+        body = tk.Frame(wrap, bg=UI_BG)
         body.pack(fill="both", expand=True)
         self.vars: dict[str, tk.BooleanVar] = {}
         for item in self._items:
@@ -2245,15 +2267,13 @@ class _CleanupDialog:
             state = "" if item["exists"] else "（没有）"
             var = tk.BooleanVar(value=bool(item["default"] and item["exists"]))
             self.vars[item["key"]] = var
-            row = tk.Checkbutton(
+            row = ttk.Checkbutton(
                 body,
                 text=f"{item['label']}　{item['count']} 个文件 / {size_text}{state}",
-                variable=var, font=UI_FONT, bg="#1b2027", fg="#eaf2f8",
-                selectcolor="#0f1418", activebackground="#1b2027",
-                activeforeground="#ffffff", anchor="w", justify="left")
+                variable=var)
             row.pack(anchor="w", fill="x")
             tk.Label(body, text="    " + item["note"], font=SMALL_FONT,
-                     bg="#1b2027", fg="#8fa8bd", anchor="w", justify="left").pack(
+                     bg=UI_BG, fg=UI_MUTED, anchor="w", justify="left").pack(
                 anchor="w", fill="x", pady=(0, 6))
 
         btns = ttk.Frame(wrap)
@@ -2315,79 +2335,75 @@ class _SettingsDialog:
         self.top = tk.Toplevel(parent)
         top = self.top
         top.title(i18n.t("settings.title"))
-        top.configure(bg="#1b2027")
+        top.configure(bg=UI_BG)
         top.attributes("-topmost", True)
         top.resizable(False, False)
 
-        wrap = tk.Frame(top, bg="#1b2027", padx=18, pady=18)
+        wrap = tk.Frame(top, bg=UI_BG, padx=18, pady=18)
         wrap.pack(fill="both", expand=True)
-        tk.Label(wrap, text="WinMon 设置", font=("Microsoft YaHei UI", 11, "bold"),
-                 bg="#1b2027", fg="#eaf2f8", anchor="w").pack(anchor="w")
+        tk.Label(wrap, text="WinMon 设置", font=TITLE_FONT,
+                 bg=UI_BG, fg=UI_INK, anchor="w").pack(anchor="w")
 
         # ---- 1) 开机自启动 ----
         self.autostart = tk.BooleanVar(value=bool(core.get_autostart()))
-        tk.Checkbutton(wrap, text="开机自启动（登录后自动运行 WinMon）",
-                       variable=self.autostart, font=UI_FONT, bg="#1b2027",
-                       fg="#eaf2f8", selectcolor="#0f1418", activebackground="#1b2027",
-                       activeforeground="#ffffff", anchor="w").pack(
+        ttk.Checkbutton(wrap, text="开机自启动（登录后自动运行 WinMon）",
+                        variable=self.autostart).pack(
             anchor="w", fill="x", pady=(12, 0))
         tk.Label(wrap, text=f"　　写入 HKCU 的 Run 项，不需要管理员权限；"
                             f"命令：{core.autostart_command()[:70]}…",
-                 font=SMALL_FONT, bg="#1b2027", fg="#8fa8bd",
+                 font=SMALL_FONT, bg=UI_BG, fg=UI_MUTED,
                  anchor="w", justify="left", wraplength=560).pack(anchor="w", fill="x")
 
         # ---- 2) 关闭按钮行为 ----
-        tk.Label(wrap, text="点右上角的 × 时：", font=UI_FONT, bg="#1b2027",
-                 fg="#eaf2f8", anchor="w").pack(anchor="w", pady=(14, 2))
+        tk.Label(wrap, text="点右上角的 × 时：", font=UI_FONT, bg=UI_BG,
+                 fg=UI_INK, anchor="w").pack(anchor="w", pady=(14, 2))
         self.close_mode = tk.StringVar(value=close_mode)
         tk.Radiobutton(wrap, text="隐藏到托盘（推荐：音乐继续放、监控继续跑）",
                        variable=self.close_mode, value="tray", font=UI_FONT,
-                       bg="#1b2027", fg="#eaf2f8", selectcolor="#0f1418",
-                       activebackground="#1b2027", activeforeground="#ffffff",
+                       bg=UI_BG, fg=UI_INK, selectcolor=UI_SURFACE_ALT,
+                       activebackground=UI_BG, activeforeground="#ffffff",
                        anchor="w").pack(anchor="w", fill="x")
         tk.Radiobutton(wrap, text="结束进程（真的退出，托盘图标一起清掉）",
                        variable=self.close_mode, value="exit", font=UI_FONT,
-                       bg="#1b2027", fg="#eaf2f8", selectcolor="#0f1418",
-                       activebackground="#1b2027", activeforeground="#ffffff",
+                       bg=UI_BG, fg=UI_INK, selectcolor=UI_SURFACE_ALT,
+                       activebackground=UI_BG, activeforeground="#ffffff",
                        anchor="w").pack(anchor="w", fill="x")
         if not tray_available:
             tk.Label(wrap, text="　（本机托盘不可用，选「隐藏到托盘」会自动退回结束进程）",
-                     font=SMALL_FONT, bg="#1b2027", fg="#e0a458",
+                     font=SMALL_FONT, bg=UI_BG, fg="#e0a458",
                      anchor="w").pack(anchor="w", fill="x")
 
         # ---- 3) 启动时直接收进托盘 ----
         self.start_minimized = tk.BooleanVar(value=bool(start_minimized))
-        tk.Checkbutton(wrap, text="启动时直接收进托盘（界面不弹出来，双击托盘图标再看）",
-                       variable=self.start_minimized, font=UI_FONT, bg="#1b2027",
-                       fg="#eaf2f8", selectcolor="#0f1418", activebackground="#1b2027",
-                       activeforeground="#ffffff", anchor="w").pack(
+        ttk.Checkbutton(wrap, text="启动时直接收进托盘（界面不弹出来，双击托盘图标再看）",
+                        variable=self.start_minimized).pack(
             anchor="w", fill="x", pady=(12, 0))
         if not tray_available:
             tk.Label(wrap, text="　（托盘不可用时这一项不生效，界面照常显示）",
-                     font=SMALL_FONT, bg="#1b2027", fg="#8fa8bd",
+                     font=SMALL_FONT, bg=UI_BG, fg=UI_MUTED,
                      anchor="w").pack(anchor="w", fill="x")
 
         # ---- 4) 操作历史保留天数 ----
-        tk.Label(wrap, text="操作历史日志保留：", font=UI_FONT, bg="#1b2027",
-                 fg="#eaf2f8", anchor="w").pack(anchor="w", pady=(14, 0))
-        row = tk.Frame(wrap, bg="#1b2027")
+        tk.Label(wrap, text="操作历史日志保留：", font=UI_FONT, bg=UI_BG,
+                 fg=UI_INK, anchor="w").pack(anchor="w", pady=(14, 0))
+        row = tk.Frame(wrap, bg=UI_BG)
         row.pack(anchor="w", fill="x", pady=(2, 0))
         self.history_days = tk.StringVar(value=str(int(history_days)))
         ttk.Combobox(row, textvariable=self.history_days, state="readonly",
                      width=6, font=UI_FONT,
                      values=[str(days) for days, _label in HISTORY_DAYS_CHOICES]
                      ).pack(side="left")
-        tk.Label(row, text="天", font=UI_FONT, bg="#1b2027", fg="#eaf2f8",
+        tk.Label(row, text="天", font=UI_FONT, bg=UI_BG, fg=UI_INK,
                  anchor="w").pack(side="left", padx=(4, 0))
         tk.Label(wrap, text=f"　　启动时自动删掉超过这个天数的记录（默认 "
                             f"{HISTORY_DAYS_DEFAULT} 天）。"
                             f"清理前会把原文件另存一份 .bak，删错了还能找回来。",
-                 font=SMALL_FONT, bg="#1b2027", fg="#8fa8bd",
+                 font=SMALL_FONT, bg=UI_BG, fg=UI_MUTED,
                  anchor="w", justify="left", wraplength=560).pack(anchor="w", fill="x")
 
         # ---- 5) 语言（中文 / English）----
-        tk.Label(wrap, text=i18n.t("settings.language"), font=UI_FONT, bg="#1b2027",
-                 fg="#eaf2f8", anchor="w").pack(anchor="w", pady=(14, 0))
+        tk.Label(wrap, text=i18n.t("settings.language"), font=UI_FONT, bg=UI_BG,
+                 fg=UI_INK, anchor="w").pack(anchor="w", pady=(14, 0))
         self._lang_by_label = {v: k for k, v in i18n.LANGUAGES.items()}
         self.language = tk.StringVar(value=i18n.language_label(language))
         combo = ttk.Combobox(wrap, textvariable=self.language, state="readonly",
@@ -2395,40 +2411,36 @@ class _SettingsDialog:
                              values=list(i18n.LANGUAGES.values()))
         combo.pack(anchor="w", pady=(2, 0))
         tk.Label(wrap, text="　　" + i18n.t("settings.language_hint"),
-                 font=SMALL_FONT, bg="#1b2027", fg="#8fa8bd",
+                 font=SMALL_FONT, bg=UI_BG, fg=UI_MUTED,
                  anchor="w", justify="left", wraplength=560).pack(anchor="w", fill="x")
 
-        # ---- 6) 界面字号（主界面 + AI 窗口 + 说明一起变）----
-        tk.Label(wrap, text=i18n.pick("界面字号", "Text size"),
-                 font=UI_FONT, bg="#1b2027", fg="#eaf2f8",
+        # ---- 6) 字号大小（主界面 + 所有 WinMon 窗口一起变）----
+        tk.Label(wrap, text=i18n.pick("字号大小", "Text size"),
+                 font=UI_FONT, bg=UI_BG, fg=UI_INK,
                  anchor="w").pack(anchor="w", pady=(14, 0))
-        self._font_by_label = {
-            i18n.pick("小", "Small"): 9,
-            i18n.pick("标准", "Standard"): 10,
-            i18n.pick("大", "Large"): 11,
-            i18n.pick("特大", "Extra large"): 12,
-        }
+        self._font_by_label = {label: value for value, label in FONT_SIZE_CHOICES}
         current_label = next((label for label, value in self._font_by_label.items()
-                              if value == font_size), i18n.pick("标准", "Standard"))
+                              if value == font_size), str(FONT_SIZE_DEFAULT))
         self.font_size = tk.StringVar(value=current_label)
         font_combo = ttk.Combobox(
             wrap, textvariable=self.font_size, state="readonly", width=14,
             font=UI_FONT, values=list(self._font_by_label.keys()))
         font_combo.pack(anchor="w", pady=(2, 0))
         tk.Label(wrap, text="　　" + i18n.pick(
-                     "保存后主界面、AI 助手、用量和说明窗口一起变；不用重启。",
-                     "Applies to the main window, AI assistant, usage, and guide "
-                     "immediately; no restart."),
-                 font=SMALL_FONT, bg="#1b2027", fg="#8fa8bd",
+                     "保存后主界面、AI 助手、用量、接入、说明、设置和弹窗一起变；"
+                     "不用重启。",
+                     "Applies to the main window and every WinMon window immediately; "
+                     "no restart."),
+                 font=SMALL_FONT, bg=UI_BG, fg=UI_MUTED,
                  anchor="w", justify="left", wraplength=560).pack(anchor="w", fill="x")
 
         #: 自启动那条要写注册表（有副作用），所以点"保存"才生效，并当场回报结果
         self.status = tk.StringVar(value="")
-        tk.Label(wrap, textvariable=self.status, font=("Microsoft YaHei UI", 9),
-                 bg="#1b2027", fg="#9fd6a0", anchor="w", justify="left",
+        tk.Label(wrap, textvariable=self.status, font=SMALL_FONT,
+                 bg=UI_BG, fg="#9fd6a0", anchor="w", justify="left",
                  wraplength=560).pack(anchor="w", fill="x", pady=(10, 0))
 
-        btns = tk.Frame(wrap, bg="#1b2027")
+        btns = tk.Frame(wrap, bg=UI_BG)
         btns.pack(fill="x", pady=(12, 0))
         ttk.Button(btns, text="保存 (Enter)", width=13, command=self._ok).pack(side="right")
         ttk.Button(btns, text="取消 (Esc)", width=12, command=self._cancel).pack(
@@ -2511,6 +2523,7 @@ class _HistoryWindow:
         self.top = tk.Toplevel(parent)
         top = self.top
         top.title(f"WinMon 操作历史 — {os.path.basename(app.history.log_path)}")
+        top.configure(bg=UI_BG)
         top.geometry("1100x560")
         top.minsize(760, 360)
         #: 关窗只是"收起来"，下次再点按钮还能打开（`app._history_window` 会被清空）
@@ -2533,7 +2546,7 @@ class _HistoryWindow:
                   font=BOLD_FONT).pack(side="left")
         self.count_text = tk.StringVar(value="")
         ttk.Label(head, textvariable=self.count_text, font=UI_FONT,
-                  foreground="#555").pack(side="right")
+                  foreground=UI_MUTED).pack(side="right")
 
         bar = ttk.Frame(wrap)
         bar.pack(fill="x", pady=(6, 4))
@@ -2579,15 +2592,15 @@ class _HistoryWindow:
         tv.configure(yscrollcommand=vs.set)
         tv.pack(side="left", fill="both", expand=True)
         vs.pack(side="left", fill="y")
-        tv.tag_configure("fail", foreground="#c0392b")
-        tv.tag_configure("ok", foreground="#1b5e20")
+        tv.tag_configure("fail", foreground="#ff7b72")
+        tv.tag_configure("ok", foreground="#69d98c")
 
         # ---- 底部：危险动作与说明 ----
         foot = ttk.Frame(wrap)
         foot.pack(fill="x", pady=(6, 0))
         self.status = tk.StringVar(value="")
         tk.Label(foot, textvariable=self.status, font=SMALL_FONT,
-                 fg="#5a6b7b", anchor="w").pack(side="left")
+                 fg=UI_MUTED, anchor="w").pack(side="left")
         ttk.Button(foot, text="清空日志文件…", width=14,
                    command=self.clear_log).pack(side="right", padx=2)
         ttk.Button(foot, text="清空列表", width=9,
@@ -2800,6 +2813,7 @@ class _AiUsageWindow:
         self.app = app
         self.top = tk.Toplevel(parent)
         self.top.title("WinMon AI 识别与用量")
+        self.top.configure(bg=UI_BG)
         scale = float(getattr(app, "dpi_scale", 1.0) or 1.0)
         self.top.geometry(f"{int(920 * scale)}x{int(640 * scale)}")
         self.top.minsize(int(720 * scale), int(480 * scale))
@@ -2815,7 +2829,7 @@ class _AiUsageWindow:
                   font=BOLD_FONT).pack(side="left")
         self.state_text = tk.StringVar(value="")
         ttk.Label(head, textvariable=self.state_text, font=UI_FONT,
-                  foreground="#555").pack(side="right")
+                  foreground=UI_MUTED).pack(side="right")
 
         body_holder = ttk.Frame(wrap)
         body_holder.pack(fill="both", expand=True, pady=(8, 8))
@@ -2852,7 +2866,7 @@ class _AiUsageWindow:
         note.pack(fill="x", pady=(4, 0))
         ttk.Label(note, text="恢复预算只能在这里操作；MCP 没有改预算的工具。"
                             "精确分词会把 MCP 工具结果发给智谱分词器。",
-                  font=UI_FONT, foreground="#777").pack(side="left")
+                  font=UI_FONT, foreground=UI_MUTED).pack(side="left")
         self.refresh()
         self._auto_refresh()
 
@@ -2984,6 +2998,7 @@ class _AiAssistantWindow:
         self.app = app
         self.top = tk.Toplevel(parent)
         self.top.title(i18n.t("assistant.title"))
+        self.top.configure(bg=UI_BG)
         scale = float(getattr(app, "dpi_scale", 1.0) or 1.0)
         sw, sh = parent.winfo_screenwidth(), parent.winfo_screenheight()
         w = min(int(860 * scale), int(sw * 0.92))
@@ -2997,15 +3012,11 @@ class _AiAssistantWindow:
 
         self.header = tk.StringVar(value=i18n.t("assistant.header_reading"))
         ttk.Label(wrap, textvariable=self.header, font=UI_FONT,
-                  foreground="#2a4a66", justify="left",
+                  foreground="#9dc3df", justify="left",
                   wraplength=int(810 * scale)).pack(fill="x")
-        self.work_text = tk.StringVar(value=i18n.t("assistant.work_reading"))
-        ttk.Label(wrap, textvariable=self.work_text, font=UI_FONT,
-                  foreground="#3d5a73", justify="left",
-                  wraplength=int(810 * scale)).pack(fill="x", pady=(3, 0))
         self.time_text = tk.StringVar(value=i18n.t("assistant.time_reading"))
         ttk.Label(wrap, textvariable=self.time_text, font=UI_FONT,
-                  foreground="#555").pack(fill="x", pady=(2, 6))
+                  foreground=UI_MUTED).pack(fill="x", pady=(2, 6))
 
         body_holder = ttk.Frame(wrap)
         body_holder.pack(fill="both", expand=True)
@@ -3018,7 +3029,7 @@ class _AiAssistantWindow:
         self.body.configure(state="disabled")
 
         ttk.Label(wrap, text=i18n.t("assistant.ask_hint"), font=UI_FONT,
-                  foreground="#6b7c8c").pack(fill="x", pady=(8, 2))
+                  foreground=UI_MUTED).pack(fill="x", pady=(8, 2))
         ask = ttk.Frame(wrap)
         ask.pack(fill="x")
         self.question = tk.StringVar(value="")
@@ -3065,10 +3076,6 @@ class _AiAssistantWindow:
 
         self._seed()
         try:
-            self.set_work(app._ai_work_text())
-        except Exception:
-            pass
-        try:
             self.set_time(app._ai_time_status())
         except Exception:
             pass
@@ -3100,10 +3107,6 @@ class _AiAssistantWindow:
     def set_header(self, text: str) -> None:
         if text:
             self.header.set(text)
-
-    def set_work(self, text: str) -> None:
-        if text:
-            self.work_text.set(text)
 
     def set_time(self, text: str) -> None:
         if text:
@@ -3193,6 +3196,7 @@ class _AiChatWindow:
     def __init__(self, parent: tk.Misc) -> None:
         self.top = tk.Toplevel(parent)
         self.top.title(i18n.t("chat.title"))
+        self.top.configure(bg=UI_BG)
         self.top.geometry("760x540")
         wrap = ttk.Frame(self.top, padding=10)
         wrap.pack(fill="both", expand=True)
@@ -3273,16 +3277,287 @@ class _Disclosure:
         self.holder.pack(**kwargs)
 
 
+#: 人设库独立窗口：导入、命名、保存、使用、删除（只写本机设置）。
+class _PersonaManager:
+    """
+    人设库：导入 GitHub 等社区角色卡后，命名、保存、使用、删除。
+
+    数据只写进 `winmon_ai_assist.json` 的 `persona_library`，不联网、不执行文件。
+    下拉框里的「更多…」打开这个窗口；连接窗口的独立「导入人设…」也复用同一套库。
+    """
+
+    def __init__(self, parent: tk.Misc, app, on_close=None) -> None:
+        self.app = app
+        self.on_close = on_close
+        self.top = tk.Toplevel(parent)
+        self.top.title(i18n.t("persona.title"))
+        scale = float(getattr(app, "dpi_scale", 1.0) or 1.0)
+        sw, sh = parent.winfo_screenwidth(), parent.winfo_screenheight()
+        w = min(int(680 * scale), int(sw * 0.92))
+        h = min(int(520 * scale), int(sh * 0.88))
+        self.top.geometry(f"{w}x{h}")
+        self.top.minsize(int(560 * scale), int(400 * scale))
+        self.top.configure(bg=UI_BG)
+        self.top.transient(parent)
+        self.top.protocol("WM_DELETE_WINDOW", self.close)
+
+        tk.Label(self.top, text=i18n.t("persona.title"), font=TITLE_FONT,
+                 bg=UI_BG, fg=UI_INK, anchor="w").pack(fill="x", padx=12, pady=(10, 2))
+        tk.Label(self.top, text=i18n.t("persona.hint"), font=SMALL_FONT,
+                 bg=UI_BG, fg=UI_MUTED, anchor="w", justify="left",
+                 wraplength=int(640 * scale)).pack(fill="x", padx=12)
+
+        body = ttk.Frame(self.top, padding=(12, 8))
+        body.pack(fill="both", expand=True)
+        body.rowconfigure(1, weight=1)
+        body.columnconfigure(0, weight=1, minsize=int(220 * scale))
+        body.columnconfigure(1, weight=2)
+
+        tk.Label(body, text=i18n.t("persona.preview"), font=BOLD_FONT,
+                 bg=UI_BG, fg=UI_INK, anchor="w").grid(
+            row=0, column=0, columnspan=2, sticky="ew", pady=(0, 4))
+        list_holder = tk.Frame(body, bg=UI_BG)
+        list_holder.grid(row=1, column=0, sticky="nsew", padx=(0, 8))
+        list_holder.rowconfigure(0, weight=1)
+        list_holder.columnconfigure(0, weight=1)
+        self.listbox = tk.Listbox(
+            list_holder, font=UI_FONT, width=24, bg=UI_SURFACE, fg=UI_INK,
+            selectbackground=UI_ACCENT_DARK, selectforeground="#ffffff",
+            activestyle="none", borderwidth=1, relief="solid",
+            highlightthickness=0, exportselection=False)
+        scroll = ttk.Scrollbar(list_holder, orient="vertical",
+                               command=self.listbox.yview)
+        self.listbox.configure(yscrollcommand=scroll.set)
+        self.listbox.grid(row=0, column=0, sticky="nsew")
+        scroll.grid(row=0, column=1, sticky="ns")
+        self.listbox.bind("<<ListboxSelect>>", lambda _e: self._show_selected())
+
+        self.detail = tk.Text(body, height=12, wrap="word", font=UI_FONT,
+                              bg=UI_SURFACE, fg=UI_INK, insertbackground=UI_INK,
+                              relief="solid", borderwidth=1, padx=8, pady=6)
+        self.detail.grid(row=1, column=1, sticky="nsew")
+        self.detail.configure(state="disabled")
+
+        self.status = tk.StringVar(value="")
+        tk.Label(self.top, textvariable=self.status, font=SMALL_FONT,
+                 bg=UI_BG, fg="#9fd6a0", anchor="w").pack(fill="x", padx=12)
+
+        btns = ttk.Frame(self.top, padding=(12, 8))
+        btns.pack(fill="x")
+        self.import_btn = ttk.Button(btns, text=i18n.t("persona.import"),
+                                     command=self.import_file)
+        self.import_btn.pack(side="left")
+        self.rename_btn = ttk.Button(btns, text=i18n.t("persona.rename"),
+                                     command=self.rename)
+        self.rename_btn.pack(side="left", padx=6)
+        self.delete_btn = ttk.Button(btns, text=i18n.t("persona.delete"),
+                                     command=self.delete)
+        self.delete_btn.pack(side="left")
+        ttk.Button(btns, text=i18n.t("persona.close"),
+                   command=self.close).pack(side="right")
+        self.use_btn = ttk.Button(btns, text=i18n.t("persona.use"),
+                                  command=self.use_selected)
+        self.use_btn.pack(side="right", padx=6)
+
+        self._ids: list[str] = []
+        self.refresh()
+        try:
+            self.top.grab_set()
+        except tk.TclError:
+            pass
+
+    def _assist(self) -> dict:
+        return dict(getattr(self.app, "_ai_assist", {}) or {})
+
+    def _library(self) -> list[dict]:
+        return ai.normalize_persona_library(self._assist().get("persona_library"))
+
+    def _persist(self, **fields) -> dict:
+        """写回助手设置；UI 每次都带上当前人设的完整字段，避免误清空。"""
+        assist = self._assist()
+        data = {
+            "persona_tone": assist.get("persona_tone") or ai.DEFAULT_PERSONA,
+            "persona_custom": assist.get("persona_custom") or "",
+            "persona_id": assist.get("persona_id") or "",
+            "persona_name": assist.get("persona_name") or "",
+            "persona_library": self._library(),
+        }
+        data.update(fields)
+        try:
+            return self.app.set_assist(**data)
+        except Exception as exc:
+            self.status.set(f"{type(exc).__name__}: {exc}")
+            return assist
+
+    def refresh(self, select_id: str = "") -> None:
+        assist = self._assist()
+        library = self._library()
+        want = select_id or (str(assist.get("persona_id") or "")
+                             if assist.get("persona_tone") == "custom" else "")
+        self.listbox.delete(0, "end")
+        self._ids = []
+        select_idx = None
+        for idx, entry in enumerate(library):
+            self._ids.append(entry["id"])
+            self.listbox.insert("end", entry["name"])
+            if entry["id"] == want:
+                select_idx = idx
+        if select_idx is not None:
+            self.listbox.selection_set(select_idx)
+            self.listbox.activate(select_idx)
+        elif library:
+            self.listbox.selection_set(0)
+            self.listbox.activate(0)
+        self._show_selected()
+        if assist.get("persona_tone") == "custom" and assist.get("persona_name"):
+            self.status.set(i18n.t("persona.current", name=assist["persona_name"]))
+        elif not library:
+            self.status.set(i18n.t("persona.empty"))
+
+    def _selected(self) -> dict | None:
+        try:
+            idx = int(self.listbox.curselection()[0])
+        except (IndexError, ValueError, tk.TclError):
+            return None
+        if 0 <= idx < len(self._ids):
+            for entry in self._library():
+                if entry["id"] == self._ids[idx]:
+                    return entry
+        return None
+
+    def _show_selected(self) -> None:
+        entry = self._selected()
+        self.detail.configure(state="normal")
+        self.detail.delete("1.0", "end")
+        if entry is None:
+            self.detail.insert("end", i18n.t("persona.empty"))
+        else:
+            self.detail.insert("end", entry["text"])
+        self.detail.configure(state="disabled")
+
+    def import_file(self) -> None:
+        try:
+            path = filedialog.askopenfilename(
+                parent=self.top, title=i18n.t("persona.import"),
+                filetypes=[("Persona", "*.txt *.md *.json"), ("All files", "*.*")])
+        except Exception as exc:
+            self.status.set(f"{type(exc).__name__}: {exc}")
+            return
+        if not path:
+            return
+        doc = ai.load_persona_document(path)
+        if doc.get("error"):
+            err = doc["error"]
+            if err == "too_long":
+                msg = i18n.t("connect.persona_too_long")
+            elif err == "empty":
+                msg = i18n.t("connect.persona_empty")
+            else:
+                msg = i18n.t("connect.persona_bad", err=err)
+            self.status.set(msg)
+            return
+        library, entry = ai.upsert_persona(
+            self._library(), doc.get("name") or "自定义", doc["text"])
+        if entry is None:
+            self.status.set(i18n.t("connect.persona_empty"))
+            return
+        self._persist(persona_library=library, persona_tone="custom",
+                      persona_custom=entry["text"], persona_id=entry["id"],
+                      persona_name=entry["name"])
+        self.refresh(entry["id"])
+        self.status.set(i18n.t("persona.imported", name=entry["name"]))
+
+    def rename(self) -> None:
+        entry = self._selected()
+        if entry is None:
+            self.status.set(i18n.t("persona.select"))
+            return
+        try:
+            new_name = simpledialog.askstring(
+                i18n.t("persona.rename"), i18n.t("persona.name_prompt"),
+                initialvalue=entry["name"], parent=self.top)
+        except Exception as exc:
+            self.status.set(f"{type(exc).__name__}: {exc}")
+            return
+        if new_name is None:
+            return
+        name = ai.normalize_persona_name(new_name)
+        if not name:
+            self.status.set(i18n.t("persona.name_empty"))
+            return
+        library = [dict(item) for item in self._library()]
+        for item in library:
+            if item["id"] == entry["id"]:
+                item["name"] = name
+                break
+        assist = self._assist()
+        fields = {"persona_library": library}
+        if assist.get("persona_id") == entry["id"]:
+            fields["persona_name"] = name
+        self._persist(**fields)
+        self.refresh(entry["id"])
+        self.status.set(i18n.t("persona.renamed", name=name))
+
+    def delete(self) -> None:
+        entry = self._selected()
+        if entry is None:
+            self.status.set(i18n.t("persona.select"))
+            return
+        try:
+            ok = messagebox.askyesno(
+                i18n.t("persona.delete"),
+                i18n.t("persona.confirm_delete", name=entry["name"]),
+                parent=self.top)
+        except Exception:
+            ok = False
+        if not ok:
+            return
+        library = ai.remove_persona(self._library(), entry["id"])
+        assist = self._assist()
+        fields = {"persona_library": library}
+        if assist.get("persona_id") == entry["id"]:
+            fields.update(persona_tone=ai.DEFAULT_PERSONA, persona_custom="",
+                          persona_id="", persona_name="")
+        self._persist(**fields)
+        self.refresh()
+        self.status.set(i18n.t("persona.deleted", name=entry["name"]))
+
+    def use_selected(self) -> None:
+        entry = self._selected()
+        if entry is None:
+            self.status.set(i18n.t("persona.select"))
+            return
+        self._persist(persona_tone="custom", persona_custom=entry["text"],
+                      persona_id=entry["id"], persona_name=entry["name"],
+                      persona_library=self._library())
+        self.refresh(entry["id"])
+        self.status.set(i18n.t("persona.current", name=entry["name"]))
+
+    def close(self) -> None:
+        try:
+            self.top.grab_release()
+        except tk.TclError:
+            pass
+        try:
+            self.top.destroy()
+        finally:
+            if callable(self.on_close):
+                try:
+                    self.on_close()
+                except Exception:
+                    pass
+
+
 #: 说明窗口的内容。放在模块级是为了让 `_GuideWindow` 只负责画，不堆逻辑。
 #: 每项：`(标签页名, [(样式, 文本), ...])`；样式 `h` = 小标题，`p` = 正文。
 _GUIDE_CONTENT = {
     "zh": [
         ("主界面", [
             ("h", "三句话上手"),
-            ("p", "左边选中程序，右边看画面；双击最小化/还原，Enter 或中键切到最前，"
-                  "右键是完整菜单。"),
+            ("p", "右侧窗口列表选中程序，左侧预览画面；双击最小化/还原，"
+                  "Enter 或中键切到最前，右键是完整菜单。"),
             ("h", "预览大小和刷新速度"),
-            ("p", "它们只影响右侧预览，不改变被监控的程序。调低会更省电；"
+            ("p", "它们只影响预览，不改变被监控的程序。调低会更省电；"
                   "要看视频或玩游戏时再调高。"),
             ("h", "媒体这一行"),
             ("p", "WinMon 先读 Windows 的媒体会话，显示“应用：曲名 · 状态”。"),
@@ -3338,7 +3613,7 @@ _GUIDE_CONTENT = {
     "en": [
         ("Main window", [
             ("h", "Three things to know"),
-            ("p", "Select a program on the left to preview it on the right. "
+            ("p", "Select a program in the right-hand window list to preview it on the left. "
                   "Double-click minimizes/restores; Enter or middle-click brings it "
                   "to the front; right-click opens the full menu."),
             ("h", "Preview size and refresh speed"),
@@ -3418,6 +3693,7 @@ class _GuideWindow:
         self.section = section
         self.top = tk.Toplevel(parent)
         self.top.title(i18n.pick("WinMon 使用说明", "WinMon guide"))
+        self.top.configure(bg=UI_BG)
         scale = float(getattr(app, "dpi_scale", 1.0) or 1.0)
         sw, sh = parent.winfo_screenwidth(), parent.winfo_screenheight()
         w = min(int(820 * scale), int(sw * 0.92))
@@ -3429,12 +3705,12 @@ class _GuideWindow:
         wrap = ttk.Frame(self.top, padding=(12, 10))
         wrap.pack(fill="both", expand=True)
         tk.Label(wrap, text=i18n.pick("WinMon 使用说明", "WinMon guide"),
-                 font=("Microsoft YaHei UI", 12, "bold"),
+                 font=TITLE_FONT,
                  anchor="w").pack(fill="x")
         tk.Label(wrap, text=i18n.pick(
             "主界面只留动作和数据；需要解释时再看这里。",
             "The main window keeps actions and data; read the details here when needed."),
-            font=UI_FONT, foreground="#667788", anchor="w").pack(fill="x", pady=(2, 8))
+            font=UI_FONT, foreground=UI_MUTED, anchor="w").pack(fill="x", pady=(2, 8))
 
         self.nb = ttk.Notebook(wrap)
         self.nb.pack(fill="both", expand=True)
@@ -3449,9 +3725,9 @@ class _GuideWindow:
             text.configure(yscrollcommand=scroll.set)
             text.pack(side="left", fill="both", expand=True)
             scroll.pack(side="right", fill="y")
-            text.tag_configure("h", font=("Microsoft YaHei UI", 10, "bold"),
-                               foreground="#174a6b", spacing1=10, spacing3=4)
-            text.tag_configure("p", font=UI_FONT, foreground="#263746",
+            text.tag_configure("h", font=BOLD_FONT,
+                               foreground="#9dc3df", spacing1=10, spacing3=4)
+            text.tag_configure("p", font=UI_FONT, foreground="#e6edf3",
                                lmargin1=2, lmargin2=2)
             text.configure(state="disabled")
             self._frames[idx] = frame
@@ -3508,6 +3784,7 @@ class _AiConnectWindow:
         self.app = app
         self.top = tk.Toplevel(parent)
         self.top.title(i18n.t("connect.title"))
+        self.top.configure(bg=UI_BG)
         scale = float(getattr(app, "dpi_scale", 1.0) or 1.0)
         sw, sh = parent.winfo_screenwidth(), parent.winfo_screenheight()
         w = min(int(820 * scale), int(sw * 0.92))
@@ -3516,7 +3793,8 @@ class _AiConnectWindow:
         self.top.minsize(int(700 * scale), int(520 * scale))
         self.top.protocol("WM_DELETE_WINDOW", self.close)
         # 可滚动：折叠块展开后仍可能超过窗口高度，不能靠“看不见”
-        canvas = tk.Canvas(self.top, borderwidth=0, highlightthickness=0)
+        canvas = tk.Canvas(self.top, borderwidth=0, highlightthickness=0,
+                           bg=UI_BG)
         self.canvas = canvas
         vs = ttk.Scrollbar(self.top, orient="vertical", command=canvas.yview)
         canvas.configure(yscrollcommand=vs.set)
@@ -3532,7 +3810,7 @@ class _AiConnectWindow:
         head = ttk.Frame(wrap)
         head.pack(fill="x")
         tk.Label(head, text=i18n.t("connect.head"),
-                 font=("Microsoft YaHei UI", 12, "bold"), anchor="w").pack(side="left")
+                 font=TITLE_FONT, anchor="w").pack(side="left")
         ttk.Button(head, text=i18n.pick("完整说明…", "Full guide…"),
                    command=self.open_guide).pack(side="right")
 
@@ -3543,7 +3821,7 @@ class _AiConnectWindow:
         self.status_text = tk.StringVar(value="")
         self.status_label = tk.Label(
             self.status_frame, textvariable=self.status_text,
-            font=("Microsoft YaHei UI", 9, "bold"),
+            font=SMALL_BOLD_FONT,
             bg="#fff4df", fg="#7a5a00", justify="left", anchor="w",
             wraplength=int(740 * scale))
         self.status_label.pack(fill="x")
@@ -3573,7 +3851,7 @@ class _AiConnectWindow:
         outer = tk.Frame(parent, bg=bg, highlightbackground=accent,
                          highlightthickness=1)
         outer.pack(fill="x", pady=(0, 8))
-        tk.Label(outer, text=title, font=("Microsoft YaHei UI", 10, "bold"),
+        tk.Label(outer, text=title, font=BOLD_FONT,
                  bg=bg, fg=accent, anchor="w").pack(fill="x", padx=10, pady=(7, 2))
         body = tk.Frame(outer, bg=bg)
         body.pack(fill="x", padx=10, pady=(0, 8))
@@ -3586,7 +3864,7 @@ class _AiConnectWindow:
         self.mcp_state_text = tk.StringVar(value="")
         self.mcp_state_label = tk.Label(
             body, textvariable=self.mcp_state_text,
-            font=("Microsoft YaHei UI", 9, "bold"), bg="#eef7fd", fg="#5b7285",
+            font=SMALL_BOLD_FONT, bg="#eef7fd", fg="#5b7285",
             anchor="w")
         self.mcp_state_label.pack(fill="x")
         tk.Label(body, text=i18n.t("connect.mcp_short"), font=UI_FONT,
@@ -3620,13 +3898,13 @@ class _AiConnectWindow:
             wrap, i18n.t("connect.key"), "#a86b00", "#fff8ea")
         self.key_state_text = tk.StringVar(value="")
         tk.Label(body, textvariable=self.key_state_text,
-                 font=("Microsoft YaHei UI", 9, "bold"), bg="#fff8ea",
+                 font=SMALL_BOLD_FONT, bg="#fff8ea",
                  fg="#8a5a00", anchor="w").pack(fill="x")
         tk.Label(body, text=i18n.t("connect.key_short"), font=UI_FONT,
                  bg="#fff8ea", fg="#6b4a12", anchor="w", justify="left",
                  wraplength=720).pack(fill="x", pady=(2, 3))
         tk.Label(body, text=i18n.t("connect.key_warning"),
-                 font=("Microsoft YaHei UI", 9, "bold"), bg="#fff8ea",
+                 font=SMALL_BOLD_FONT, bg="#fff8ea",
                  fg="#a33b1f", anchor="w", justify="left",
                  wraplength=720).pack(fill="x", pady=(0, 5))
         #: 直连对象必须由用户选：**默认是占位项**，不预先绑定某个厂商的 key。
@@ -3692,8 +3970,9 @@ class _AiConnectWindow:
         self.workspace_text = tk.StringVar(value="")
         ws_row = tk.Frame(body, bg="#f3f6f8")
         ws_row.pack(fill="x")
-        ttk.Label(ws_row, textvariable=self.workspace_text, font=UI_FONT,
-                  foreground="#2a4a66").pack(side="left", fill="x", expand=True)
+        tk.Label(ws_row, textvariable=self.workspace_text, font=UI_FONT,
+                 bg="#f3f6f8", fg="#2a4a66", anchor="w").pack(
+            side="left", fill="x", expand=True)
         ttk.Button(ws_row, text=i18n.t("connect.workspace_pick"),
                    command=self.pick_workspace).pack(side="left", padx=4)
         ttk.Button(ws_row, text=i18n.t("connect.workspace_open"),
@@ -3713,16 +3992,16 @@ class _AiConnectWindow:
             wrap, i18n.t("connect.behavior"), "#3b6f5a", "#f1f8f4")
         persona_row = tk.Frame(body, bg="#f1f8f4")
         persona_row.pack(fill="x")
-        ttk.Label(persona_row, text=i18n.t("connect.persona"),
-                  font=UI_FONT).pack(side="left")
-        self._persona_by_label = {v: k for k, v in ai.persona_labels(
-            i18n.get_language()).items()}
-        self.persona_var = tk.StringVar(value=ai.persona_label(
-            str(assist.get("persona_tone") or ai.DEFAULT_PERSONA),
-            i18n.get_language()))
+        tk.Label(persona_row, text=i18n.t("connect.persona"),
+                 font=UI_FONT, bg="#f1f8f4", fg="#2a4a66").pack(side="left")
+        self._persona_by_label: dict[str, str] = {}
+        self._persona_id_by_label: dict[str, str] = {}
+        self._persona_name_by_label: dict[str, str] = {}
+        self._persona_custom = ai.normalize_custom_persona(assist.get("persona_custom"))
+        self.persona_var = tk.StringVar(value="")
         self.persona_combo = ttk.Combobox(
-            persona_row, textvariable=self.persona_var, state="readonly", width=10,
-            values=list(self._persona_by_label.keys()), font=UI_FONT)
+            persona_row, textvariable=self.persona_var, state="readonly", width=16,
+            values=[], font=UI_FONT)
         self.persona_combo.pack(side="left", padx=(0, 6))
         self.persona_combo.bind("<<ComboboxSelected>>", lambda _e: self.change_persona())
         ttk.Button(persona_row, text=i18n.t("connect.persona_copy"),
@@ -3731,7 +4010,6 @@ class _AiConnectWindow:
             persona_row, text=i18n.t("connect.persona_import"),
             command=self.import_persona)
         self.persona_import_btn.pack(side="left", padx=6)
-        self._persona_custom = ai.normalize_custom_persona(assist.get("persona_custom"))
         self.persona_status = tk.StringVar(value="")
         tk.Label(body, textvariable=self.persona_status,
                  font=SMALL_FONT, bg="#f1f8f4", fg="#2a4a66",
@@ -3739,7 +4017,7 @@ class _AiConnectWindow:
         tk.Label(body, text=i18n.t("connect.persona_short"),
                  font=SMALL_FONT, bg="#f1f8f4", fg="#60756c",
                  anchor="w", justify="left", wraplength=720).pack(fill="x", pady=(1, 3))
-        self._update_persona_status()
+        self._refresh_persona_choices()
         self.persona_disclosure = _Disclosure(
             body, i18n.t("connect.show_persona"), bg="#f1f8f4", fg="#3b6f5a")
         self.persona_disclosure.pack(fill="x")
@@ -3748,21 +4026,27 @@ class _AiConnectWindow:
                  anchor="w", justify="left", wraplength=700).pack(fill="x")
         tk.Label(self.persona_disclosure.body, text=i18n.t("connect.persona_support"),
                  font=SMALL_FONT, bg="#f1f8f4", fg="#5c6f66",
-                 anchor="w").pack(fill="x")
+                 anchor="w", justify="left", wraplength=700).pack(fill="x")
+        tk.Label(self.persona_disclosure.body, text=i18n.t("connect.persona_more_hint"),
+                 font=SMALL_FONT, bg="#f1f8f4", fg="#5c6f66",
+                 anchor="w", justify="left", wraplength=700).pack(fill="x")
 
         facts_row = tk.Frame(body, bg="#f1f8f4")
         facts_row.pack(fill="x", pady=(4, 0))
         self.read_media_var = tk.BooleanVar(value=bool(assist.get("read_media", True)))
         ttk.Checkbutton(facts_row, text=i18n.t("connect.read_media"),
                         variable=self.read_media_var,
+                        style="GreenCard.TCheckbutton",
                         command=self.toggle_facts).pack(side="left", padx=(0, 10))
         self.read_game_var = tk.BooleanVar(value=bool(assist.get("read_game", True)))
         ttk.Checkbutton(facts_row, text=i18n.t("connect.read_game"),
                         variable=self.read_game_var,
+                        style="GreenCard.TCheckbutton",
                         command=self.toggle_facts).pack(side="left", padx=(0, 10))
         self.read_web_var = tk.BooleanVar(value=bool(assist.get("read_web_title", True)))
         ttk.Checkbutton(facts_row, text=i18n.t("connect.read_web"),
                         variable=self.read_web_var,
+                        style="GreenCard.TCheckbutton",
                         command=self.toggle_facts).pack(side="left")
         self.facts_disclosure = _Disclosure(
             body, i18n.t("connect.show_facts"), bg="#f1f8f4", fg="#3b6f5a")
@@ -3772,7 +4056,7 @@ class _AiConnectWindow:
                  anchor="w", justify="left", wraplength=700).pack(fill="x")
         self.break_var = tk.BooleanVar(value=bool(assist.get("break_enabled", True)))
         ttk.Checkbutton(body, text=i18n.t("connect.break"),
-                        variable=self.break_var,
+                        variable=self.break_var, style="GreenCard.TCheckbutton",
                         command=self.toggle_break).pack(anchor="w", pady=(4, 0))
         self.advanced_disclosure = _Disclosure(
             body, i18n.t("connect.show_advanced"), bg="#f1f8f4", fg="#3b6f5a")
@@ -3780,12 +4064,14 @@ class _AiConnectWindow:
         self.watch_var = tk.BooleanVar(value=bool(assist.get("enabled")))
         self.watch_chk = ttk.Checkbutton(
             self.advanced_disclosure.body, text=i18n.t("connect.watch"),
-            variable=self.watch_var, command=self.toggle_watch)
+            variable=self.watch_var, style="GreenCard.TCheckbutton",
+            command=self.toggle_watch)
         self.watch_chk.pack(anchor="w")
         self.explain_var = tk.BooleanVar(value=bool(assist.get("auto_explain")))
         self.explain_chk = ttk.Checkbutton(
             self.advanced_disclosure.body, text=i18n.t("connect.explain"),
-            variable=self.explain_var, command=self.toggle_explain)
+            variable=self.explain_var, style="GreenCard.TCheckbutton",
+            command=self.toggle_explain)
         self.explain_chk.pack(anchor="w")
         self._sync_behavior()
 
@@ -3796,7 +4082,7 @@ class _AiConnectWindow:
         self.proactive_var = tk.BooleanVar(value=bool(assist.get("proactive_enabled", False)))
         self.proactive_chk = ttk.Checkbutton(
             pro_body, text=i18n.t("connect.proactive_enable"), variable=self.proactive_var,
-            command=self.toggle_proactive)
+            style="PurpleCard.TCheckbutton", command=self.toggle_proactive)
         self.proactive_chk.pack(anchor="w")
         tk.Label(pro_body, text=i18n.t("connect.proactive_short"),
                  font=SMALL_FONT, bg="#f6f2fc", fg="#655a78",
@@ -3811,19 +4097,20 @@ class _AiConnectWindow:
         self.allow_night_var = tk.BooleanVar(value=bool(assist.get("allow_night", False)))
         self.allow_focus_chk = ttk.Checkbutton(
             gates, text=i18n.t("connect.proactive_focus"), variable=self.allow_focus_var,
-            command=self.toggle_proactive_gates)
+            style="PurpleCard.TCheckbutton", command=self.toggle_proactive_gates)
         self.allow_focus_chk.pack(side="left", padx=(0, 10))
         self.allow_meeting_chk = ttk.Checkbutton(
             gates, text=i18n.t("connect.proactive_meeting"), variable=self.allow_meeting_var,
-            command=self.toggle_proactive_gates)
+            style="PurpleCard.TCheckbutton", command=self.toggle_proactive_gates)
         self.allow_meeting_chk.pack(side="left", padx=(0, 10))
         self.allow_night_chk = ttk.Checkbutton(
             gates, text=i18n.t("connect.proactive_night"), variable=self.allow_night_var,
-            command=self.toggle_proactive_gates)
+            style="PurpleCard.TCheckbutton", command=self.toggle_proactive_gates)
         self.allow_night_chk.pack(side="left")
         limits = tk.Frame(self.proactive_disclosure.body, bg="#f6f2fc")
         limits.pack(fill="x", pady=(4, 0))
-        ttk.Label(limits, text=i18n.t("connect.proactive_max"), font=UI_FONT).pack(side="left")
+        tk.Label(limits, text=i18n.t("connect.proactive_max"), font=UI_FONT,
+                 bg="#f6f2fc", fg="#655a78").pack(side="left")
         self.proactive_max_var = tk.StringVar(
             value=str(int(assist.get("proactive_max_per_day", 3) or 3)))
         self.proactive_max_combo = ttk.Combobox(
@@ -3832,10 +4119,11 @@ class _AiConnectWindow:
         self.proactive_max_combo.pack(side="left", padx=(2, 4))
         self.proactive_max_combo.bind("<<ComboboxSelected>>",
                                       lambda _e: self.change_proactive_limits())
-        ttk.Label(limits, text=i18n.t("connect.unit_per_day"), font=UI_FONT).pack(
+        tk.Label(limits, text=i18n.t("connect.unit_per_day"), font=UI_FONT,
+                 bg="#f6f2fc", fg="#655a78").pack(
             side="left", padx=(0, 10))
-        ttk.Label(limits, text=i18n.t("connect.proactive_interval"), font=UI_FONT).pack(
-            side="left")
+        tk.Label(limits, text=i18n.t("connect.proactive_interval"), font=UI_FONT,
+                 bg="#f6f2fc", fg="#655a78").pack(side="left")
         try:
             _interval_min = max(5, int(assist.get("proactive_min_interval", 1800) or 1800) // 60)
         except (TypeError, ValueError):
@@ -3847,7 +4135,8 @@ class _AiConnectWindow:
         self.proactive_interval_combo.pack(side="left", padx=(2, 4))
         self.proactive_interval_combo.bind("<<ComboboxSelected>>",
                                            lambda _e: self.change_proactive_limits())
-        ttk.Label(limits, text=i18n.t("connect.unit_min"), font=UI_FONT).pack(side="left")
+        tk.Label(limits, text=i18n.t("connect.unit_min"), font=UI_FONT,
+                 bg="#f6f2fc", fg="#655a78").pack(side="left")
         tk.Label(self.proactive_disclosure.body,
                  text=i18n.t("connect.proactive_hint"),
                  font=SMALL_FONT, bg="#f6f2fc", fg="#655a78",
@@ -3856,9 +4145,13 @@ class _AiConnectWindow:
 
     # ---- 数据 -------------------------------------------------------
     def _config_snippet(self) -> str:
+        """MCP 配置片段：用**当前解释器**，不假设系统 PATH 里有 `python`。"""
         script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "winmon.py")
+        interpreter = sys.executable or "python"
+        if interpreter.lower().endswith("pythonw.exe"):
+            interpreter = interpreter[:-11] + "python.exe"
         return json.dumps(
-            {"mcpServers": {"winmon": {"command": "python",
+            {"mcpServers": {"winmon": {"command": interpreter,
                                        "args": [script, "--mcp-stdio"]}}},
             ensure_ascii=False, indent=1)
 
@@ -4079,30 +4372,120 @@ class _AiConnectWindow:
     def toggle_break(self) -> None:
         self.app.set_assist(break_enabled=bool(self.break_var.get()))
 
-    def change_persona(self) -> None:
-        tone = self._persona_by_label.get(self.persona_var.get(), ai.DEFAULT_PERSONA)
-        self.app.set_assist(persona_tone=tone, persona_custom=self._persona_custom)
-        if tone == "custom" and not self._persona_custom:
-            self.persona_status.set(i18n.t("connect.persona_none"))
+    def _persona_entries(self) -> list[dict]:
+        return ai.normalize_persona_library(
+            (getattr(self.app, "_ai_assist", {}) or {}).get("persona_library"))
+
+    def _refresh_persona_choices(self) -> None:
+        """重建下拉框：内建人设 + 已保存人设 + 「更多…」。"""
+        assist = getattr(self.app, "_ai_assist", {}) or {}
+        library = self._persona_entries()
+        self._persona_by_label = {}
+        self._persona_id_by_label = {}
+        self._persona_name_by_label = {}
+        labels: list[str] = []
+        used: set[str] = set()
+        for slug, label in ai.persona_labels(i18n.get_language()).items():
+            if slug == "custom":
+                continue
+            labels.append(label)
+            used.add(label)
+            self._persona_by_label[label] = slug
+        for entry in library:
+            base = entry["name"]
+            label = base
+            n = 2
+            while label in used:
+                label = f"{base}（{n}）" if i18n.get_language() != "en" else f"{base} ({n})"
+                n += 1
+            used.add(label)
+            labels.append(label)
+            self._persona_by_label[label] = "custom"
+            self._persona_id_by_label[label] = entry["id"]
+            self._persona_name_by_label[label] = entry["name"]
+        more = i18n.t("connect.persona_more")
+        labels.append(more)
+        self._persona_by_label[more] = "__more__"
+        self.persona_combo.configure(values=labels)
+
+        tone = str(assist.get("persona_tone") or ai.DEFAULT_PERSONA)
+        current = ""
+        if tone == "custom":
+            pid = str(assist.get("persona_id") or "")
+            current = next((label for label, value in self._persona_id_by_label.items()
+                            if value == pid and pid), "")
+            if not current:
+                current = next((label for label, value in self._persona_name_by_label.items()
+                                if value == str(assist.get("persona_name") or "")), "")
+            if not current and self._persona_custom:
+                current = ai.persona_label("custom", i18n.get_language())
+                if current not in self._persona_by_label:
+                    labels.insert(0, current)
+                    self._persona_by_label[current] = "custom"
+                    self._persona_id_by_label[current] = ""
+                    self._persona_name_by_label[current] = current
+                    self.persona_combo.configure(values=labels)
         else:
-            self.persona_status.set(ai.persona_card(
-                tone, i18n.get_language(), self._persona_custom)["style"])
+            current = ai.persona_label(tone, i18n.get_language())
+        if current not in labels:
+            current = labels[0] if labels else ""
+        self.persona_var.set(current)
+        self._update_persona_status()
+
+    def change_persona(self) -> None:
+        label = self.persona_var.get()
+        tone = self._persona_by_label.get(label, ai.DEFAULT_PERSONA)
+        if tone == "__more__":
+            self._refresh_persona_choices()
+            self.open_persona_manager()
+            return
+        assist = getattr(self.app, "_ai_assist", {}) or {}
+        library = self._persona_entries()
+        if tone == "custom":
+            pid = self._persona_id_by_label.get(label, "")
+            entry = ai.persona_entry(library, pid)
+            if entry is not None:
+                self._persona_custom = entry["text"]
+                self.app.set_assist(persona_tone="custom",
+                                    persona_custom=entry["text"],
+                                    persona_id=entry["id"],
+                                    persona_name=entry["name"],
+                                    persona_library=library)
+            else:
+                self.app.set_assist(persona_tone="custom",
+                                    persona_custom=self._persona_custom,
+                                    persona_id="",
+                                    persona_name="",
+                                    persona_library=library)
+        else:
+            self.app.set_assist(persona_tone=tone,
+                                persona_custom=self._persona_custom,
+                                persona_id=str(assist.get("persona_id") or ""),
+                                persona_name=str(assist.get("persona_name") or ""),
+                                persona_library=library)
+        self._refresh_persona_choices()
 
     def copy_persona(self) -> None:
         tone = self._persona_by_label.get(self.persona_var.get(), ai.DEFAULT_PERSONA)
-        self._copy(ai.persona_prompt(tone, i18n.get_language(), self._persona_custom),
+        label = self.persona_var.get()
+        name = self._persona_name_by_label.get(label, "")
+        self._copy(ai.persona_prompt(tone, i18n.get_language(),
+                                     self._persona_custom, name),
                    i18n.t("connect.copied"))
 
     def _update_persona_status(self) -> None:
         tone = self._persona_by_label.get(self.persona_var.get(), ai.DEFAULT_PERSONA)
-        if tone == "custom" and not self._persona_custom:
-            self.persona_status.set(i18n.t("connect.persona_none"))
-        elif tone == "custom":
-            self.persona_status.set(i18n.t("connect.persona_loaded",
-                                           n=len(self._persona_custom)))
+        if tone == "custom":
+            if not self._persona_custom:
+                self.persona_status.set(i18n.t("connect.persona_none"))
+                return
+            name = self._persona_name_by_label.get(self.persona_var.get(), "")
+            chars = i18n.t("persona.char_count", n=len(self._persona_custom))
+            self.persona_status.set(f"{name} · {chars}" if name else chars)
+        elif tone in ai.PERSONA_TONES:
+            self.persona_status.set(ai.persona_card(
+                tone, i18n.get_language(), self._persona_custom)["style"])
         else:
-            #: 默认/内建人设已经由下拉框写明了，不再重复一行“支持 .txt…”；
-            #: 格式说明在下面的折叠块里。
             self.persona_status.set("")
 
     def import_persona(self) -> None:
@@ -4115,8 +4498,9 @@ class _AiConnectWindow:
             return
         if not path:
             return
-        text, err = ai.load_persona_file(path)
-        if err:
+        doc = ai.load_persona_document(path)
+        if doc.get("error"):
+            err = doc["error"]
             if err == "too_long":
                 msg = i18n.t("connect.persona_too_long")
             elif err == "empty":
@@ -4125,10 +4509,37 @@ class _AiConnectWindow:
                 msg = i18n.t("connect.persona_bad", err=err)
             self.persona_status.set(msg)
             return
-        self._persona_custom = text
-        self.persona_var.set(ai.persona_label("custom", i18n.get_language()))
-        self.app.set_assist(persona_tone="custom", persona_custom=text)
-        self._update_persona_status()
+        library, entry = ai.upsert_persona(
+            self._persona_entries(), doc.get("name") or "自定义", doc["text"])
+        if entry is None:
+            self.persona_status.set(i18n.t("connect.persona_empty"))
+            return
+        self._persona_custom = entry["text"]
+        self.app.set_assist(persona_tone="custom", persona_custom=entry["text"],
+                            persona_id=entry["id"], persona_name=entry["name"],
+                            persona_library=library)
+        self._refresh_persona_choices()
+        self.persona_status.set(i18n.t("persona.imported", name=entry["name"]))
+
+    def open_persona_manager(self) -> None:
+        """打开独立人设库；关闭后刷新下拉框。"""
+        try:
+            existing = getattr(self, "_persona_manager", None)
+            if existing is not None and existing.top.winfo_exists():
+                existing.top.deiconify()
+                existing.top.lift()
+                return
+        except Exception:
+            pass
+        self._persona_manager = _PersonaManager(
+            self.top, self.app, on_close=self._on_persona_manager_closed)
+
+    def _on_persona_manager_closed(self) -> None:
+        self._persona_manager = None
+        try:
+            self._refresh_persona_choices()
+        except Exception:
+            pass
 
     def toggle_facts(self) -> None:
         self.app.set_assist(read_media=bool(self.read_media_var.get()),
@@ -4210,22 +4621,22 @@ class _IdleDialog:
         self.top = tk.Toplevel(parent)
         top = self.top
         top.title("闲置程序 — 开了很久但没人用")
-        top.configure(bg="#1b2027")
+        top.configure(bg=UI_BG)
         top.attributes("-topmost", True)
         top.resizable(False, False)
 
         wrap = ttk.Frame(top, padding=18)
         wrap.pack(fill="both", expand=True)
         tk.Label(wrap, text=f"这些程序连续 {threshold_label} 没有被使用，可以关掉省电",
-                 font=("Microsoft YaHei UI", 11, "bold"),
-                 bg="#1b2027", fg="#eaf2f8", anchor="w").pack(anchor="w")
+                 font=TITLE_FONT,
+                 bg=UI_BG, fg=UI_INK, anchor="w").pack(anchor="w")
         tk.Label(wrap, text="判定依据：窗口不在前台、CPU 几乎为 0。\n"
                             "只会「优雅关闭」（等同于点它的关闭按钮）——有未保存的内容时"
                             "程序会自己问你要不要保存；\n它没退出也不会替你强杀。",
-                 font=("Microsoft YaHei UI", 9), bg="#1b2027", fg="#a9bfd2",
+                 font=SMALL_FONT, bg=UI_BG, fg=UI_MUTED,
                  anchor="w", justify="left").pack(anchor="w", pady=(6, 10))
 
-        body = tk.Frame(wrap, bg="#1b2027")
+        body = tk.Frame(wrap, bg=UI_BG)
         body.pack(fill="both", expand=True)
         self.vars: dict[int, tk.BooleanVar] = {}
         for row in self._rows:
@@ -4236,23 +4647,18 @@ class _IdleDialog:
             if len(title) > 46:
                 title = title[:45] + "…"
             state = "（已最小化）" if row.get("iconic") else ""
-            tk.Checkbutton(
+            ttk.Checkbutton(
                 body,
                 text=f"{row.get('name') or ('PID ' + str(pid))}　"
                      f"闲置 {core.format_idle(row['idle'])}{state}",
-                variable=var, font=UI_FONT, bg="#1b2027", fg="#eaf2f8",
-                selectcolor="#0f1418", activebackground="#1b2027",
-                activeforeground="#ffffff", anchor="w", justify="left").pack(
-                anchor="w", fill="x")
+                variable=var).pack(anchor="w", fill="x")
             tk.Label(body, text=f"    PID {pid}　{title}",
-                     font=SMALL_FONT, bg="#1b2027", fg="#8fa8bd",
+                     font=SMALL_FONT, bg=UI_BG, fg=UI_MUTED,
                      anchor="w", justify="left").pack(anchor="w", fill="x", pady=(0, 6))
 
         self._auto_var = tk.BooleanVar(value=self._before)
-        tk.Checkbutton(wrap, text="以后到点自动关闭（不再询问）——只优雅关闭，不强杀",
-                       variable=self._auto_var, font=UI_FONT, bg="#1b2027",
-                       fg="#ffd26b", selectcolor="#0f1418", activebackground="#1b2027",
-                       activeforeground="#ffffff", anchor="w").pack(
+        ttk.Checkbutton(wrap, text="以后到点自动关闭（不再询问）——只优雅关闭，不强杀",
+                        variable=self._auto_var).pack(
             anchor="w", pady=(4, 0))
 
         btns = ttk.Frame(wrap)
@@ -4350,7 +4756,7 @@ class ConfirmDialog:
         top = tk.Toplevel(parent)
         self.top = top
         top.title(title)
-        top.configure(bg="#1b2027")
+        top.configure(bg=UI_BG)
         top.attributes("-topmost", True)
         top.resizable(False, False)
         try:
@@ -4367,11 +4773,11 @@ class ConfirmDialog:
         # 注意：这里必须用 tk.Label 而不是 ttk.Label。
         # ttk.Label 不支持 background 选项，深色背景不会生效，
         # 结果就是"深色文字压在黑色底上"完全看不清（实测踩到过）。
-        tk.Label(wrap, text=message, font=("Microsoft YaHei UI", 15, "bold"),
-                 bg="#1b2027", fg="#eaf2f8", anchor="w").pack(anchor="w")
+        tk.Label(wrap, text=message, font=BIG_TITLE_FONT,
+                 bg=UI_BG, fg=UI_INK, anchor="w").pack(anchor="w")
         if detail:
-            tk.Label(wrap, text=detail, font=("Microsoft YaHei UI", 10),
-                     bg="#1b2027", fg="#c9d9e6", justify="left", anchor="w",
+            tk.Label(wrap, text=detail, font=UI_FONT,
+                     bg=UI_BG, fg=UI_INK, justify="left", anchor="w",
                      wraplength=640).pack(anchor="w", pady=(12, 0))
 
         btns = ttk.Frame(wrap)
@@ -4382,7 +4788,7 @@ class ConfirmDialog:
         self.btn_no.pack(side="left")
 
         tk.Label(wrap, text="快捷键：Space / Enter = 关闭视频　　Esc = 继续播放　（鼠标点按钮同样有效）",
-                 font=("Microsoft YaHei UI", 9), bg="#1b2027", fg="#a9bfd2",
+                 font=SMALL_FONT, bg=UI_BG, fg=UI_MUTED,
                  anchor="w").pack(anchor="w", pady=(14, 0))
 
         # 按键绑定：Space 与 Enter 都确认，Esc 取消
@@ -4511,7 +4917,7 @@ class WinMonApp:
         self.size_choice = tk.StringVar(value=PREVIEW_SIZES[1][0])
         self.fps_choice = tk.StringVar(value="很流畅 10 FPS")
         self.search_text = tk.StringVar()
-        #: 界面字号（9/10/11/12），设置里可调；保存时写入设置文件。
+        #: 字号大小（9/10/11/12，默认 9），设置里可调；保存时写入设置文件。
         self.font_size = tk.StringVar(value=str(UI_FONT_SIZE))
         self.status_text = tk.StringVar(value="正在初始化…")
         self.overview_text = tk.StringVar(value="")
@@ -4588,7 +4994,7 @@ class WinMonApp:
         #: 本次运行真正调用了多少次模型 / 花了多少 token（界面必须能看见）
         self._ai_session_calls = 0
         self._ai_session_tokens = 0
-        #: 工作节律（本地计时，0 token；只用于"当前工作"显示，不用于提醒）
+        #: 工作节律（本地计时，0 token；只进入 companion.facts 的连续分钟数）
         self._work_since = time.time()
         #: 前台窗口稳定时长（C 用来判断“游戏/专注已经持续多久”）
         self._fg_since = time.time()
@@ -4757,14 +5163,12 @@ class WinMonApp:
         self.ws_minimize_others = tk.BooleanVar(value=False)
 
     def _configure_style(self) -> None:
-        """主界面的浅蓝灰主题：按钮不再是白底，主体（列表/预览）更突出。"""
-        # 不再用 vista：它把所有按钮画成白底，和白色主界面几乎融在一起。
-        # clam 支持颜色，配合浅蓝灰底 + 轻描边按钮，既安静又能看出可点。
-        base_bg = "#f4f7fa"
-        panel_bg = "#dce8f3"
-        ink = "#17324d"
-        accent = "#1f5f8b"
-        line = "#c3d4e3"
+        """纯黑底 / 白字主题；AI、媒体、接入卡片保留各自的浅色高亮。"""
+        base_bg = UI_BG
+        panel_bg = UI_SURFACE
+        ink = UI_INK
+        accent = UI_ACCENT
+        line = UI_LINE
         try:
             self.root.configure(bg=base_bg)
         except Exception:
@@ -4776,52 +5180,148 @@ class WinMonApp:
             style.theme_use("clam")
         except tk.TclError:
             pass
-        style.configure(".", font=UI_FONT, background=base_bg, foreground=ink)
+        style.configure(".", font=UI_FONT, background=base_bg, foreground=ink,
+                        fieldbackground=UI_SURFACE_ALT, bordercolor=line)
         style.configure("TFrame", background=base_bg)
         style.configure("TLabel", background=base_bg, foreground=ink)
         style.configure("TLabelframe", background=base_bg, bordercolor=line)
         style.configure("TLabelframe.Label", background=base_bg, foreground=accent)
-        style.configure("TButton", font=UI_FONT, background=panel_bg,
+        style.configure("TButton", font=UI_FONT, background=UI_SURFACE_ALT,
                         foreground=ink, bordercolor=line, relief="flat",
                         padding=(6, 2))
         style.map("TButton",
-                  background=[("active", "#c9dbea"), ("pressed", "#b9cee1")],
-                  foreground=[("disabled", "#8a9bab")])
+                  background=[("active", "#262626"), ("pressed", "#303030"),
+                              ("disabled", "#101010")],
+                  foreground=[("disabled", "#777777")])
         style.configure("Accent.TButton", font=UI_FONT, background=accent,
-                        foreground="white", bordercolor="#174a6c",
+                        foreground="#04121d", bordercolor=UI_INDICATOR_BORDER,
                         relief="flat", padding=(8, 3))
         style.map("Accent.TButton",
-                  background=[("active", "#2871a2"), ("pressed", "#174a6c")],
-                  foreground=[("disabled", "#dbe8f0")])
-        style.configure("TCheckbutton", background=base_bg, foreground=ink)
+                  background=[("active", "#7cc4ff"), ("pressed", "#3f8fc9")],
+                  foreground=[("disabled", "#9aa7b2")])
+        style.configure("TCheckbutton", background=base_bg, foreground=ink,
+                        padding=(2, 2))
+        style.map("TCheckbutton",
+                  background=[("active", base_bg)],
+                  foreground=[("disabled", "#777777")])
+        # 浅色高亮卡片里的勾选框：背景跟卡片走，否则会在卡片上挖出一块黑底。
+        for style_name, card_bg, card_fg in (
+                ("GreenCard", "#f1f8f4", "#2a4a66"),
+                ("PurpleCard", "#f6f2fc", "#655a78"),
+                ("MediaCard", "#eef8f4", "#103b36")):
+            style.configure(f"{style_name}.TCheckbutton", background=card_bg,
+                            foreground=card_fg, padding=(2, 2))
+            style.map(f"{style_name}.TCheckbutton",
+                      background=[("active", card_bg), ("pressed", card_bg)],
+                      foreground=[("disabled", "#8a9b93")])
         style.configure("TRadiobutton", background=base_bg, foreground=ink)
-        style.configure("TEntry", fieldbackground="white", foreground=ink,
-                        bordercolor=line)
-        style.configure("TCombobox", fieldbackground="white", foreground=ink,
-                        bordercolor=line)
+        style.map("TRadiobutton", background=[("active", base_bg)])
+        style.configure("TEntry", fieldbackground=UI_SURFACE_ALT, foreground=ink,
+                        insertcolor=ink, bordercolor=line)
+        style.map("TEntry",
+                  fieldbackground=[("readonly", UI_SURFACE_ALT)],
+                  foreground=[("disabled", "#777777")])
+        style.configure("TCombobox", fieldbackground=UI_SURFACE_ALT, foreground=ink,
+                        bordercolor=line, arrowcolor=ink)
+        style.map("TCombobox",
+                  fieldbackground=[("readonly", UI_SURFACE_ALT),
+                                   ("disabled", UI_SURFACE)],
+                  foreground=[("readonly", ink), ("disabled", "#777777")],
+                  selectbackground=[("readonly", UI_SURFACE_ALT)],
+                  selectforeground=[("readonly", ink)])
         style.configure("TNotebook", background=base_bg, bordercolor=line)
         style.configure("TNotebook.Tab", font=UI_FONT, padding=(14, 6),
-                        background=panel_bg, foreground=ink)
+                        background=UI_SURFACE, foreground=UI_MUTED)
         style.map("TNotebook.Tab",
-                  background=[("selected", "white"), ("active", "#dce8f3")])
+                  background=[("selected", UI_SURFACE_ALT), ("active", "#242424")],
+                  foreground=[("selected", ink), ("active", ink)])
         style.configure("Treeview", font=UI_FONT, rowheight=ICON_SIZE + 6,
-                        background="white", fieldbackground="white",
+                        background=UI_SURFACE, fieldbackground=UI_SURFACE,
                         foreground=ink, bordercolor=line)
-        style.configure("Treeview.Heading", font=("Microsoft YaHei UI",
-                                                 UI_FONT_SIZE, "bold"),
-                        background=panel_bg, foreground=accent, relief="flat")
-        style.map("Treeview.Heading", background=[("active", "#d6e4f0")])
+        style.configure("Treeview.Heading",
+                        font=("Microsoft YaHei UI", UI_FONT_SIZE, "bold"),
+                        background=UI_SURFACE_ALT, foreground=ink, relief="flat")
+        style.map("Treeview.Heading", background=[("active", "#242424")])
         style.map("Treeview",
-                  background=[("selected", "#cfe4f5")],
-                  foreground=[("selected", ink)])
-        style.configure("TScrollbar", background="#d7e3ee", troughcolor=base_bg,
-                        bordercolor=line, arrowcolor=accent)
-        # 主界面里还有少量 tk.Label/tk.Frame 没有显式背景；统一成浅底，
-        # 免得白底按钮旁边冒出一块系统灰。
+                  background=[("selected", "#174a6c")],
+                  foreground=[("selected", "#ffffff")])
+        style.configure("TScrollbar", background="#2a2a2a", troughcolor=base_bg,
+                        bordercolor=line, arrowcolor=UI_MUTED)
+        self._install_check_indicators(style)
+        # 主界面里还有少量 tk.Label/tk.Frame 没有显式背景；统一成黑底白字。
+        # 高亮卡片都显式设置了 bg/fg，不会被这些默认值覆盖。
         try:
-            self.root.option_add("*Label.background", base_bg)
-            self.root.option_add("*Frame.background", base_bg)
+            for pattern, value in (
+                    ("*Label.background", base_bg), ("*Label.foreground", ink),
+                    ("*Frame.background", base_bg), ("*Canvas.background", base_bg),
+                    ("*Canvas.highlightBackground", base_bg),
+                    ("*Text.background", UI_SURFACE),
+                    ("*Text.foreground", ink), ("*Text.insertBackground", ink),
+                    ("*Listbox.background", UI_SURFACE),
+                    ("*Listbox.foreground", ink),
+                    ("*Menu.background", UI_SURFACE_ALT), ("*Menu.foreground", ink),
+                    ("*Menu.activeBackground", UI_ACCENT_DARK),
+                    ("*Menu.activeForeground", "#ffffff"),
+                    ("*Checkbutton.background", base_bg),
+                    ("*Checkbutton.foreground", ink),
+                    ("*Radiobutton.background", base_bg),
+                    ("*Radiobutton.foreground", ink),
+                    ("*TCombobox*Listbox.background", UI_SURFACE),
+                    ("*TCombobox*Listbox.foreground", ink),
+                    ("*TCombobox*Listbox.selectBackground", UI_ACCENT_DARK),
+                    ("*TCombobox*Listbox.selectForeground", "#ffffff")):
+                self.root.option_add(pattern, value)
         except Exception:
+            pass
+
+    def _install_check_indicators(self, style) -> None:
+        """
+        把 clam 自带的「×」勾选标记换成**整格填充**。
+
+        用户 2026-10-19 的原话：「勾选了某个选项为啥是×，改为填充该格子」。
+        这里用 14×14 的图片元素替换 indicator：未选是深色空心方框，
+        选中是整块亮蓝填充，禁用态变暗。图片必须挂在 root 上，避免
+        Tk root 销毁后 image 失效（测试里真实踩到过 pyimage 不存在）。
+        """
+        name = "WinMon.Checkbutton.indicator"
+        if name in style.element_names():
+            return
+        size = 14
+
+        def square(fill, border):
+            img = tk.PhotoImage(master=self.root, width=size, height=size)
+            img.put(border, to=(0, 0, size, size))
+            img.put(fill, to=(1, 1, size - 1, size - 1))
+            return img
+
+        images = {
+            "normal": square(UI_SURFACE_ALT, "#767676"),
+            "selected": square(UI_INDICATOR, UI_INDICATOR_BORDER),
+            "disabled": square("#101010", "#3a3a3a"),
+        }
+        #: 生命周期跟着 root；Tk 图片不能用完就丢。
+        self.root._winmon_check_images = images
+        try:
+            style.element_create(
+                name, "image", images["normal"],
+                ("selected", images["selected"]),
+                ("disabled", images["disabled"]))
+            style.layout("TCheckbutton", [
+                ("Checkbutton.padding", {
+                    "sticky": "nswe",
+                    "children": [
+                        (name, {"side": "left", "sticky": ""}),
+                        ("Checkbutton.focus", {
+                            "side": "left", "sticky": "w",
+                            "children": [("Checkbutton.label", {"sticky": "nswe"})],
+                        }),
+                    ],
+                }),
+            ])
+            layout = style.layout("TCheckbutton")
+            for style_name in ("GreenCard", "PurpleCard", "MediaCard"):
+                style.layout(f"{style_name}.TCheckbutton", layout)
+        except tk.TclError:
             pass
 
     def _build_ui(self) -> None:
@@ -4879,10 +5379,10 @@ class WinMonApp:
                     self.close_mode, self.start_minimized, self.history_days):
             var.trace_add("write", self._schedule_save_settings)
 
-        # ---- 主体：左列表 + 右预览（拆成独立方法，免得 _build_ui 过长）----
-        # 用一层容器 + grid 权重放 Panedwindow：这样展开「操作历史」时，
-        # **多出来的高度从主体里扣**，而不是让历史面板自己被压扁
-        # （原来直接 pack(body, expand=True)，历史面板只剩 12px —— 勾了等于没勾）。
+        # ---- 主体：实时预览为主体，窗口列表收成右侧紧凑侧栏 ----
+        # 用户 2026-10-19：主界面主体应该是实时预览，而不是进程/窗口读取。
+        # 因此 Panedwindow 的第一块（占 68%）是预览，右侧 32% 只做“选窗口”的
+        # 紧凑列表；CPU/内存/PID 等明细仍可悬停查看，完整进程树在独立标签页。
         body_holder = ttk.Frame(self.root)
         body_holder.pack(fill="both", expand=True)
         body_holder.rowconfigure(0, weight=1)
@@ -4898,34 +5398,29 @@ class WinMonApp:
 
         def _set_body_sash(_event=None) -> None:
             # Tk 的 Panedwindow 会按两个 pane 的“请求宽度”分，不按 weight；
-            # 加了动作竖栏后左栏会被右栏的请求宽度挤窄。只在**第一次映射**
-            # 时设一次 62%，不绑 Configure（否则 sashpos -> Configure -> sashpos
-            # 会形成事件风暴，把 after 定时器饿死），也不用 after（窗口刚建好
-            # 就关闭时，残留的 after 命令会让 root.destroy 报“can't delete Tcl command”）。
+            # 只在**第一次映射**时设一次 68%。不绑 Configure（否则 sashpos ->
+            # Configure -> sashpos 会形成事件风暴，把 after 定时器饿死），
+            # 也不用 after（窗口刚建好就关闭时，残留的 after 命令会让
+            # root.destroy 报“can't delete Tcl command”）。
             if getattr(self, "_body_sash_ready", False):
                 return
             try:
                 width = body.winfo_width()
                 if width < 300:
                     return
-                body.sashpos(0, int(width * 0.635))
+                body.sashpos(0, int(width * 0.68))
                 self._body_sash_ready = True
             except Exception:
                 pass
 
         body.bind("<Map>", _set_body_sash, add="+")
 
-        left = ttk.Frame(body)
-        # 6:4 而不是 4:6：加了动作竖栏之后，窗口列表仍要能一眼看到七列。
-        body.add(left, weight=6)
-        self._build_left_pane(left)
+        main = ttk.Frame(body)
+        body.add(main, weight=7)
+        main.rowconfigure(0, weight=1)
+        main.columnconfigure(0, weight=1)
 
-        right = ttk.Frame(body)
-        body.add(right, weight=4)
-        right.rowconfigure(0, weight=1)
-        right.columnconfigure(0, weight=1)
-
-        self.notebook = ttk.Notebook(right)
+        self.notebook = ttk.Notebook(main)
         self.notebook.grid(row=0, column=0, sticky="nsew")
         self.preview = PreviewPane(self.notebook, self)
         self.gallery = GalleryPane(self.notebook, self)
@@ -4939,19 +5434,23 @@ class WinMonApp:
         self.notebook.add(self.workspace.frame, text="工作区")
         self.workspace.refresh()
 
+        side = ttk.Frame(body)
+        body.add(side, weight=3)
+        self._build_left_pane(side)
+
         # ---- 底部状态栏 ----
         bottom = ttk.Frame(self.root, padding=(8, 3))
         bottom.pack(fill="x")
         ttk.Label(bottom, textvariable=self.status_text, font=UI_FONT, anchor="w").pack(
             side="left", fill="x", expand=True)
         ttk.Label(bottom, textvariable=self.overview_text, font=MONO_FONT,
-                  foreground="#555").pack(side="right")
+                  foreground=UI_MUTED).pack(side="right")
 
         # ---- 操作历史：**独立窗口**（约定），主界面不再有折叠面板 ----
         self._history_window = None
         self.history_hint = tk.StringVar(value="")
         ttk.Label(self.root, textvariable=self.history_hint, font=SMALL_FONT,
-                  foreground="#5a6b7b", anchor="w").pack(fill="x", padx=10)
+                  foreground=UI_MUTED, anchor="w").pack(fill="x", padx=10)
 
         # ---- 右键菜单 ----
         self.menu = tk.Menu(self.root, tearoff=0, font=UI_FONT)
@@ -4986,32 +5485,31 @@ class WinMonApp:
         """
         左侧动作竖栏（用户 2026-10-19 的方案）：顶部不再摆一排按钮。
 
-        分组只保留“总览 / AI / 工具”，按钮用浅色底而不是系统白：
-        主体（窗口列表 + 预览）占满剩下的宽度，动作退到边上。
+        纯黑底白字下，按钮用深灰底 + 白字；主体（实时预览）占满剩下的宽度。
         """
-        rail_bg = "#e2ecf5"
-        button_bg = "#d5e3ef"
-        ink = "#17324d"
+        rail_bg = UI_BG
+        button_bg = UI_SURFACE_ALT
+        ink = UI_INK
         rail = tk.Frame(parent, bg=rail_bg, width=124,
-                        highlightbackground="#c3d4e3", highlightthickness=0)
+                        highlightbackground=UI_LINE, highlightthickness=0)
         rail.grid(row=0, column=0, sticky="ns", padx=(8, 6), pady=(0, 4))
         rail.grid_propagate(False)
         self.action_rail = rail
         tk.Label(rail, text=i18n.pick("操作", "Actions"),
-                 font=("Microsoft YaHei UI", max(8, UI_FONT_SIZE - 1), "bold"),
-                 bg=rail_bg, fg="#5b7285", anchor="w").pack(
+                 font=SMALL_BOLD_FONT,
+                 bg=rail_bg, fg=UI_MUTED, anchor="w").pack(
             fill="x", padx=10, pady=(8, 2))
 
         def group(title):
             tk.Label(rail, text=title, font=SMALL_FONT,
-                     bg=rail_bg, fg="#6b8093", anchor="w").pack(
-                fill="x", padx=10, pady=(9, 2))
+                     bg=rail_bg, fg="#8a949c", anchor="w").pack(
+                fill="x", padx=10, pady=(6, 1))
 
         def action(label, command):
             tk.Button(rail, text=label, font=UI_FONT, fg=ink, bg=button_bg,
-                      activebackground="#c3d7e8", activeforeground=ink,
+                      activebackground=UI_ACCENT_DARK, activeforeground="#ffffff",
                       relief="flat", borderwidth=0, highlightthickness=0,
-                      anchor="w", padx=10, pady=5, cursor="hand2",
+                      anchor="w", padx=10, pady=2, cursor="hand2",
                       command=command).pack(fill="x", padx=8, pady=1)
 
         group(i18n.pick("总览", "Overview"))
@@ -5029,16 +5527,21 @@ class WinMonApp:
 
     def _build_left_pane(self, left: tk.Misc) -> None:
         """
-        左栏：窗口列表 + 滚动条 + 手势说明/闲置/媒体那几行。
+        右侧窗口侧栏：只负责“选哪个窗口”，明细交给预览区与悬停提示。
 
-        为什么单独一个方法：全塞进 `_build_ui` 会把它顶过 200 行，
-        而 `lint_check.py` 有一条"函数过长"的检查守着这个阈值（当时真报过一次红）。
+        用户 2026-10-19：主界面主体应该是实时预览，不是进程读取。所以这里
+        保留完整的数据列（PID / 内存 / CPU 仍在 values 里、悬停可见），
+        但界面只显示图标、程序、标题、状态四列，宽度让给实时预览。
         """
+        tk.Label(left, text="运行中的窗口", font=BOLD_FONT, fg=UI_INK,
+                 bg=UI_BG, anchor="w").grid(row=0, column=0, sticky="ew",
+                                            padx=2, pady=(0, 2))
         columns = ("act", "app", "title", "pid", "mem", "cpu", "state")
         tv = ttk.Treeview(left, columns=columns, show="tree headings",
-                          selectmode="extended")
+                          selectmode="extended",
+                          displaycolumns=("app", "title", "state"))
         self.tree = tv
-        tv.heading("#0", text="图标")
+        tv.heading("#0", text="")
         tv.heading("act", text="活动")
         tv.heading("app", text="程序")
         tv.heading("title", text="窗口标题")
@@ -5047,77 +5550,77 @@ class WinMonApp:
         tv.heading("cpu", text="CPU")
         tv.heading("state", text="状态")
         #: 列宽单位是**物理像素**，不会跟着 DPI 自动放大；字体却会。
-        #: 所以固定列按“10 号字在 150% 下也放得下”给足，app/title 用
-        #: stretch 吃掉多余宽度。`test_a5` 的 `_squeezed()` 守右栏不被挤坏。
-        tv.column("#0", width=40, stretch=False, minwidth=40)
-        tv.column("act", width=50, anchor="center", stretch=False)
-        tv.column("app", width=150, anchor="w")
-        tv.column("title", width=210, anchor="w")
-        tv.column("pid", width=70, anchor="e", stretch=False)
-        tv.column("mem", width=155, anchor="e", stretch=False)
-        tv.column("cpu", width=56, anchor="e", stretch=False)
-        tv.column("state", width=92, anchor="center", stretch=False)
+        #: 所以按当前 DPI 缩放，既不让 150% 下的状态列只剩两个字，
+        #: 也不让 100% 下的侧栏被撑出窗口。
+        side_scale = max(1.0, min(3.0, float(
+            getattr(self, "dpi_scale", 1.0) or 1.0)))
+        icon_w = int(round(30 * side_scale))
+        app_w = int(round(90 * side_scale))
+        title_w = int(round(132 * side_scale))
+        state_w = int(round(52 * side_scale))
+        tv.column("#0", width=icon_w, stretch=False, minwidth=icon_w)
+        tv.column("act", width=int(round(50 * side_scale)), anchor="center",
+                  stretch=False)
+        tv.column("app", width=app_w, anchor="w", stretch=True,
+                  minwidth=int(round(70 * side_scale)))
+        tv.column("title", width=title_w, anchor="w", stretch=True,
+                  minwidth=int(round(90 * side_scale)))
+        tv.column("pid", width=int(round(70 * side_scale)), anchor="e", stretch=False)
+        tv.column("mem", width=int(round(155 * side_scale)), anchor="e", stretch=False)
+        tv.column("cpu", width=int(round(56 * side_scale)), anchor="e", stretch=False)
+        tv.column("state", width=state_w, anchor="center", stretch=False,
+                  minwidth=int(round(44 * side_scale)))
 
         vs = ttk.Scrollbar(left, orient="vertical", command=tv.yview)
-        hs = ttk.Scrollbar(left, orient="horizontal", command=tv.xview)
-        tv.configure(yscrollcommand=vs.set, xscrollcommand=hs.set)
-        tv.grid(row=0, column=0, sticky="nsew")
-        vs.grid(row=0, column=1, sticky="ns")
-        hs.grid(row=1, column=0, sticky="ew")
-        left.rowconfigure(0, weight=1)
+        tv.configure(yscrollcommand=vs.set)
+        tv.grid(row=1, column=0, sticky="nsew")
+        vs.grid(row=1, column=1, sticky="ns")
+        left.rowconfigure(1, weight=1)
         left.columnconfigure(0, weight=1)
         self._build_left_extras(left)
 
-        tv.tag_configure("noresp", foreground="#c0392b")
-        tv.tag_configure("minimized", foreground="#7f8c8d")
-        tv.tag_configure("hidden", foreground="#a0a8b0")
-        tv.tag_configure("critical", foreground="#8e44ad")
-        tv.tag_configure("nowin", foreground="#95a5a6")
-        tv.tag_configure("fg", background="#d6ecff")          # 前台窗口高亮
-        tv.tag_configure("fg_hidden", background="#eef5fa", foreground="#a0a8b0")
+        tv.tag_configure("noresp", foreground="#ff7b72")
+        tv.tag_configure("minimized", foreground="#9aa5ad")
+        tv.tag_configure("hidden", foreground="#7b868e")
+        tv.tag_configure("critical", foreground="#d2a8ff")
+        tv.tag_configure("nowin", foreground="#8b949e")
+        tv.tag_configure("fg", background="#123a5a")          # 前台窗口高亮
+        tv.tag_configure("fg_hidden", background="#101820", foreground="#7b868e")
 
     def _build_left_extras(self, left: tk.Misc) -> None:
         """
-        左栏列表下面的两行：手势说明 + 闲置程序开关。
+        侧栏底部：手势说明 + 闲置程序开关。
 
-        为什么单独一个方法：塞进 `_build_ui` 会把它顶过 200 行，
-        而 `lint_check.py` 有一条"函数过长"的检查守着这个阈值。
-        也顺手把"手势规则"和"闲置功能入口"放在一起 —— 它们都是"列表怎么用"的一部分。
+        侧栏比原来的主列表窄，提示缩成两行；低频的“闲置”仍留在这里，
+        因为它是“窗口怎么用”的一部分，而不是主界面的主任务。
         """
-        #: 手势说明常驻在列表下面。为什么不做成"鼠标悬停提示"：
-        #: 这版把"单击"从"切到最前"改成了"只选中"，**规则变了就得让人看得见**，
-        #: 常驻一行字比需要探索才发现的气泡更稳（也少一个自绘 Toplevel 的坑）。
-        tk.Label(left, text="单击：选中并预览　双击：最小化/还原　"
-                            "Enter/中键：切到最前　悬停看详情　右键：更多",
-                 font=SMALL_FONT, fg="#5a6b7b",
-                 anchor="w").grid(row=2, column=0, sticky="ew", pady=(2, 0))
+        tk.Label(left, text="单击选中并在上方预览\n双击最小化/还原 · Enter 切到最前",
+                 font=SMALL_FONT, fg=UI_MUTED, bg=UI_BG, anchor="w",
+                 justify="left").grid(row=3, column=0, columnspan=2, sticky="ew",
+                                      pady=(2, 0))
 
         # ---- 闲置程序开关（**默认关闭**；本工具的职责是"看着"，不是"替你动手"）----
         idle_bar = ttk.Frame(left)
-        idle_bar.grid(row=3, column=0, sticky="ew", pady=(3, 0))
-        # 加了左侧动作栏之后，左栏变窄；闲置这一组改**两行**，
-        # 不再把“开关 + 时长 + 提醒间隔 + 清单”硬塞进一行。
+        idle_bar.grid(row=4, column=0, columnspan=2, sticky="ew", pady=(3, 0))
         line1 = ttk.Frame(idle_bar)
         line1.pack(fill="x")
-        ttk.Checkbutton(line1, text="闲置超时提醒", variable=self.idle_alert,
+        ttk.Checkbutton(line1, text="闲置提醒", variable=self.idle_alert,
                         command=self._on_idle_toggle).pack(side="left")
-        ttk.Combobox(line1, textvariable=self.idle_choice, state="readonly", width=8,
+        ttk.Combobox(line1, textvariable=self.idle_choice, state="readonly", width=7,
                      font=UI_FONT,
                      values=[label for label, _s in core.IDLE_CHECK_CHOICES]).pack(
-            side="left", padx=(6, 4))
-        ttk.Button(line1, text="闲置清单", width=9,
+            side="left", padx=(4, 2))
+        ttk.Button(line1, text="清单", width=5,
                    command=self.action_idle_dialog).pack(side="right")
         line2 = ttk.Frame(idle_bar)
         line2.pack(fill="x", pady=(3, 0))
         #: 提醒节流：提醒过一次之后隔多久才允许**自动**再弹窗（手动点清单不受限制）。
         ttk.Label(line2, text="提醒间隔", font=SMALL_FONT,
-                  foreground="#5a6b7b").pack(side="left", padx=(0, 2))
+                  foreground=UI_MUTED).pack(side="left", padx=(0, 2))
         ttk.Combobox(line2, textvariable=self.idle_snooze_choice, state="readonly",
-                     width=13, font=UI_FONT,
+                     width=15, font=UI_FONT,
                      values=[label for label, _s in core.IDLE_SNOOZE_CHOICES]).pack(
-            side="left", padx=(0, 4))
-        tk.Label(line2, text="提醒过一次后，多久才允许再弹", font=SMALL_FONT,
-                 fg="#7a8a99", anchor="w").pack(side="left")
+            side="left")
 
     def _build_video_bars(self) -> None:
         """
@@ -5160,7 +5663,7 @@ class WinMonApp:
         mbar = tk.Frame(self.root, bg="#eef8f4", highlightbackground="#a9d8ce",
                         highlightthickness=1, padx=8, pady=3)
         mbar.pack(fill="x", padx=8, pady=(0, 4))
-        tk.Label(mbar, text="媒体", font=("Microsoft YaHei UI", 9, "bold"),
+        tk.Label(mbar, text="媒体", font=SMALL_BOLD_FONT,
                  bg="#0f6b5c", fg="white", padx=7, pady=1).pack(side="left", padx=(0, 8))
         #: 当前在放什么（曲名 · 歌手 · 状态）。**没有进度** —— 用户已放弃识别进度。
         self.media_text = tk.StringVar(value="（还没读取）")
@@ -5174,8 +5677,8 @@ class WinMonApp:
             fg="#103b36", bg="#eef8f4", width=self.MEDIA_TEXT_WIDTH)
         self.media_label.pack(side="left", padx=(0, 8))
         # 右边的控件按"从左到右"的视觉顺序 pack（都是 side="left"，不会互相挤）
-        ttk.Label(mbar, text="播放器：", font=SMALL_FONT,
-                  foreground="#5a6b7b").pack(side="left")
+        tk.Label(mbar, text="播放器：", font=SMALL_FONT,
+                 bg="#eef8f4", fg="#5a6b7b").pack(side="left")
         self.media_app_combo = ttk.Combobox(mbar, textvariable=self.media_app_pin,
                                            state="readonly", width=18, font=UI_FONT,
                                            values=[MEDIA_APP_ANY])
@@ -5185,7 +5688,8 @@ class WinMonApp:
             self.media_app_combo.configure(postcommand=self._edit_media_app_multi)
         except tk.TclError:
             pass
-        ttk.Checkbutton(mbar, text="自动启动", variable=self.media_auto_wake).pack(
+        ttk.Checkbutton(mbar, text="自动启动", variable=self.media_auto_wake,
+                        style="MediaCard.TCheckbutton").pack(
             side="left", padx=(0, 4))
         # 「播放」/「暂停」按当前状态显示动作，而不是固定“播放/暂停”：
         # 2 个汉字在 12 号字下也放得下，且点之前就知道会发生什么。
@@ -5218,7 +5722,7 @@ class WinMonApp:
         bar = tk.Frame(self.root, bg=bg, highlightbackground="#b9d6ee",
                        highlightthickness=1, padx=8, pady=4)
         bar.pack(fill="x", padx=8, pady=(0, 4))
-        tk.Label(bar, text="AI", font=("Microsoft YaHei UI", 9, "bold"),
+        tk.Label(bar, text="AI", font=SMALL_BOLD_FONT,
                  bg="#1f5f8b", fg="white", padx=8, pady=2).pack(
             side="left", padx=(0, 8), anchor="n")
         body = tk.Frame(bar, bg=bg)
@@ -5228,13 +5732,13 @@ class WinMonApp:
         self.ai_identity_text = tk.StringVar(value="正在识别当前 AI…")
         self.ai_identity_label = tk.Label(
             body, textvariable=self.ai_identity_text,
-            font=("Microsoft YaHei UI", 10, "bold"), bg=bg, fg="#12354d",
+            font=BOLD_FONT, bg=bg, fg="#12354d",
             anchor="w", justify="left")
         self.ai_identity_label.grid(row=0, column=0, sticky="ew")
-        self.ai_state_text = tk.StringVar(value="")
+        self.ai_state_text = tk.StringVar(value="正在识别接入状态…")
         self.ai_state_label = tk.Label(
             body, textvariable=self.ai_state_text,
-            font=("Microsoft YaHei UI", 9), bg="#fff4d6", fg="#7a5a00",
+            font=SMALL_FONT, bg="#fff4d6", fg="#7a5a00",
             anchor="w", justify="left", padx=6, pady=0)
         self.ai_state_label.grid(row=1, column=0, sticky="w", pady=(2, 0))
         self.ai_usage_text = tk.StringVar(value="")
@@ -5282,19 +5786,16 @@ class WinMonApp:
         pop = tk.Toplevel(self.root)
         pop.overrideredirect(True)
         pop.attributes("-topmost", True)
-        pop.configure(bg="#1b2027")
+        pop.configure(bg=UI_BG)
         outer = ttk.Frame(pop, padding=8)
         outer.pack(fill="both", expand=True)
-        tk.Label(outer, text="可多选（不勾 = 自动跟随正在放的那个）", bg="#1b2027",
+        tk.Label(outer, text="可多选（不勾 = 自动跟随正在放的那个）", bg=UI_BG,
                  fg="#9fd6a0", font=SMALL_FONT).pack(anchor="w")
         vars_: dict[str, tk.BooleanVar] = {}
         for label in [MEDIA_APP_ANY] + labels:
             v = tk.BooleanVar(value=(label in current_labels))
             vars_[label] = v
-            tk.Checkbutton(outer, text=label, variable=v, anchor="w",
-                           bg="#1b2027", fg="#eaf2f8", selectcolor="#0f1418",
-                           activebackground="#1b2027", activeforeground="#ffffff",
-                           font=UI_FONT).pack(fill="x", anchor="w")
+            ttk.Checkbutton(outer, text=label, variable=v).pack(fill="x", anchor="w")
 
         row = ttk.Frame(outer)
         row.pack(fill="x", pady=(6, 0))
@@ -5357,7 +5858,6 @@ class WinMonApp:
         labels, mapping = build_media_app_entries(
             running, lambda exe: bool(core.media_app_path(exe)), found,
             sessions=getattr(self, "_media_session_apps", ()))
-        self._media_apps = mapping
         self._media_apps = mapping
         try:
             self.media_app_combo.configure(values=labels)
@@ -6053,7 +6553,7 @@ class WinMonApp:
                 # 与"启动时直接收进托盘"
                 "close_mode": self.close_mode.get(),
                 "start_minimized": bool(self.start_minimized.get()),
-                # 界面语言：zh / en（默认中文）与界面字号（9/10/11/12）
+                # 界面语言：zh / en（默认中文）与字号大小（9/10/11/12）
                 "language": self.language.get(),
                 "font_size": font_size,
                 # 工作区快照 + 应用时的附加选项
@@ -6331,8 +6831,10 @@ class WinMonApp:
             label = f"{label}" + (" (frame host)" if i18n.get_language() == "en"
                                   else "（应用外壳）")
         state = wi.state
+        if state == "已最小化":
+            state = "最小化"          # 侧栏比原列表窄，少一个字就能完整显示
         if i18n.get_language() == "en":
-            state = {"运行中": "Run", "已最小化": "Min",
+            state = {"运行中": "Run", "最小化": "Min",
                      "无响应": "Hung"}.get(state, state)
         item = self.tree.insert(
             parent, "end", text="", tags=tuple(tags),
@@ -6559,17 +7061,6 @@ class WinMonApp:
         except Exception:
             return 0.0
 
-    def _ai_work_text(self) -> str:
-        """界面上的"当前工作"摘要（0 token，只读窗口）。"""
-        try:
-            return ai.describe_work(getattr(self, "windows", []) or [],
-                                    getattr(self, "_fg_hwnd", 0),
-                                    self._ai_work_minutes(),
-                                    lang=i18n.get_language())
-        except Exception:
-            return i18n.pick("当前工作：（读取失败；WinMon 不会因此调用模型）",
-                             "Current work: (read failed; WinMon will not call a model)")
-
     def _ai_companion(self, now: float | None = None,
                       intent: str = "ambient") -> dict:
         """
@@ -6607,6 +7098,7 @@ class WinMonApp:
             media=media,
             persona=str(assist.get("persona_tone") or ai.DEFAULT_PERSONA),
             persona_custom=str(assist.get("persona_custom") or ""),
+            persona_name=str(assist.get("persona_name") or ""),
             read_media=bool(assist.get("read_media", True)),
             read_game=bool(assist.get("read_game", True)),
             read_web_title=bool(assist.get("read_web_title", True)),
@@ -6768,7 +7260,6 @@ class WinMonApp:
         if win is not None:
             try:
                 win.set_header(self._ai_header_text())
-                win.set_work(self._ai_work_text())
                 win.set_time(self._ai_time_status())
             except Exception:
                 pass
@@ -6900,6 +7391,9 @@ class WinMonApp:
                    workspace_dir: str | None = None,
                    persona_tone: str | None = None,
                    persona_custom: str | None = None,
+                   persona_id: str | None = None,
+                   persona_name: str | None = None,
+                   persona_library: list | None = None,
                    read_media: bool | None = None,
                    read_game: bool | None = None,
                    read_web_title: bool | None = None,
@@ -6932,6 +7426,12 @@ class WinMonApp:
             data["persona_tone"] = str(persona_tone or ai.DEFAULT_PERSONA)
         if persona_custom is not None:
             data["persona_custom"] = ai.normalize_custom_persona(persona_custom)
+        if persona_id is not None:
+            data["persona_id"] = str(persona_id or "").strip()[:32]
+        if persona_name is not None:
+            data["persona_name"] = ai.normalize_persona_name(persona_name)
+        if persona_library is not None:
+            data["persona_library"] = ai.normalize_persona_library(persona_library)
         for key, value in (("read_media", read_media), ("read_game", read_game),
                            ("read_web_title", read_web_title)):
             if value is not None:
@@ -7086,7 +7586,6 @@ class WinMonApp:
                 win.top.lift()
                 win.top.focus_force()
                 win.set_header(self._ai_header_text())
-                win.set_work(self._ai_work_text())
                 win.set_time(self._ai_time_status())
                 return
             except Exception:
@@ -7237,7 +7736,7 @@ class WinMonApp:
         """
         targets = self._selected_windows()
         if not targets:
-            self._set_status("请先在左侧列表里选中至少一个窗口（按住 Ctrl / Shift 可多选）")
+            self._set_status("请先在右侧窗口列表里选中至少一个窗口（按住 Ctrl / Shift 可多选）")
             return
         planned: list[tuple[str, int]] = []
         for wi in targets:
@@ -7895,7 +8394,7 @@ class WinMonApp:
             self.worker.forget(("win", self.preview_key))
             self.preview_key = None
         self._last_preview_req = None
-        self.preview.clear("请选择左侧列表中的程序")
+        self.preview.clear("请选择右侧窗口列表中的程序")
 
     def _refresh_preview_header(self) -> None:
         hwnd = self.selected_hwnd
@@ -8029,7 +8528,7 @@ class WinMonApp:
     def gallery_add_selected(self) -> None:
         sel = [s for s in self.tree.selection() if self.row_info.get(s, ("",))[0] == "window"]
         if not sel:
-            self._set_status("请先在左侧列表中选择一个或多个程序（Ctrl / Shift 多选）")
+            self._set_status("请先在右侧窗口列表中选择一个或多个程序（Ctrl / Shift 多选）")
             return
         added = 0
         for item in sel:
@@ -8283,7 +8782,7 @@ class WinMonApp:
         """
         wi = self._selected_window()
         if wi is None:
-            self._set_status("请先在左侧列表里选中一个窗口（视频客户端 / 浏览器 / 播放器都行）")
+            self._set_status("请先在右侧窗口列表里选中一个窗口（视频客户端 / 浏览器 / 播放器都行）")
             return
         # 目标最小化（或被隐藏到托盘）时先唤起：隐藏窗口抓不到画面，监视等于白跑
         try:
@@ -8518,7 +9017,7 @@ class WinMonApp:
             if candidate is not None and self._looks_like_player(candidate):
                 wi = candidate
         if wi is None:
-            self._set_status("没有视频来源窗口：请先在左侧选中那个播放器/浏览器窗口")
+            self._set_status("没有视频来源窗口：请先在右侧窗口列表选中那个播放器/浏览器窗口")
             return
         mode = _close_mode_slug(self.video_close_mode.get())
         self.video_watch = False
@@ -8557,7 +9056,7 @@ class WinMonApp:
         """
         wi = self._selected_window()
         if not wi:
-            self._set_status("请选择左侧列表中的一个程序")
+            self._set_status("请选择右侧窗口列表中的一个程序")
             return
         self._queue_window_op(CLICK_ACTIVATE, wi.hwnd)
 
@@ -8565,7 +9064,7 @@ class WinMonApp:
         """最小化选中的窗口；已经最小化的就还原（右键菜单，与双击列表同一套规则）。"""
         wi = self._selected_window()
         if not wi:
-            self._set_status("请选择左侧列表中的一个程序")
+            self._set_status("请选择右侧窗口列表中的一个程序")
             return
         self._run_click_action(
             plan_window_click("double", self._window_is_iconic(wi.hwnd)), wi)
@@ -8573,7 +9072,7 @@ class WinMonApp:
     def action_close_window(self) -> None:
         wi = self._selected_window()
         if not wi:
-            self._set_status("请选择左侧列表中的一个程序")
+            self._set_status("请选择右侧窗口列表中的一个程序")
             return
         ok, msg = core.graceful_close_window(wi.hwnd)
         target = self._log_target(wi.proc or wi.real_name, wi.pid, wi.title)
@@ -8599,7 +9098,7 @@ class WinMonApp:
         elif self.selected_hwnd and self.selected_hwnd in self.win_by_hwnd:
             name = self.win_by_hwnd[self.selected_hwnd].proc
         if not pid:
-            self._set_status("请选择左侧列表中的一个程序")
+            self._set_status("请选择右侧窗口列表中的一个程序")
             return
         if pid == os.getpid():
             messagebox.showwarning(APP_NAME, "不能结束 WinMon 自己。", parent=self.root)
@@ -9273,6 +9772,14 @@ def smoke_test(seconds: float = 6.0) -> int:
 
     def snapshot(tag: str = "") -> None:
         try:
+            # 切标签后 Tk 的绘制是异步的；不先消化一遍，抓到的会是上一页的
+            # 黑底（2026-10-19 实测：preview 截图整页黑，控件其实都 mapped）。
+            # 只跑 update_idletasks()：不能用 update()，否则 sleep 期间会把
+            # 后面的 finish 也执行掉，root 在抓屏前就被销毁了。
+            root.update_idletasks()
+            root.update()
+            time.sleep(0.15)
+            root.update_idletasks()
             hwnd = core.H(core.user32.GetAncestor(core.w.HWND(root.winfo_id()), core.GA_ROOT))
             rc = core.w.RECT()
             core.user32.GetWindowRect(core.w.HWND(hwnd), ctypes.byref(rc))
@@ -9422,6 +9929,7 @@ def ai_quip_cli(as_json: bool = False) -> int:
         intent="quip", foreground=fg, media=media,
         persona=str(assist.get("persona_tone") or ai.DEFAULT_PERSONA),
         persona_custom=str(assist.get("persona_custom") or ""),
+        persona_name=str(assist.get("persona_name") or ""),
         read_media=bool(assist.get("read_media", True)),
         read_game=bool(assist.get("read_game", True)),
         read_web_title=bool(assist.get("read_web_title", True)),
@@ -9535,6 +10043,7 @@ def ai_assist_cli(question: str = "", as_json: bool = False,
         media=(ai.media_facts() if assist.get("read_media", True) else None),
         persona=str(assist.get("persona_tone") or ai.DEFAULT_PERSONA),
         persona_custom=str(assist.get("persona_custom") or ""),
+        persona_name=str(assist.get("persona_name") or ""),
         read_media=bool(assist.get("read_media", True)),
         read_game=bool(assist.get("read_game", True)),
         read_web_title=bool(assist.get("read_web_title", True)))

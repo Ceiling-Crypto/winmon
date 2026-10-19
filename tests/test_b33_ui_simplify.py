@@ -342,7 +342,7 @@ class TestFontSizeSetting(unittest.TestCase):
         with mock.patch.object(self.winmon.core, "get_autostart", return_value=False):
             dlg = self.winmon._SettingsDialog(self.root, "exit", False, False, 30,
                                               "zh", 10)
-            dlg.font_size.set("大")
+            dlg.font_size.set("11")
             dlg._ok()
         self.assertEqual(dlg.result["font_size"], 11)
 

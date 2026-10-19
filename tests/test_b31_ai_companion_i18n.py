@@ -255,7 +255,10 @@ class TestConnectWindow(unittest.TestCase):
                 win.import_persona()
         self.assertEqual(self.app._ai_assist.get("persona_tone"), "custom")
         self.assertIn("老同事", self.app._ai_assist.get("persona_custom"))
-        self.assertIn("自定义", win.persona_var.get())
+        self.assertIn("persona", win.persona_var.get().lower(),
+                      "导入后应使用从文件名/角色卡读到的名称")
+        self.assertEqual(self.app._ai_assist.get("persona_name"), "persona")
+        self.assertEqual(len(self.app._ai_assist.get("persona_library") or []), 1)
         win.read_media_var.set(False)
         win.toggle_facts()
         self.assertTrue(any(item.get("read_media") is False for item in self.app.saved))

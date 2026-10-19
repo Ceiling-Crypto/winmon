@@ -27,6 +27,7 @@ import shutil
 import subprocess
 import threading
 import time
+import uuid
 from dataclasses import dataclass, field
 
 import winmon_core as core
@@ -1518,71 +1519,6 @@ def work_kind_of(proc: str, title: str = "") -> str:
     return "一般使用"
 
 
-def describe_work(windows: list, foreground_hwnd: int = 0,
-                  work_minutes: int = 0, lang: str | None = None) -> str:
-    """
-    本地"当前工作"摘要（0 token，不调用任何模型）。
-
-    给界面一个不花 token 也能"读窗口辅助工作"的最小视图：
-    现在在哪个窗口、做什么类型的事、旁边还开着什么。
-    """
-    lang = i18n.get_language() if lang is None else i18n.normalize_language(lang)
-    en = lang == "en"
-
-    def pick(zh: str, english: str) -> str:
-        return english if en else zh
-
-    visible = [w for w in (windows or []) if not getattr(w, "is_hidden_surface", False)]
-    fg = next((w for w in visible if getattr(w, "hwnd", 0) == foreground_hwnd), None)
-    if fg is None and visible:
-        fg = max(visible, key=lambda w: float(getattr(w, "cpu", 0) or 0))
-    if fg is None:
-        return pick("当前工作：没有取到前台窗口（WinMon 只读，不会调用模型）",
-                    "Current work: no foreground window "
-                    "(WinMon is read-only and does not call a model)")
-    proc = getattr(fg, "proc", "") or ""
-    title, _ = sanitize_untrusted(getattr(fg, "title", "") or "", 80)
-    name = getattr(fg, "real_name", "") or proc or "?"
-    kind = work_kind_of(proc, title)
-    kind_text = ({"编程": "coding", "文档": "documents", "查资料": "research",
-                  "游戏": "gaming", "一般使用": "general use"}.get(kind, kind)
-                 if en else kind)
-    lines = [pick(f"当前工作：{kind_text} · {name}「{title or '（无标题）'}」",
-                  f"Current work: {kind_text} · {name} “{title or '(untitled)'}”")]
-    others = [w for w in visible if w is not fg and getattr(w, "title", "")]
-    others.sort(key=lambda w: -float(getattr(w, "cpu", 0) or 0))
-    if others:
-        side = []
-        for w in others[:3]:
-            t, _ = sanitize_untrusted(getattr(w, "title", "") or "", 42)
-            side.append(f"{getattr(w, 'real_name', '') or getattr(w, 'proc', '?')}「{t}」")
-        lines.append(pick("旁边：", "Nearby: ") + "；".join(side))
-    if work_minutes:
-        lines.append(pick(f"本次会话：约 {int(work_minutes)} 分钟（只显示，不用于提醒；0 token）",
-                          f"This session: about {int(work_minutes)} min "
-                          "(display only, not used for reminders; 0 token)"))
-    else:
-        lines.append(pick("本地读取：0 token；需要 AI 解释时再把现场交给它",
-                          "Read locally: 0 token; hand the context to your AI when needed"))
-    tips = {
-        "编程": ("编程场景：WinMon 只读窗口，不抢焦点、不自动调用模型；"
-                "需要时点「交给 AI」把现场交给你的 AI。",
-                "Coding: WinMon only reads the window; it does not steal focus or call a "
-                "model. Click “Send to AI” when you want help."),
-        "文档": ("文档场景：需要润色/查错时把现场交给 AI，WinMon 不会自动插话。",
-                "Documents: hand the context to your AI for proofreading; WinMon stays quiet."),
-        "查资料": ("查资料场景：现场里已带浏览器标题，可直接交给 AI 帮你归纳。",
-                  "Research: the context already includes browser titles; hand it to your AI."),
-        "游戏": ("游戏场景：WinMon 只读到应用名，不读画面、不评价输赢。",
-                "Gaming: WinMon only sees the app name; no screen, no judgement."),
-        "一般使用": ("需要时把现场交给 AI；WinMon 默认不自动调用。",
-                  "Hand the context to your AI when needed; WinMon does not auto-call."),
-    }
-    tip = tips.get(kind)
-    if tip:
-        lines.append(tip[1] if en else tip[0])
-    return "\n".join(lines)
-
 
 
 #: AI 助手的工作模式：
@@ -1634,6 +1570,9 @@ PERSONA_TONES = {
 DEFAULT_PERSONA = "care"
 #: 自定义人设的最大长度（字符）。太长会把每次提示词撑爆，也难维护。
 PERSONA_CUSTOM_MAX = 4000
+#: 人设名称长度上限；人设库最多保留多少份。
+PERSONA_NAME_MAX = 40
+PERSONA_LIBRARY_MAX = 30
 PERSONA_RULES_ZH = (
     "只使用 companion.facts 里的事实，不编造时长、曲名、游戏名；",
     "一次最多一句（约 30–50 字），不要解释、不要复述整段素材；",
@@ -1659,6 +1598,99 @@ def normalize_custom_persona(text) -> str:
     return value[:PERSONA_CUSTOM_MAX]
 
 
+def normalize_persona_name(value, fallback: str = "") -> str:
+    """人设名称：单行、去控制字符、限长；空值回退到给定名字。"""
+    if not isinstance(value, str):
+        return str(fallback or "")[:PERSONA_NAME_MAX]
+    text = value.lstrip("\ufeff").replace("\r", " ").replace("\n", " ").strip()
+    text = " ".join(text.split())
+    text = "".join(ch for ch in text if ch >= " " and ch != "\x7f")
+    return text[:PERSONA_NAME_MAX] or str(fallback or "")[:PERSONA_NAME_MAX]
+
+
+def new_persona_id() -> str:
+    """人设库条目的稳定 id（只在本机使用，不含任何用户信息）。"""
+    return uuid.uuid4().hex[:12]
+
+
+def normalize_persona_library(value) -> list[dict]:
+    """
+    人设库：`[{"id","name","text"}]`。
+
+    坏数据不连坐：逐条清洗，文字为空/超长的条目丢掉，id 重复就换新，
+    最多保留 `PERSONA_LIBRARY_MAX` 条。旧版只有一份 `persona_custom` 时，
+    由 `load_assist()` 自动补成一条，不丢用户已经导入的文字。
+    """
+    out: list[dict] = []
+    if not isinstance(value, list):
+        return out
+    seen_ids: set[str] = set()
+    seen_text: set[str] = set()
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        text = normalize_custom_persona(item.get("text") or item.get("persona_custom"))
+        if not text or text in seen_text:
+            continue
+        pid = str(item.get("id") or "").strip()[:32]
+        if not pid or pid in seen_ids:
+            pid = new_persona_id()
+        seen_ids.add(pid)
+        seen_text.add(text)
+        out.append({
+            "id": pid,
+            "name": normalize_persona_name(item.get("name"),
+                                           fallback=f"自定义 {len(out) + 1}"),
+            "text": text,
+        })
+        if len(out) >= PERSONA_LIBRARY_MAX:
+            break
+    return out
+
+
+def persona_entry(library, persona_id: str = "") -> dict | None:
+    """按 id 找人设库条目；找不到返回 None。"""
+    pid = str(persona_id or "").strip()
+    if not pid:
+        return None
+    for item in library or []:
+        if item.get("id") == pid:
+            return item
+    return None
+
+
+def upsert_persona(library, name: str, text: str,
+                   persona_id: str = "") -> tuple[list[dict], dict | None]:
+    """
+    新增/更新一条自定义人设，返回 `(新库, 条目)`。
+
+    同一段文字再次保存时更新原条目的名字，不会堆出重复副本；
+    id 不存在则新建。空文字不保存，返回原库与 None。
+    """
+    clean_text = normalize_custom_persona(text)
+    if not clean_text:
+        return list(library or []), None
+    clean_name = normalize_persona_name(name, fallback="自定义")
+    items = [dict(item) for item in (library or []) if isinstance(item, dict)]
+    for item in items:
+        if item.get("text") == clean_text:
+            item["name"] = clean_name
+            if persona_id and not item.get("id"):
+                item["id"] = str(persona_id)
+            return items[:PERSONA_LIBRARY_MAX], item
+    entry = {"id": str(persona_id or "").strip()[:32] or new_persona_id(),
+             "name": clean_name, "text": clean_text}
+    items.append(entry)
+    return items[:PERSONA_LIBRARY_MAX], entry
+
+
+def remove_persona(library, persona_id: str) -> list[dict]:
+    """删除一条人设；id 不存在时原样返回。"""
+    pid = str(persona_id or "").strip()
+    return [dict(item) for item in (library or [])
+            if isinstance(item, dict) and item.get("id") != pid]
+
+
 def persona_labels(lang: str | None = None) -> dict:
     """人设 slug → 显示名（顺序固定：关心 / 损友 / 安静 / 自定义）。"""
     lang = i18n.get_language() if lang is None else i18n.normalize_language(lang)
@@ -1674,14 +1706,14 @@ def persona_label(tone: str, lang: str | None = None) -> str:
 
 
 def persona_card(tone: str = DEFAULT_PERSONA, lang: str | None = None,
-                 custom: str = "") -> dict:
-    """给 AI 的短人设卡：语气 + 边界；不含固定台词。`custom` 为用户导入文本。"""
+                 custom: str = "", name: str = "") -> dict:
+    """给 AI 的短人设卡：语气 + 边界；`custom` 为用户导入文本，`name` 为自定义名称。"""
     lang = i18n.get_language() if lang is None else i18n.normalize_language(lang)
     en = lang == "en"
     slug = str(tone or DEFAULT_PERSONA).lower()
     if slug == "custom":
         text = normalize_custom_persona(custom)
-        label = "Custom" if en else "自定义"
+        label = normalize_persona_name(name, fallback="Custom" if en else "自定义")
         style = text or ("(no custom persona imported; caring fallback)" if en
                          else "（未导入自定义人设，按关心型兜底）")
         return {
@@ -1702,11 +1734,11 @@ def persona_card(tone: str = DEFAULT_PERSONA, lang: str | None = None,
 
 
 def persona_prompt(tone: str = DEFAULT_PERSONA, lang: str | None = None,
-                   custom: str = "") -> str:
+                   custom: str = "", name: str = "") -> str:
     """可复制到 AI 自定义指令的人设卡（也是交接提示词里的人设段）。"""
     lang = i18n.get_language() if lang is None else i18n.normalize_language(lang)
     en = lang == "en"
-    card = persona_card(tone, lang, custom)
+    card = persona_card(tone, lang, custom, name)
     body = (normalize_custom_persona(custom)
             if str(tone or "").lower() == "custom" and normalize_custom_persona(custom)
             else card["style"])
@@ -1723,49 +1755,187 @@ def persona_prompt(tone: str = DEFAULT_PERSONA, lang: str | None = None,
             "WinMon 给你 companion.facts 时，措辞由你决定；不要逐字复制 fallback。")
 
 
-def load_persona_file(path: str) -> tuple[str, str]:
-    """
-    导入人设文件：`.txt` / `.md` 原文，或 `.json` 里的 persona/style/text/prompt/content。
+#: GitHub 社区常见的角色卡字段名（SillyTavern / character card v2 等）。
+_PERSONA_JSON_NAME_KEYS = ("name", "title", "display_name", "persona_name",
+                           "character_name", "char_name")
+_PERSONA_JSON_TEXT_KEYS = ("persona", "style", "text", "prompt", "system_prompt",
+                           "instructions", "content", "description", "character",
+                           "personality")
+_PERSONA_CARD_FIELDS = ("description", "personality", "scenario", "system_prompt",
+                        "post_history_instructions")
 
-    返回 `(text, error)`；`error` 为空表示成功。支持 UTF-8（含 BOM）与 GBK 回退，
-    **不自动执行、不联网**。超过 `PERSONA_CUSTOM_MAX` 不截断，直接报错让用户知道。
+
+def _persona_name_from_json(node, depth: int = 0) -> str:
+    if depth > 4:
+        return ""
+    if isinstance(node, dict):
+        for key in _PERSONA_JSON_NAME_KEYS:
+            value = node.get(key)
+            if isinstance(value, str) and value.strip():
+                return normalize_persona_name(value)
+        for key in ("data", "persona", "character", "card"):
+            value = node.get(key)
+            if isinstance(value, (dict, list)):
+                found = _persona_name_from_json(value, depth + 1)
+                if found:
+                    return found
+    elif isinstance(node, list):
+        for item in node[:6]:
+            found = _persona_name_from_json(item, depth + 1)
+            if found:
+                return found
+    return ""
+
+
+def _persona_text_from_json(node, depth: int = 0) -> str:
+    """
+    从社区角色卡 JSON 里提取真正的人设文字。
+
+    兼容三类常见结构：
+      · 扁平对象：`{"persona": "..."}` / `{"system_prompt": "..."}`；
+      · 角色卡 v2：`{"data": {"name": ..., "description": ...,
+        "personality": ..., "system_prompt": ...}}` —— 合并 description /
+        personality / scenario / system_prompt，而不是只取一个字段；
+      · 消息数组：`{"messages": [{"content": "..."}]}`，按顺序拼接。
+    """
+    if depth > 4:
+        return ""
+    if isinstance(node, str):
+        return node.strip()
+    if isinstance(node, list):
+        parts = []
+        for item in node:
+            text = _persona_text_from_json(item, depth + 1)
+            if text:
+                parts.append(text)
+        return "\n\n".join(parts)
+    if not isinstance(node, dict):
+        return ""
+    payload = node.get("data") if isinstance(node.get("data"), dict) else node
+    # 角色卡 v2：把多个人设字段合起来，单取 description 会丢掉语气/场景。
+    if isinstance(payload, dict):
+        parts = []
+        for key in _PERSONA_CARD_FIELDS:
+            value = payload.get(key)
+            if isinstance(value, str) and value.strip() and value.strip() not in parts:
+                parts.append(value.strip())
+        if parts:
+            return "\n\n".join(parts)
+    for key in _PERSONA_JSON_TEXT_KEYS:
+        value = node.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+        if isinstance(value, (dict, list)):
+            text = _persona_text_from_json(value, depth + 1)
+            if text:
+                return text
+    messages = node.get("messages")
+    if isinstance(messages, list):
+        parts = []
+        for item in messages:
+            if isinstance(item, dict):
+                text = item.get("content")
+            else:
+                text = item
+            if isinstance(text, str) and text.strip():
+                parts.append(text.strip())
+        if parts:
+            return "\n\n".join(parts)
+    return ""
+
+
+def _persona_name_from_markdown(text: str) -> tuple[str, str]:
+    """去掉 YAML front matter，并从 name/title 或第一个一级标题猜名称。"""
+    body = text
+    name = ""
+    if text.startswith("---"):
+        lines = text.splitlines()
+        end = 0
+        for idx in range(1, min(len(lines), 40)):
+            if lines[idx].strip() in ("---", "..."):
+                end = idx
+                break
+        if end:
+            for line in lines[1:end]:
+                if ":" not in line:
+                    continue
+                key, value = line.split(":", 1)
+                if key.strip().lower() in ("name", "title", "display_name"):
+                    name = normalize_persona_name(value.strip().strip("'\""))
+                    if name:
+                        break
+            body = "\n".join(lines[end + 1:]).strip()
+    if not name:
+        for line in body.splitlines():
+            stripped = line.strip()
+            if stripped.startswith("# "):
+                name = normalize_persona_name(stripped[2:])
+                if name:
+                    break
+    return name, body
+
+
+def load_persona_document(path: str) -> dict:
+    """
+    读取一份人设文件，返回 `{"text","name","error","path"}`。
+
+    · `.txt` / `.md` 读原文（Markdown 会去掉 YAML front matter 并猜名称）；
+    · `.json` 兼容扁平字段、角色卡 v2 的 `data.*` 和消息数组；
+    · 支持 UTF-8（含 BOM）/ UTF-16（带 BOM）/ GB18030 回退；
+    · **不联网、不执行文件里的任何代码**；超过上限不截断，直接报错。
     """
     try:
         with open(path, "rb") as fh:
             raw = fh.read()
     except OSError as exc:
-        return "", f"{type(exc).__name__}: {exc}"
+        return {"text": "", "name": "", "path": path,
+                "error": f"{type(exc).__name__}: {exc}"}
     text = ""
-    for enc in ("utf-8-sig", "gbk"):
+    if raw.startswith((b"\xff\xfe", b"\xfe\xff")):
+        encodings = ("utf-16",)
+    else:
+        encodings = ("utf-8-sig", "gb18030")
+    for enc in encodings:
         try:
             text = raw.decode(enc)
             break
         except UnicodeDecodeError:
             continue
     else:
-        return "", "not text / unsupported encoding"
-    if str(path).lower().endswith(".json"):
+        return {"text": "", "name": "", "path": path,
+                "error": "not text / unsupported encoding"}
+    suffix = os.path.splitext(str(path))[1].lower()
+    is_json = suffix == ".json" or text.lstrip().startswith(("{", "["))
+    name = os.path.splitext(os.path.basename(str(path)))[0]
+    if is_json:
         try:
             data = json.loads(text)
         except Exception as exc:
-            return "", f"JSON: {exc}"
-        if isinstance(data, dict):
-            for key in ("persona", "style", "text", "prompt", "content"):
-                if isinstance(data.get(key), str) and data[key].strip():
-                    text = data[key]
-                    break
-            else:
-                return "", "JSON has no persona/style/text/prompt/content"
-        elif isinstance(data, str):
-            text = data
-        else:
-            return "", "JSON must be an object or string"
-    stripped = text.lstrip("\ufeff").replace("\r\n", "\n").replace("\r", "\n").strip()
-    if not stripped:
-        return "", "empty"
-    if len(stripped) > PERSONA_CUSTOM_MAX:
-        return "", "too_long"
-    return stripped, ""
+            return {"text": "", "name": "", "path": path, "error": f"JSON: {exc}"}
+        body = _persona_text_from_json(data)
+        found = _persona_name_from_json(data)
+        if found:
+            name = found
+        if not body:
+            return {"text": "", "name": name, "path": path,
+                    "error": "JSON has no persona/style/text/prompt/content"}
+    else:
+        found, body = _persona_name_from_markdown(text)
+        if found:
+            name = found
+    body = body.lstrip("\ufeff").replace("\r\n", "\n").replace("\r", "\n").strip()
+    if not body:
+        return {"text": "", "name": name, "path": path, "error": "empty"}
+    if len(body) > PERSONA_CUSTOM_MAX:
+        return {"text": "", "name": name, "path": path, "error": "too_long"}
+    return {"text": body, "name": normalize_persona_name(name, fallback="自定义"),
+            "path": path, "error": ""}
+
+
+def load_persona_file(path: str) -> tuple[str, str]:
+    """兼容旧调用：只返回 `(text, error)`；新代码用 `load_persona_document`。"""
+    doc = load_persona_document(path)
+    return doc["text"], doc["error"]
 
 
 #: AI 助手（值守）的本地设置默认值。
@@ -1780,6 +1950,9 @@ DEFAULT_ASSIST = {
     # 人设与素材边界（2026-10-19 用户定：默认关心型；媒体/游戏只读应用名；网页读标题）
     "persona_tone": DEFAULT_PERSONA,
     "persona_custom": "",
+    "persona_id": "",
+    "persona_name": "",
+    "persona_library": [],
     "read_media": True,
     "read_game": True,
     "read_web_title": True,
@@ -1808,6 +1981,7 @@ def assist_path() -> str:
 def load_assist() -> dict:
     """读 AI 助手设置；坏文件按默认值处理，不抛异常。"""
     data = dict(DEFAULT_ASSIST)
+    data["persona_library"] = []
     try:
         with open(assist_path(), encoding="utf-8") as fh:
             raw = json.load(fh)
@@ -1827,7 +2001,20 @@ def load_assist() -> dict:
     tone = str(raw.get("persona_tone") or DEFAULT_PERSONA).strip().lower()
     data["persona_tone"] = (tone if tone in PERSONA_TONES or tone == "custom"
                             else DEFAULT_PERSONA)
-    data["persona_custom"] = normalize_custom_persona(raw.get("persona_custom"))
+    library = normalize_persona_library(raw.get("persona_library"))
+    custom = normalize_custom_persona(raw.get("persona_custom"))
+    pid = str(raw.get("persona_id") or "").strip()[:32]
+    name = normalize_persona_name(raw.get("persona_name"))
+    entry = persona_entry(library, pid)
+    if entry is None and custom:
+        # 旧版只有一份 persona_custom：补进人设库，名字沿用或叫“自定义”。
+        library, entry = upsert_persona(library, name or "自定义", custom)
+    if entry is not None:
+        custom, pid, name = entry["text"], entry["id"], entry["name"]
+    data["persona_library"] = library
+    data["persona_custom"] = custom
+    data["persona_id"] = pid
+    data["persona_name"] = name
     data["read_media"] = bool(raw.get("read_media", True))
     data["read_game"] = bool(raw.get("read_game", True))
     data["read_web_title"] = bool(raw.get("read_web_title", True))
@@ -1879,8 +2066,22 @@ def save_assist(data: dict) -> dict:
                    or DEFAULT_PERSONA).strip().lower()
         clean["persona_tone"] = (tone if tone in PERSONA_TONES or tone == "custom"
                                  else DEFAULT_PERSONA)
-        clean["persona_custom"] = normalize_custom_persona(
+        library = normalize_persona_library(
+            data.get("persona_library", clean.get("persona_library", [])))
+        custom = normalize_custom_persona(
             data.get("persona_custom", clean.get("persona_custom", "")))
+        pid = str(data.get("persona_id", clean.get("persona_id", "")) or "").strip()[:32]
+        name = normalize_persona_name(
+            data.get("persona_name", clean.get("persona_name", "")))
+        entry = None
+        if custom:
+            library, entry = upsert_persona(library, name or "自定义", custom, pid)
+        if entry is not None:
+            custom, pid, name = entry["text"], entry["id"], entry["name"]
+        clean["persona_library"] = library
+        clean["persona_custom"] = custom
+        clean["persona_id"] = pid
+        clean["persona_name"] = name
         for key in ("read_media", "read_game", "read_web_title"):
             clean[key] = bool(data.get(key, clean.get(key, True)))
         clean["direct_provider"] = str(data.get(
@@ -2011,15 +2212,17 @@ def companion_role(lang: str | None = None) -> str:
 
 
 def workspace_advice(workspace: str = "", lang: str | None = None) -> str:
-    """“新项目单独建工作区”的建议（0 token，纯字符串）。"""
+    """“新项目单独建工作区”的建议（0 token，纯字符串，不含本机固定盘符）。"""
     lang = i18n.get_language() if lang is None else i18n.normalize_language(lang)
     path = str(workspace or "").strip()
     if lang == "en":
-        text = ("Give each new project its own workspace (for example D:\\work\\<project>) "
-                "and a new chat in the AI. Do not mix a new project with old chats: the AI "
+        text = ("Give each new project its own workspace (for example a project folder "
+                "next to your current workspace, or under your user folder) and a new "
+                "chat in the AI. Do not mix a new project with old chats: the AI "
                 "may answer with stale context.")
         return text + (f" Current workspace: {path}." if path else "")
-    text = ("建议给这个项目单独建一个工作区（例如 D:\\work\\项目名），并在 AI 里新开一个对话。"
+    text = ("建议给这个项目单独建一个工作区（例如在当前工作区旁边新建一个项目文件夹，"
+            "或放在你的用户目录下），并在 AI 里新开一个对话。"
             "不要把新项目和旧项目的对话混在一起：AI 会拿旧上下文回答新问题。")
     return text + (f"当前工作区：{path}。" if path else "")
 
@@ -2185,6 +2388,7 @@ def companion_payload(now: float | None = None, break_enabled: bool = True,
                       media: dict | None = None,
                       persona: str = DEFAULT_PERSONA,
                       persona_custom: str = "",
+                      persona_name: str = "",
                       read_media: bool = True, read_game: bool = True,
                       read_web_title: bool = True,
                       work_minutes: int = 0,
@@ -2288,8 +2492,8 @@ def companion_payload(now: float | None = None, break_enabled: bool = True,
         "slot": str((slot or {}).get("id") or ""),
         "slot_label": str((slot or {}).get("label") or ""),
         "facts": facts,
-        "persona": persona_card(persona, lang, persona_custom),
-        "persona_text": persona_prompt(persona, lang, persona_custom),
+        "persona": persona_card(persona, lang, persona_custom, persona_name),
+        "persona_text": persona_prompt(persona, lang, persona_custom, persona_name),
         "speak": speak,
         "reminder": fallback,
         "fallback": fallback,

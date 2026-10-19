@@ -308,7 +308,7 @@ class TestConfirmDialog(unittest.TestCase):
                     continue
                 bg = str(child.cget("background"))
                 fg = str(child.cget("foreground"))
-                if bg == "#1b2027" and fg:
+                if bg == self.winmon.UI_BG and fg:
                     dark.append((bg, fg))
             except Exception:
                 pass

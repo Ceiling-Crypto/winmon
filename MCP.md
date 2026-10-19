@@ -1467,10 +1467,14 @@ est_tokens ≈ ceil(ascii_chars / 4 + cjk_chars / 1.6 + 24)
 >   **C 主动搭子默认关**，专注/会议/夜深三个 allow 开关默认 false，
 >   每日上限 + 最短间隔，只在 active+key 时直连；
 >   B「搭子说一句」+ `--ai-quip`（本地兜底 0 token；active+key 直连一次）；
+> - **8.5（2026-10-19 深夜）**：人设库 `persona_library`（最多 30 条、4000 字/条），
+>   下拉加「更多…」，社区角色卡（Markdown front matter / JSON `data.*`）可读取、
+>   命名、保存、使用、删除；`companion.persona.label` 使用自定义名称。
+>   助手窗口移除「当前工作」重复摘要；MCP 配置片段使用当前解释器。
 > - 测试：`test_b22`（23）、`test_b23`（15）、`test_b24`（22）、
 >   `test_b25`（15）、`test_b26`（12）、`test_b27`（9）、`test_b28`（2）、
 >   `test_b29`（18）、`test_b30`（22）、`test_b31`（14）、`test_b32`（14）、
->   `test_b33`（18）；全量 **913 用例**。
+>   `test_b33`（18）、`test_b34`（14）；全量 **928 用例**。
 > - 每日 token 预算默认 **1000 万**（`winmon_ai.DEFAULT_DAILY_TOKEN_BUDGET`）。
 
 ### 10.10 测试策略（不接真 AI 也能测）

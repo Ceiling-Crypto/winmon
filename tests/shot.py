@@ -60,6 +60,7 @@ def build_app(width: int, height: int):
     import winmon
 
     root = tk.Tk()
+    root.title(f"WinMon {winmon.APP_VER} — 桌面程序实时监控与终止")
     root.geometry(f"{width}x{height}+0+0")
     app = winmon.WinMonApp.__new__(winmon.WinMonApp)
     app.root = root
@@ -94,6 +95,8 @@ def main() -> int:
     ap = argparse.ArgumentParser(description="WinMon 界面截图工具")
     ap.add_argument("--width", type=int, default=1120)
     ap.add_argument("--height", type=int, default=720)
+    ap.add_argument("--font", type=int, default=0,
+                    help="字号大小（0 = 用默认 9）")
     ap.add_argument("--tab", type=int, default=0,
                     help="标签页序号：0 实时预览 / 1 实时总览 / 2 进程树 / 3 程序目录")
     ap.add_argument("--catalog", action="store_true",
@@ -106,6 +109,9 @@ def main() -> int:
     except Exception:
         pass
 
+    if args.font:
+        import winmon
+        winmon.set_font_size(args.font)
     root, app = build_app(args.width, args.height)
     if args.tab:
         app.notebook.select(args.tab)

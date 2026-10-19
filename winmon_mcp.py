@@ -242,6 +242,7 @@ def _tool_ai_sessions(args: dict, state: dict) -> dict:
                 foreground=fg, media=media,
                 persona=str(assist.get("persona_tone") or ai.DEFAULT_PERSONA),
                 persona_custom=str(assist.get("persona_custom") or ""),
+                persona_name=str(assist.get("persona_name") or ""),
                 read_media=bool(assist.get("read_media", True)),
                 read_game=bool(assist.get("read_game", True)),
                 read_web_title=bool(assist.get("read_web_title", True)))

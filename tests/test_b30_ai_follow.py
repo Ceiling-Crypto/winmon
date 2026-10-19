@@ -140,23 +140,11 @@ class TestBarFollowsAi(unittest.TestCase):
 
 
 class TestWorkAndBreak(unittest.TestCase):
-    def test_work_kind_and_summary(self):
-        class W:
-            def __init__(self, hwnd, proc, title, cpu=0):
-                self.hwnd, self.proc, self.title = hwnd, proc, title
-                self.real_name = proc
-                self.cpu = cpu
-                self.mem_private_kb = 1024
-                self.is_hidden_surface = False
-        wins = [W(1, "Code.exe", "winmon.py — Visual Studio Code", 5),
-                W(2, "msedge.exe", "Python 文档", 1)]
+    def test_work_kind_classification(self):
         self.assertEqual(ai.work_kind_of("Code.exe", "x"), "编程")
         self.assertEqual(ai.work_kind_of("winword.exe", "文档"), "文档")
-        text = ai.describe_work(wins, 1, work_minutes=37)
-        self.assertIn("当前工作：编程", text)
-        self.assertIn("Visual Studio Code", text)
-        self.assertIn("37 分钟", text)
-        self.assertIn("0 token", text)
+        self.assertFalse(hasattr(ai, "describe_work"),
+                         "AI 助手已不再重复显示“当前工作”")
 
     def test_time_slots_use_24h_clock(self):
         import time
