@@ -3,7 +3,7 @@
 A5 —— 主窗口：界面尺寸、控件不溢出、安全保护。
 
 对应 HANDOFF.md：
-  · 界面固定 1280×800（最小 1080×660），"93 个控件无一横向超出"是程序化校验的结论，
+  · 界面固定 1160×730（最小 1080×660），"控件无一横向超出"是程序化校验的结论，
     这里把它变成可重复的测试
   · 坑 13：Treeview 行高必须大于图标高度，否则图标被裁成一条竖条
   · 安全保护：关键系统进程拒绝结束、禁止结束自己（必须真的拦住，不能只写在文档里）
@@ -22,7 +22,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import _helpers as h                     # noqa: E402
 import winmon_core as core               # noqa: E402
 
-APP_W, APP_H = 1280, 800
+APP_W, APP_H = 1160, 730
 MIN_W, MIN_H = 1080, 660
 
 #: 已知可以超出窗口右边缘的控件：Treeview 里的列会横向滚动，
@@ -123,7 +123,7 @@ class TestMainWindowLayout(unittest.TestCase):
         压得更狠（reqwidth=73 却只有 1px）时按钮直接看不见 ——
         而它的右边缘仍在窗口内，所以"越界"类判据完全测不出来。
 
-        实测在 1280 宽下，顶部工具条正是这种情况：
+        实测在 1120 宽下，顶部工具条正是这种情况：
         「移除选中总览」被压成 38px、「加入总览」被压到 1px 而彻底消失。
         """
         self.root.geometry(f"{APP_W}x{APP_H}")
@@ -223,7 +223,7 @@ class TestMainWindowLayout(unittest.TestCase):
         **窗口必须跟着 DPI 缩放**（2026-10-13 修的真 bug）。
 
         本进程是 DPI 感知的（`enable_dpi_awareness()`），150% 缩放下字体与控件
-        都比设计稿宽 1.5 倍；窗口若还按 1280×800 物理像素开，就真有控件被挤没 ——
+        都比设计稿宽 1.5 倍；窗口若还按设计稿的物理像素开，就真有控件被挤没 ——
         实测「加入总览」需要 109px 却只剩 17px（媒体那行的说明只剩 14px），
         而 `test_a5` 以前的检查**看不到**：测试进程没开 DPI 感知，字体没被放大。
         这里把"按 DPI 放大窗口"的计算本身钉住（UI 是同一套版式，比例对了就不会挤）。
@@ -236,16 +236,16 @@ class TestMainWindowLayout(unittest.TestCase):
             self.assertEqual(self.winmon.dpi_scale_from(bad), 1.0)
         self.assertEqual(self.winmon.dpi_scale_from(10_000), 3.0)
 
-        self.assertEqual(self.winmon.scaled_window_size(1.0), (1280, 800))
-        self.assertEqual(self.winmon.scaled_window_size(1.5), (1920, 1200))
+        self.assertEqual(self.winmon.scaled_window_size(1.0), (1160, 730))
+        self.assertEqual(self.winmon.scaled_window_size(1.5), (1740, 1095))
         # 屏幕装不下缩放后的尺寸时夹到屏幕内，但**不小于设计稿** ——
         # 比设计稿还小才是真的挤坏，那属于小屏硬约束
-        # （与 README「比 1280×800 小的屏幕会被裁」一致）。
+        # （与 README「比 1160×730 小的屏幕会被裁」一致）。
         w_small, h_small = self.winmon.scaled_window_size(1.5, screen=(1366, 768))
-        self.assertGreaterEqual(w_small, 1280)
-        self.assertGreaterEqual(h_small, 800)
+        self.assertGreaterEqual(w_small, 1160)
+        self.assertGreaterEqual(h_small, 730)
         self.assertLessEqual(w_small, 1366)
-        self.assertLessEqual(h_small, 800)          # 768 屏放不下设计稿，取设计稿
+        self.assertLessEqual(h_small, 768)
         small = self.winmon.scaled_window_size(2.0, screen=(2560, 1600))
         self.assertLessEqual(small[1], int(1600 * 0.92))
 

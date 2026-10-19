@@ -92,8 +92,8 @@ def build_app(width: int, height: int):
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="WinMon 界面截图工具")
-    ap.add_argument("--width", type=int, default=1280)
-    ap.add_argument("--height", type=int, default=800)
+    ap.add_argument("--width", type=int, default=1120)
+    ap.add_argument("--height", type=int, default=720)
     ap.add_argument("--tab", type=int, default=0,
                     help="标签页序号：0 实时预览 / 1 实时总览 / 2 进程树 / 3 程序目录")
     ap.add_argument("--catalog", action="store_true",

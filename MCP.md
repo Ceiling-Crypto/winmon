@@ -1470,7 +1470,7 @@ est_tokens ≈ ceil(ascii_chars / 4 + cjk_chars / 1.6 + 24)
 > - 测试：`test_b22`（23）、`test_b23`（15）、`test_b24`（22）、
 >   `test_b25`（15）、`test_b26`（12）、`test_b27`（9）、`test_b28`（2）、
 >   `test_b29`（18）、`test_b30`（22）、`test_b31`（14）、`test_b32`（14）、
->   `test_b33`（10）；全量 **905 用例**。
+>   `test_b33`（18）；全量 **913 用例**。
 > - 每日 token 预算默认 **1000 万**（`winmon_ai.DEFAULT_DAILY_TOKEN_BUDGET`）。
 
 ### 10.10 测试策略（不接真 AI 也能测）

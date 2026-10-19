@@ -169,7 +169,7 @@ class TestFullAppStartup(unittest.TestCase):
         开窗尺寸 = 设计稿 × DPI 缩放（2026-10-13 修的真 bug 的接线检查）。
 
         纯计算在 `test_a5` 里逐条核对；这里确认真 app 真的按它开了窗 ——
-        本测试进程没开 DPI 感知，所以缩放是 1.0、尺寸就是设计稿 1280×800。
+        本测试进程没开 DPI 感知，所以缩放是 1.0、尺寸就是设计稿 1160×730。
         """
         import winmon
         root, app = self._make_app()

@@ -1259,7 +1259,10 @@ def format_ai_summary(primary: dict | None, status: dict | None,
         status_kind = "mcp"
     elif kind == "direct":
         model = str(connection.get("model") or "")
-        connection_text = p("直连就绪", "direct ready") + (f" ({model})" if model else "")
+        connection_text = p("直连就绪", "direct ready")
+        if connection.get("manual"):
+            connection_text += p("（手动）", " (manual)")
+        connection_text += (f" ({model})" if model else "")
         status_kind = "direct"
     elif kind == "clipboard":
         connection_text = p("未接入（可复制）", "not connected (clipboard)")
@@ -1280,7 +1283,10 @@ def format_ai_summary(primary: dict | None, status: dict | None,
         if len(follow) > 12:
             follow = follow[:11] + "…"
         if info.get("configured") is False:
-            follow_text = (p(f"跟随 {follow}（无直连）", f"following {follow} (no direct)")
+            verb_zh = "指定" if info.get("manual_direct") else "跟随"
+            verb_en = "selected" if info.get("manual_direct") else "following"
+            follow_text = (p(f"{verb_zh} {follow}（无直连）",
+                             f"{verb_en} {follow} (no direct)")
                            if follow else p("无直连", "no direct"))
         else:
             model = str(info.get("model") or p("模型", "model"))
@@ -1777,6 +1783,9 @@ DEFAULT_ASSIST = {
     "read_media": True,
     "read_game": True,
     "read_web_title": True,
+    #: 直连目标：空串 = 跟随当前识别到的 AI；否则是用户手动选的 profile 名。
+    #: 手动指定只在用户显式选择后生效，绝不自动换模型。
+    "direct_provider": "",
     # C：主动检测 + 直连（默认关，必须用户显式打开；专注/会议/夜深也默认不允许）
     "proactive_enabled": False,
     "proactive_max_per_day": 3,
@@ -1822,6 +1831,7 @@ def load_assist() -> dict:
     data["read_media"] = bool(raw.get("read_media", True))
     data["read_game"] = bool(raw.get("read_game", True))
     data["read_web_title"] = bool(raw.get("read_web_title", True))
+    data["direct_provider"] = str(raw.get("direct_provider") or "").strip()[:40]
     data["proactive_enabled"] = bool(raw.get("proactive_enabled", False))
     try:
         data["proactive_max_per_day"] = max(
@@ -1873,6 +1883,8 @@ def save_assist(data: dict) -> dict:
             data.get("persona_custom", clean.get("persona_custom", "")))
         for key in ("read_media", "read_game", "read_web_title"):
             clean[key] = bool(data.get(key, clean.get(key, True)))
+        clean["direct_provider"] = str(data.get(
+            "direct_provider", clean.get("direct_provider", "")) or "").strip()[:40]
         clean["proactive_enabled"] = bool(data.get(
             "proactive_enabled", clean.get("proactive_enabled", False)))
         try:

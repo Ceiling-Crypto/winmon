@@ -41,6 +41,30 @@ PROVIDER_KINDS = ("openai", "anthropic", "zhipu")
 
 #: 识别到的 AI 名字 → 配置里的 profile 名。**不再默认 GLM**：
 #: 用户用哪个 AI，就找哪个 profile；找不到就只做剪贴板交接，绝不偷偷换模型。
+#: 给界面用的短标签；不是每个 profile 都内置，找不到就显示原 key。
+PROFILE_LABELS = {
+    "zhipu": "智谱 GLM",
+    "openai": "OpenAI",
+    "anthropic": "Claude",
+    "deepseek": "DeepSeek",
+    "moonshot": "Kimi",
+    "dashscope": "通义千问",
+    "qianfan": "文心一言",
+    "doubao": "豆包",
+    "hunyuan": "腾讯元宝",
+    "google": "Gemini",
+    "xai": "Grok",
+}
+#: profile 没在配置文件里时的环境变量兜底（只用于“给这个 AI 配 key”的提示）。
+PROFILE_KEY_ENVS = {
+    "zhipu": "WINMON_AI_API_KEY",
+    "openai": "WINMON_OPENAI_API_KEY",
+    "anthropic": "WINMON_ANTHROPIC_API_KEY",
+    "deepseek": "WINMON_DEEPSEEK_API_KEY",
+    "moonshot": "WINMON_MOONSHOT_API_KEY",
+    "dashscope": "WINMON_DASHSCOPE_API_KEY",
+}
+
 AI_PROFILE_KEYS = (
     ("chatgpt", "openai"),
     ("openai", "openai"),
@@ -72,6 +96,26 @@ def profile_key_for_ai(name: str) -> str:
         if needle and needle in low:
             return key
     return ""
+
+
+def profile_label(name: str) -> str:
+    """profile 名 → 界面短标签（未知 profile 原样返回）。"""
+    key = str(name or "").strip()
+    return PROFILE_LABELS.get(key, key)
+
+
+def resolve_profile(name: str, path: str = "") -> ProviderConfig | None:
+    """按 profile 名取配置，**不看 follow_detected**（给用户手动指定用）。"""
+    profiles, _follow, _active = load_profiles(path)
+    return profiles.get(str(name or "").strip())
+
+
+def profile_key_env(name: str, path: str = "") -> str:
+    """profile 的 key 环境变量名；没有该 profile 时用内置兜底。"""
+    cfg = resolve_profile(name, path)
+    if cfg is not None:
+        return cfg.api_key_env
+    return PROFILE_KEY_ENVS.get(str(name or "").strip(), "WINMON_AI_API_KEY")
 
 #: 分词器结果缓存（同一段文本反复计数时不再发请求）。键含 base_url + model + 文本哈希。
 _TOKEN_CACHE: dict[tuple, int] = {}

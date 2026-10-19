@@ -21,11 +21,13 @@ import os
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import _helpers as h                     # noqa: E402
 import winmon_ai as ai                   # noqa: E402
+import winmon_ai_provider as provider     # noqa: E402
 import winmon_i18n as i18n               # noqa: E402
 
 
@@ -63,6 +65,28 @@ class TestAiSummary(unittest.TestCase):
         for piece in ("Claude Desktop", "已接入 MCP", "主动", "真实 12", "估算 1"):
             self.assertIn(piece, text)
 
+    def test_manual_direct_is_marked(self):
+        text = ai.format_ai_bar(
+            {"name": "DeepSeek", "kind": "desktop", "proc": "deepseek.exe"},
+            {"provider_tokens": 5, "tokenizer_tokens": 0, "estimated_tokens": 0},
+            {"enabled": True, "key_present": True, "model": "glm-5.3"},
+            connection={"kind": "direct", "model": "glm-5.3", "manual": True})
+        self.assertIn("直连就绪（手动）", text)
+
+    def test_provider_profile_lookup_and_key_env(self):
+        with tempfile.TemporaryDirectory(prefix="winmon-b33-prof-") as tmp:
+            path = os.path.join(tmp, "provider.json")
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write('{"profiles":{"openai":{"kind":"openai",'
+                         '"api_key_env":"WINMON_OPENAI_API_KEY","model":"gpt"}}}')
+            cfg = provider.resolve_profile("openai", path)
+            self.assertIsNotNone(cfg)
+            self.assertEqual(cfg.model, "gpt")
+            self.assertEqual(provider.profile_key_env("openai", path),
+                             "WINMON_OPENAI_API_KEY")
+            self.assertEqual(provider.profile_key_env("missing", path),
+                             "WINMON_AI_API_KEY")
+
 
 @h.needs_tk
 class TestMainUiHierarchy(unittest.TestCase):
@@ -73,7 +97,7 @@ class TestMainUiHierarchy(unittest.TestCase):
         import winmon_core as core
         cls.winmon = winmon
         cls.root = tk.Tk()
-        cls.root.geometry("1280x800+0+0")
+        cls.root.geometry("1120x720+0+0")
         app = cls.app = winmon.WinMonApp.__new__(winmon.WinMonApp)
         app.root = cls.root
         app._settings_path = os.path.join(tempfile.mkdtemp(prefix="winmon-b33-"),
@@ -120,6 +144,20 @@ class TestMainUiHierarchy(unittest.TestCase):
                             str(self.root.cget("background")))
         self.assertNotEqual(str(self.app.ai_state_label.cget("bg")),
                             str(self.root.cget("background")))
+
+    def test_actions_live_in_the_left_rail(self):
+        labels = [str(w.cget("text")) for w in walk(self.app.action_rail)
+                  if w.winfo_class() in ("Button", "TButton")]
+        for label in ("加入总览", "移除总览", "AI 助手…", "设置…", "说明…"):
+            self.assertIn(label, labels)
+        self.assertGreater(self.app.action_rail.winfo_reqwidth(), 50)
+        # 顶部不再重复这些动作（否则又回到“一排白按钮”的老路）。
+        top_texts = [str(w.cget("text")) for w in walk(self.root)
+                     if w.winfo_class() in ("Button", "TButton")]
+        self.assertEqual(top_texts.count("加入总览"), 1)
+
+    def test_default_window_is_compact(self):
+        self.assertEqual((self.winmon.APP_W, self.winmon.APP_H), (1160, 730))
 
     def test_ai_card_updates_identity_state_and_usage_separately(self):
         self.app._ai_status_snapshot = lambda: {
@@ -173,6 +211,7 @@ class TestConnectWindowHierarchy(unittest.TestCase):
 
         def __init__(self):
             self.guide_calls = []
+            self.saved = []
 
         def _ai_provider_snapshot(self):
             return {"api_key_env": "WINMON_AI_API_KEY", "key_present": False}
@@ -181,6 +220,7 @@ class TestConnectWindowHierarchy(unittest.TestCase):
             return {"kind": "clipboard", "ai": "DeepSeek"}
 
         def set_assist(self, **kw):
+            self.saved.append(dict(kw))
             self._ai_assist.update(kw)
             return dict(self._ai_assist)
 
@@ -231,6 +271,24 @@ class TestConnectWindowHierarchy(unittest.TestCase):
         finally:
             win.close()
 
+    def test_direct_target_is_user_choice_not_auto_deepseek(self):
+        win = self.winmon._AiConnectWindow(self.root, self.app)
+        try:
+            self.assertEqual(win.key_provider_var.get(),
+                             i18n.t("connect.key_target_follow"),
+                             "默认应是跟随当前 AI，不能直接写死某个厂商的 key")
+            with mock.patch.object(self.winmon.provider, "profile_key_env",
+                                   return_value="WINMON_OPENAI_API_KEY"):
+                win.key_provider_var.set("OpenAI")
+                win.change_key_provider()
+            self.assertEqual(self.app._ai_assist.get("direct_provider"), "openai")
+            self.assertEqual(win.key_env, "WINMON_OPENAI_API_KEY")
+            self.assertIn("WINMON_OPENAI_API_KEY", win.key_env_text.get())
+            self.assertTrue(any(item.get("direct_provider") == "openai"
+                                for item in self.app.saved))
+        finally:
+            win.close()
+
     def test_full_guide_button_uses_the_shared_window(self):
         win = self.winmon._AiConnectWindow(self.root, self.app)
         try:
@@ -238,6 +296,50 @@ class TestConnectWindowHierarchy(unittest.TestCase):
             self.assertEqual(self.app.guide_calls, ["ai"])
         finally:
             win.close()
+
+
+@h.needs_tk
+class TestFontSizeSetting(unittest.TestCase):
+    def setUp(self):
+        import tkinter as tk
+        import winmon
+        self.winmon = winmon
+        self.old = winmon.UI_FONT_SIZE
+        self.addCleanup(winmon.set_font_size, self.old)
+        self.root = tk.Tk()
+        self.root.withdraw()
+        self.addCleanup(self.root.destroy)
+
+    def test_read_font_size_from_settings(self):
+        with tempfile.TemporaryDirectory(prefix="winmon-b33-font-") as tmp:
+            path = os.path.join(tmp, "settings.json")
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write('{"font_size": 12}')
+            self.assertEqual(self.winmon.read_font_size(path), 12)
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write('{"font_size": 99}')
+            self.assertEqual(self.winmon.read_font_size(path),
+                             self.winmon.FONT_SIZE_DEFAULT)
+
+    def test_live_resize_updates_existing_widgets(self):
+        import tkinter as tk
+        label = tk.Label(self.root, text="字号 123", font=self.winmon.UI_FONT)
+        label.pack()
+        self.root.update_idletasks()
+        self.winmon.apply_font_size_live(self.root, 12)
+        self.assertIn("12", str(label.cget("font")))
+        bigger = label.winfo_reqwidth()
+        self.winmon.apply_font_size_live(self.root, 9)
+        self.assertIn(" 9", str(label.cget("font")))
+        self.assertLess(label.winfo_reqwidth(), bigger)
+
+    def test_settings_dialog_returns_font_size(self):
+        with mock.patch.object(self.winmon.core, "get_autostart", return_value=False):
+            dlg = self.winmon._SettingsDialog(self.root, "exit", False, False, 30,
+                                              "zh", 10)
+            dlg.font_size.set("大")
+            dlg._ok()
+        self.assertEqual(dlg.result["font_size"], 11)
 
 
 if __name__ == "__main__":

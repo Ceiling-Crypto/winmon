@@ -63,7 +63,10 @@ _STRINGS = {
         "connect.key": "2）直连 API key（可选）",
         "connect.key_hint": "key 只放环境变量，不要写进仓库、文档或对话。"
                             "WinMon 不保存 key 内容，只检查它在不在。",
-        "connect.key_short": "可选。只有你切到「主动 AI」时才会用到；只用 MCP 或剪贴板可以不填。",
+        "connect.key_short": "可选。先选给哪个 AI 配 key；默认跟随当前 AI，"
+                             "也可以手动指定，WinMon 不会自己换模型。",
+        "connect.key_target": "直连对象：",
+        "connect.key_target_follow": "跟随当前 AI",
         "connect.key_warning": "不要写进仓库、文档或对话；WinMon 不保存 key 内容。",
         "connect.show_key_help": "为什么需要 key？",
         "connect.key_envs": "智谱 WINMON_AI_API_KEY · OpenAI WINMON_OPENAI_API_KEY · "
@@ -164,8 +167,10 @@ _STRINGS = {
         "connect.key": "2) Direct API key (optional)",
         "connect.key_hint": "Keep the key in an environment variable only. Never put it in "
                             "a repo, document, or chat. WinMon checks presence, not content.",
-        "connect.key_short": "Optional. Only used when you switch to Active AI; MCP or "
-                             "clipboard alone needs no key.",
+        "connect.key_short": "Optional. Pick which AI this key is for; it follows the "
+                             "current AI by default, or you can choose one manually.",
+        "connect.key_target": "Direct target:",
+        "connect.key_target_follow": "Follow current AI",
         "connect.key_warning": "Never put it in a repo, document, or chat. WinMon does not "
                                "save the key contents.",
         "connect.show_key_help": "Why do I need a key?",
@@ -262,8 +267,17 @@ _STATIC_EN = {
     "保存 (Enter)": "Save (Enter)",
     "保存 AI 回复": "Save AI reply",
     "保存当前布局…": "Save layout…",
+    "保存布局…": "Save layout…",
+    "存一套窗口布局，之后一键切回":
+        "Save a window layout and restore it in one click",
+    "应用时最小化其它窗口（不碰受保护进程）":
+        "Minimize other windows on apply (protected processes stay)",
+    "更新": "Update",
     "保存时间": "Saved at",
     "播放/暂停": "Play/Pause",
+    "操作": "Actions",
+    "总览": "Overview",
+    "工具": "Tools",
     "操作历史（留痕：谁在什么时候被关闭 / 结束了）":
         "Action history (who was closed or terminated, and when)",
     "操作历史…": "History…",
@@ -314,6 +328,7 @@ _STATIC_EN = {
     "结束进程（真的退出，托盘图标一起清掉）":
         "Exit (really quit and remove the tray icon)",
     "结束进程树": "End process tree",
+    "结束整树": "End tree",
     "结束选中进程及子树": "End subtree",
     "仅可启动": "Launchable only",
     "仅显示有窗口": "Windowed only",
@@ -330,11 +345,11 @@ _STATIC_EN = {
     "类别：全部": "Category: All",
     "路径 / 目标": "Path / target",
     "媒体：": "Media:",
-    "媒体应用：": "Media app:",
+    "播放器：": "Player:",
     "模式：": "Mode:",
     "默认只勾选「删了会自动重建 / 本来就没用」的项；":
         "Only safe-to-delete items are checked by default;",
-    "内存 工作集/私有": "Memory",
+    "内存 工作/私有": "Memory",
     "内存(工作集)": "Memory",
     "判定依据：窗口不在前台、CPU 几乎为 0。\n":
         "Reason: not foreground and near-zero CPU.\n",
@@ -371,6 +386,7 @@ _STATIC_EN = {
     "显示无窗口进程": "Show windowless processes",
     "显示隐藏窗口": "Show hidden windows",
     "移除选中总览": "Remove",
+    "移除总览": "Remove",
     "以管理员打开": "Open as administrator",
     "以后到点自动关闭（不再询问）——只优雅关闭，不强杀":
         "Auto-close when due (graceful only, never force-kill)",
@@ -398,7 +414,7 @@ _STATIC_EN = {
     "重置今日用量": "Reset today's usage",
     "状态": "State",
     "自动分类": "Auto-categorize",
-    "自动唤醒": "Auto-wake",
+    "自动启动": "Auto-start",
     "总览实时刷新": "Live overview refresh",
     "最近使用…": "Recent…",
     "最小化选中的": "Minimize selected",
