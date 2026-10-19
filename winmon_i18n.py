@@ -44,29 +44,36 @@ _STRINGS = {
         "assistant.ask_hint": "问点什么，或直接点「交给 AI」…",
         "assistant.send": "交给 AI",
         "assistant.save": "保存回复",
-        "assistant.connect": "接入与建议…",
+        "assistant.connect": "接入 AI…",
         "assistant.quip": "搭子说一句",
         "assistant.history": "记录…",
         "assistant.usage": "用量…",
         "assistant.empty": "还没有记录。点「交给 AI」会把当前窗口现场复制给你正在用的 AI。",
         "assistant.reminder_owner": "提醒由接入的 AI 在对话里说；WinMon 自己不弹窗。",
-        "connect.title": "接入 AI（MCP / API key / 工作区）",
-        "connect.head": "接入与建议",
-        "connect.mcp": "1）让桌面 AI 接入（MCP，只读）",
+        "connect.title": "接入 AI",
+        "connect.head": "连接你的 AI",
+        "connect.mcp": "1）MCP 接入（推荐，只读）",
         "connect.mcp_hint": "把下面这段加到客户端的 MCP 配置里，重启客户端。"
-                            "接入后工具栏会显示「已接入 MCP（客户端名）」。",
+                            "接入后主界面的 AI 卡会显示「已接入 MCP（客户端名）」。",
+        "connect.mcp_short": "让支持 MCP 的桌面客户端（如 Claude Desktop）直接读取 WinMon；"
+                             "只读，不改任何东西。",
+        "connect.show_steps": "查看配置与步骤",
         "connect.copy_config": "复制配置",
         "connect.open_doc": "打开 MCP.md",
-        "connect.key": "2）直连 key（可选，只有主动 AI 模式会用）",
+        "connect.key": "2）直连 API key（可选）",
         "connect.key_hint": "key 只放环境变量，不要写进仓库、文档或对话。"
                             "WinMon 不保存 key 内容，只检查它在不在。",
+        "connect.key_short": "可选。只有你切到「主动 AI」时才会用到；只用 MCP 或剪贴板可以不填。",
+        "connect.key_warning": "不要写进仓库、文档或对话；WinMon 不保存 key 内容。",
+        "connect.show_key_help": "为什么需要 key？",
         "connect.key_envs": "智谱 WINMON_AI_API_KEY · OpenAI WINMON_OPENAI_API_KEY · "
                             "Claude WINMON_ANTHROPIC_API_KEY · DeepSeek WINMON_DEEPSEEK_API_KEY",
         "connect.key_temp": "只用于本次运行（不写盘）：",
         "connect.key_use": "用于本次运行",
         "connect.key_saved": "已在本进程设置 {env}（不写盘；重启后需重设或改用环境变量）。",
         "connect.key_empty": "key 为空，没有改动。",
-        "connect.workspace": "3）给新项目单独建一个工作区（推荐）",
+        "connect.workspace": "3）给新项目单独建一个工作区（可选）",
+        "connect.show_workspace": "为什么要单独建工作区？",
         "connect.workspace_hint": "不要把新项目和旧项目的对话混在一起：AI 会拿旧上下文"
                                   "回答新问题，排查时很难分清是哪一件事。WinMon 只记录路径，"
                                   "不会自动创建或移动文件。",
@@ -78,6 +85,8 @@ _STRINGS = {
         "connect.persona": "人设：",
         "connect.persona_hint": "人设只写语气和边界，台词由 AI 自由发挥；"
                                 "写代码/开会/深夜时它会安静。",
+        "connect.persona_short": "默认关心型；台词由 AI 自由发挥，人设只定语气和边界。",
+        "connect.show_persona": "人设怎么写？支持什么格式？",
         "connect.persona_copy": "复制人设",
         "connect.persona_import": "导入人设…",
         "connect.persona_support": "支持 .txt / .md / .json（UTF-8，≤4000 字）",
@@ -89,10 +98,16 @@ _STRINGS = {
         "connect.read_media": "读取媒体应用名",
         "connect.read_game": "读取游戏应用名",
         "connect.read_web": "读取浏览器网页标题",
+        "connect.show_facts": "AI 会看到哪些数据？",
+        "connect.facts_hint": "只给应用名；浏览器才给网页标题。不截屏、不读聊天/文件；"
+                              "歌曲名和歌手不会交给 AI。",
+        "connect.show_advanced": "主动 AI 的额外动作（会花 token）",
         "connect.proactive": "5）主动搭子（C，默认关）",
-        "connect.proactive_enable": "允许 WinMon 主动检测并直连说一句（会花 token）",
+        "connect.proactive_enable": "允许 WinMon 主动说一句（会花 token）",
         "connect.proactive_hint": "默认关；只在「主动 AI」且当前 AI 有 key 时生效。"
                                   "专注/会议/夜深默认不允许，由你逐项打开。",
+        "connect.proactive_short": "默认关。只有你打开、且当前 AI 有 key 时，才可能主动说一句。",
+        "connect.show_proactive": "调整场景、频率与上限",
         "connect.proactive_focus": "专注时也允许",
         "connect.proactive_meeting": "会议中也允许",
         "connect.proactive_night": "深夜也允许",
@@ -100,7 +115,7 @@ _STRINGS = {
         "connect.proactive_interval": "最短间隔",
         "connect.unit_per_day": "句",
         "connect.unit_min": "分钟",
-        "connect.break": "允许接入的 AI 提醒休息（按本地 24 小时时段）",
+        "connect.break": "把休息时段提供给 AI（由 AI 决定说不说）",
         "connect.watch": "值守（仅主动 AI：前台变化时检查，会花 token）",
         "connect.explain": "出问题时自动解释（仅主动 AI）",
         "connect.close": "关闭",
@@ -128,7 +143,7 @@ _STRINGS = {
         "assistant.ask_hint": "Ask something, or click “Send to AI”…",
         "assistant.send": "Send to AI",
         "assistant.save": "Save reply",
-        "assistant.connect": "Setup & advice…",
+        "assistant.connect": "Connect AI…",
         "assistant.quip": "Say something",
         "assistant.history": "History…",
         "assistant.usage": "Usage…",
@@ -136,23 +151,32 @@ _STRINGS = {
                             "context to the AI you are already using.",
         "assistant.reminder_owner": "Reminders come from the connected AI in its own chat; "
                                      "WinMon does not pop them up itself.",
-        "connect.title": "Connect an AI (MCP / API key / workspace)",
-        "connect.head": "Setup & advice",
-        "connect.mcp": "1) Connect a desktop AI (MCP, read-only)",
+        "connect.title": "Connect an AI",
+        "connect.head": "Connect your AI",
+        "connect.mcp": "1) MCP connection (recommended, read-only)",
         "connect.mcp_hint": "Add this to the client's MCP config and restart it. "
-                            "WinMon will then show “MCP connected (client)”.",
+                            "WinMon's AI card will then show “MCP connected (client)”.",
+        "connect.mcp_short": "Let an MCP-capable desktop client (e.g. Claude Desktop) read "
+                             "WinMon directly; read-only, nothing is changed.",
+        "connect.show_steps": "Show config and steps",
         "connect.copy_config": "Copy config",
         "connect.open_doc": "Open MCP.md",
-        "connect.key": "2) Direct API key (optional; only Active AI uses it)",
+        "connect.key": "2) Direct API key (optional)",
         "connect.key_hint": "Keep the key in an environment variable only. Never put it in "
                             "a repo, document, or chat. WinMon checks presence, not content.",
+        "connect.key_short": "Optional. Only used when you switch to Active AI; MCP or "
+                             "clipboard alone needs no key.",
+        "connect.key_warning": "Never put it in a repo, document, or chat. WinMon does not "
+                               "save the key contents.",
+        "connect.show_key_help": "Why do I need a key?",
         "connect.key_envs": "Zhipu WINMON_AI_API_KEY · OpenAI WINMON_OPENAI_API_KEY · "
                             "Claude WINMON_ANTHROPIC_API_KEY · DeepSeek WINMON_DEEPSEEK_API_KEY",
         "connect.key_temp": "This run only (not saved):",
         "connect.key_use": "Use this run",
         "connect.key_saved": "{env} is set for this process (not saved to disk).",
         "connect.key_empty": "The key is empty; nothing changed.",
-        "connect.workspace": "3) Give each new project its own workspace (recommended)",
+        "connect.workspace": "3) Give each new project its own workspace (optional)",
+        "connect.show_workspace": "Why a separate workspace?",
         "connect.workspace_hint": "Do not mix a new project with old chats: the AI may answer "
                                   "with stale context. WinMon only records the path and never "
                                   "creates or moves files.",
@@ -164,6 +188,9 @@ _STRINGS = {
         "connect.persona": "Persona:",
         "connect.persona_hint": "The persona sets tone and boundaries; the AI chooses the "
                                 "words. It stays quiet while you code, meet, or work late.",
+        "connect.persona_short": "Caring is the default; the AI chooses the words, the "
+                                 "persona only sets tone and boundaries.",
+        "connect.show_persona": "How do I write a persona? Which formats work?",
         "connect.persona_copy": "Copy persona",
         "connect.persona_import": "Import persona…",
         "connect.persona_support": "Supports .txt / .md / .json (UTF-8, max 4000 chars)",
@@ -175,11 +202,19 @@ _STRINGS = {
         "connect.read_media": "Read media app name",
         "connect.read_game": "Read game app name",
         "connect.read_web": "Read browser page title",
+        "connect.show_facts": "What data will the AI see?",
+        "connect.facts_hint": "App names only; only browsers share a page title. No "
+                              "screenshots, chats, or files; track and artist names are "
+                              "never given to the AI.",
+        "connect.show_advanced": "Extra Active AI actions (cost tokens)",
         "connect.proactive": "5) Proactive companion (C, off by default)",
-        "connect.proactive_enable": "Allow WinMon to detect and say one line (costs tokens)",
+        "connect.proactive_enable": "Allow WinMon to say one line on its own (costs tokens)",
         "connect.proactive_hint": "Off by default; only when Active AI is selected and the "
                                   "current AI has a key. Focus/meeting/late-night are denied "
                                   "by default; enable each explicitly.",
+        "connect.proactive_short": "Off by default. It can speak only after you enable it "
+                                    "and the current AI has a key.",
+        "connect.show_proactive": "Adjust contexts, frequency, and limits",
         "connect.proactive_focus": "Allow while focusing",
         "connect.proactive_meeting": "Allow in meetings",
         "connect.proactive_night": "Allow late at night",
@@ -187,7 +222,7 @@ _STRINGS = {
         "connect.proactive_interval": "Min interval",
         "connect.unit_per_day": "lines",
         "connect.unit_min": "min",
-        "connect.break": "Allow the connected AI to suggest breaks (local 24-hour slots)",
+        "connect.break": "Give the AI your break schedule (it decides whether to mention it)",
         "connect.watch": "Watch (Active AI only: check on foreground change; costs tokens)",
         "connect.explain": "Auto-explain problems (Active AI only)",
         "connect.close": "Close",
@@ -213,10 +248,6 @@ _STATIC_EN = {
         "  Save window positions and minimized state, then restore in one click.",
     "（勾了才替你启动；没有媒体会话时改用媒体键）":
         "(Starts it if checked; media keys as fallback)",
-    "（画面与刷新率只影响预览，越低越省电）":
-        "(Preview only; lower settings use less power.)",
-    "（监视后检测到播放会先问你；Space=关闭　Esc=继续）":
-        "(Asks before closing when playback is detected; Space=close, Esc=keep)",
     "（未选择程序）": "(No program selected)",
     "（长期用同名环境变量）": "(Use the same environment variable long-term)",
     "☆ 收藏": "☆ Favorite",
@@ -225,7 +256,7 @@ _STATIC_EN = {
         "AI identity and usage (provider / tokenizer / estimated)",
     "AI 用量…": "AI usage…",
     "AI 助手…": "AI assist",
-    "接入…": "Setup",
+    "接入…": "Connect…",
     "WinMon 设置": "WinMon Settings",
     "按时间提醒（24 小时制）": "Time-based reminders (24h)",
     "保存 (Enter)": "Save (Enter)",
@@ -267,7 +298,10 @@ _STATIC_EN = {
     "关闭": "Close",
     "关闭窗口": "Close window",
     "关闭选中的 (Enter)": "Close selected (Enter)",
-    "画面：": "Preview:",
+    "预览大小：": "Preview:",
+    "刷新速度：": "Refresh:",
+    "说明…": "Guide…",
+    "媒体": "Media",
     "恢复 AI 接入": "Resume AI access",
     "恢复预算只能在这里操作；MCP 没有改预算的工具。":
         "Budget can only be resumed here; MCP cannot change it.",
@@ -326,7 +360,6 @@ _STATIC_EN = {
     "视频联动：": "Video link:",
     "刷新": "Refresh",
     "刷新列表": "Refresh",
-    "刷新率：": "FPS:",
     "私有(任务管理器)": "Private",
     "搜索：": "Search:",
     "搜索程序：": "Find programs:",

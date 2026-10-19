@@ -259,10 +259,9 @@ def fit_media_text(text: str, budget: int = 78) -> str:
 
     为什么要在代码里裁（2026-10-13 修的真问题）：那个标签是**定宽**的
     （不定宽的话长曲名会把右边的按钮挤坏 —— `test_a5` 的挤压检查守着这条），
-    而定宽控件会**默默把文字切掉**、连省略号都没有：实测
-    `网易云音乐：us feat. ゆきな - 澤田空海理（从窗口标题读的）` 需要 335px
-    而标签只有 300px，于是"（从窗口标题读的）"这个**来源标注**被吞掉，
-    多会话那句"还有 N 个在放（…）"更是整句看不见 —— 用户会以为后面没有内容。
+    而定宽控件会**默默把文字切掉**、连省略号都没有：实测一条长曲名
+    需要 335px、标签只有 300px，多会话那句“还有 N 个在放（…）”
+    会被整句吞掉 —— 用户会以为后面没有内容。
 
     按"中文算 2 个宽度单位、西文算 1 个"来裁（与定宽标签的算法一致）。
     """
@@ -3056,12 +3055,280 @@ class _AiChatWindow:
             pass
 
 
+class _Disclosure:
+    """
+    可折叠的「说明」小块：默认只留一行小字，点开才显示长说明。
+
+    用户 2026-10-19 的意见：主界面和接入窗口里常驻的解释太多，像技术文档。
+    现在长解释都收进这里，主界面只保留动作和一眼要看到的数据。
+    """
+
+    def __init__(self, parent, title: str, bg: str = "", fg: str = "#1a6fb0",
+                 open: bool = False) -> None:
+        if not bg:
+            try:
+                bg = str(parent.winfo_toplevel().cget("background"))
+            except Exception:
+                bg = "#f0f0f0"
+        self._title = str(title)
+        self._bg = bg
+        self._fg = fg
+        self.open = bool(open)
+        self.holder = tk.Frame(parent, bg=bg)
+        self.button = tk.Button(
+            self.holder, text="", font=("Microsoft YaHei UI", 9),
+            fg=fg, bg=bg, activeforeground="#0b4f80", activebackground=bg,
+            relief="flat", borderwidth=0, highlightthickness=0,
+            cursor="hand2", anchor="w", padx=0, pady=1, takefocus=False,
+            command=self.toggle)
+        self.button.pack(anchor="w")
+        self.body = tk.Frame(self.holder, bg=bg)
+        self._sync_label()
+
+    def _sync_label(self) -> None:
+        self.button.configure(text=("▾ " if self.open else "▸ ") + self._title)
+
+    def toggle(self) -> None:
+        self.open = not self.open
+        if self.open:
+            self.body.pack(fill="x", padx=(14, 0), pady=(2, 2))
+        else:
+            self.body.pack_forget()
+        self._sync_label()
+
+    def pack(self, **kwargs) -> None:
+        self.holder.pack(**kwargs)
+
+
+#: 说明窗口的内容。放在模块级是为了让 `_GuideWindow` 只负责画，不堆逻辑。
+#: 每项：`(标签页名, [(样式, 文本), ...])`；样式 `h` = 小标题，`p` = 正文。
+_GUIDE_CONTENT = {
+    "zh": [
+        ("主界面", [
+            ("h", "三句话上手"),
+            ("p", "左边选中程序，右边看画面；双击最小化/还原，Enter 或中键切到最前，"
+                  "右键是完整菜单。"),
+            ("h", "预览大小和刷新速度"),
+            ("p", "它们只影响右侧预览，不改变被监控的程序。调低会更省电；"
+                  "要看视频或玩游戏时再调高。"),
+            ("h", "媒体这一行"),
+            ("p", "WinMon 先读 Windows 的媒体会话，显示“应用：曲名 · 状态”。"),
+            ("p", "有些播放器（例如网易云音乐）不向系统发布会话，WinMon 会退一步"
+                  "读它的窗口标题。这时曲名来自标题，可能带着额外文字；"
+                  "浏览器标签页标题不会被当成歌名。"),
+            ("p", "主界面只保留你此刻最需要看的应用和曲名；来源放在这份说明里，"
+                  "不挤占那一行。"),
+            ("h", "视频联动"),
+            ("p", "「监视当前窗口」只盯着你选中的那个窗口。发现开始放视频时，"
+                  "它会先问你，不会自己关。Space=关闭，Esc=继续。"),
+            ("h", "AI 状态"),
+            ("p", "高亮的「AI」显示 WinMon 识别到的外部 AI；绿色状态表示已经通过 "
+                  "MCP 或直连接上。"),
+            ("p", "「真实 / 精确 / 估算」是三种计数来源：API 回执、分词器、估算，"
+                  "不是三份账单。"),
+        ]),
+        ("AI 接入", [
+            ("h", "三条接入路径"),
+            ("p", "MCP：让桌面 AI 客户端直接读取 WinMon，只读，最推荐。"),
+            ("p", "直连 key：只有「主动 AI」模式会用；填了也不等于让 WinMon 随便调用。"),
+            ("p", "剪贴板：什么都不配也能用，点「交给 AI」把现场复制过去。"),
+            ("h", "三种模式"),
+            ("p", "只读：不联网、不调用模型。"),
+            ("p", "本地：WinMon 用本地模板给提示，0 token。"),
+            ("p", "主动 AI：你明确开启后，才允许直连模型；会花 token，受预算限制。"),
+            ("h", "休息提醒是谁说的"),
+            ("p", "接入 AI 后，休息提醒和指导由 AI 读角色说明后在对话里自己说；"
+                  "WinMon 不按时间弹提醒，也不会替 AI 编一句话。"),
+            ("h", "人设"),
+            ("p", "人设只定语气和边界，台词由 AI 自由发挥。默认关心型；"
+                  "也可以导入自己的 .txt / .md / .json。"),
+            ("p", "安全边界（不评价健康/外貌/收入/感情，写代码、开会、深夜不调侃）"
+                  "始终保留，自定义人设不能覆盖。"),
+        ]),
+        ("隐私", [
+            ("h", "伴侣素材包交给 AI 的事实"),
+            ("p", "前台应用名、媒体应用名、是否在播放、当前时段、连续工作分钟数、"
+                  "WinMon 本地事件；浏览器额外给网页标题。"),
+            ("h", "不交给伴侣"),
+            ("p", "歌曲名/歌手、非浏览器窗口标题、屏幕内容、聊天内容、文件内容、"
+                  "剪贴板内容。"),
+            ("h", "你主动点「交给 AI」时"),
+            ("p", "会额外发送一份当前窗口清单（含窗口标题），用来判断哪个程序卡住；"
+                  "这份快照只在这次操作里发出，不写进伴侣素材包。"),
+            ("h", "MCP 只读"),
+            ("p", "MCP 只有四个读取工具，没有结束进程、改预算、改设置的写工具。"),
+            ("h", "key"),
+            ("p", "key 只从环境变量或本次运行输入读取；WinMon 不保存 key 内容，"
+                  "只检查它在不在。不要把 key 写进仓库、文档或对话。"),
+        ]),
+    ],
+    "en": [
+        ("Main window", [
+            ("h", "Three things to know"),
+            ("p", "Select a program on the left to preview it on the right. "
+                  "Double-click minimizes/restores; Enter or middle-click brings it "
+                  "to the front; right-click opens the full menu."),
+            ("h", "Preview size and refresh speed"),
+            ("p", "They only affect the preview, not the monitored program. Lower "
+                  "settings use less power; raise them for video or games."),
+            ("h", "The media line"),
+            ("p", "WinMon first reads the Windows media session: “app: track · state”."),
+            ("p", "Some players (e.g. NetEase Cloud Music) do not publish a session, "
+                  "so WinMon falls back to the player's window title. The track name "
+                  "then comes from the title and may contain extra text. Browser tab "
+                  "titles are never used as track names."),
+            ("p", "The main window keeps only the app and track you need; the source "
+                  "lives in this guide instead of taking up that row."),
+            ("h", "Video link"),
+            ("p", "“Watch current window” watches only the selected window. When it "
+                  "detects playback it asks first and never closes anything by itself. "
+                  "Space = close, Esc = keep playing."),
+            ("h", "AI status"),
+            ("p", "The highlighted “AI” is the external AI WinMon detected. A green "
+                  "state means it is connected through MCP or a direct API."),
+            ("p", "“provider / exact / estimated” are three counting sources — API "
+                  "receipt, tokenizer, and estimate — not three separate bills."),
+        ]),
+        ("AI setup", [
+            ("h", "Three ways to connect"),
+            ("p", "MCP: a desktop AI client can read WinMon directly. Read-only and "
+                  "recommended."),
+            ("p", "Direct API key: only used in Active AI mode. Having a key does not "
+                  "let WinMon call a model on its own."),
+            ("p", "Clipboard: works with no setup. Click “Send to AI” to copy the "
+                  "current context."),
+            ("h", "Three modes"),
+            ("p", "Read-only: no network, no model calls."),
+            ("p", "Local: WinMon uses local templates only; 0 tokens."),
+            ("p", "Active AI: only after you enable it can WinMon call a model; this "
+                  "costs tokens and is limited by the budget."),
+            ("h", "Who gives break reminders"),
+            ("p", "After an AI is connected, break reminders and guidance come from "
+                  "that AI in its own chat, following its role instructions. WinMon "
+                  "does not pop timed reminders or invent a line for it."),
+            ("h", "Persona"),
+            ("p", "The persona sets tone and boundaries; the AI chooses the words. "
+                  "Caring is the default; you can import your own .txt / .md / .json."),
+            ("p", "Safety boundaries (no comments on health, appearance, income, or "
+                  "relationships; no teasing while coding, in meetings, or late at "
+                  "night) always remain and cannot be overridden."),
+        ]),
+        ("Privacy", [
+            ("h", "Facts in the companion packet"),
+            ("p", "Foreground app name, media app name, playing state, current time "
+                  "slot, continuous work minutes, and local WinMon incidents. Browsers "
+                  "add the page title."),
+            ("h", "Not in the companion packet"),
+            ("p", "Track/artist names, non-browser window titles, screen contents, "
+                  "chat contents, file contents, or clipboard contents."),
+            ("h", "When you click “Send to AI”"),
+            ("p", "A one-off desktop snapshot also includes the window list and titles "
+                  "so the AI can tell which program is stuck. That snapshot is sent only "
+                  "for that action; it is not added to the companion packet."),
+            ("h", "MCP is read-only"),
+            ("p", "MCP exposes four read tools. There is no tool to end processes, "
+                  "change budgets, or change settings."),
+            ("h", "Key"),
+            ("p", "The key is read from an environment variable or this run's input. "
+                  "WinMon does not save its contents; it only checks whether it is "
+                  "present. Never put a key in a repo, document, or chat."),
+        ]),
+    ],
+}
+
+
+class _GuideWindow:
+    """「使用说明」独立窗口：主界面与接入窗口共用，长解释只在这里出现。"""
+
+    def __init__(self, parent: tk.Misc, app, section: str = "main") -> None:
+        self.app = app
+        self.section = section
+        self.top = tk.Toplevel(parent)
+        self.top.title(i18n.pick("WinMon 使用说明", "WinMon guide"))
+        scale = float(getattr(app, "dpi_scale", 1.0) or 1.0)
+        sw, sh = parent.winfo_screenwidth(), parent.winfo_screenheight()
+        w = min(int(820 * scale), int(sw * 0.92))
+        h = min(int(620 * scale), int(sh * 0.88))
+        self.top.geometry(f"{w}x{h}")
+        self.top.minsize(int(680 * scale), int(460 * scale))
+        self.top.protocol("WM_DELETE_WINDOW", self.close)
+
+        wrap = ttk.Frame(self.top, padding=(12, 10))
+        wrap.pack(fill="both", expand=True)
+        tk.Label(wrap, text=i18n.pick("WinMon 使用说明", "WinMon guide"),
+                 font=("Microsoft YaHei UI", 12, "bold"),
+                 anchor="w").pack(fill="x")
+        tk.Label(wrap, text=i18n.pick(
+            "主界面只留动作和数据；需要解释时再看这里。",
+            "The main window keeps actions and data; read the details here when needed."),
+            font=UI_FONT, foreground="#667788", anchor="w").pack(fill="x", pady=(2, 8))
+
+        self.nb = ttk.Notebook(wrap)
+        self.nb.pack(fill="both", expand=True)
+        self._frames = {}
+        self._texts = {}
+        for idx, _item in enumerate(_GUIDE_CONTENT["zh"]):
+            frame = ttk.Frame(self.nb)
+            text = tk.Text(frame, wrap="word", font=UI_FONT, relief="flat",
+                           borderwidth=0, padx=12, pady=10, spacing1=2,
+                           spacing3=7, cursor="arrow")
+            scroll = ttk.Scrollbar(frame, orient="vertical", command=text.yview)
+            text.configure(yscrollcommand=scroll.set)
+            text.pack(side="left", fill="both", expand=True)
+            scroll.pack(side="right", fill="y")
+            text.tag_configure("h", font=("Microsoft YaHei UI", 10, "bold"),
+                               foreground="#174a6b", spacing1=10, spacing3=4)
+            text.tag_configure("p", font=UI_FONT, foreground="#263746",
+                               lmargin1=2, lmargin2=2)
+            text.configure(state="disabled")
+            self._frames[idx] = frame
+            self._texts[idx] = text
+            self.nb.add(frame, text="")
+        self._render()
+        btns = ttk.Frame(wrap)
+        btns.pack(fill="x", pady=(8, 0))
+        ttk.Button(btns, text=i18n.pick("知道了", "Got it"),
+                   command=self.close).pack(side="right")
+
+    def _render(self) -> None:
+        lang = i18n.get_language() if i18n.get_language() in _GUIDE_CONTENT else "zh"
+        items = _GUIDE_CONTENT[lang]
+        for idx, (tab, blocks) in enumerate(items):
+            if idx not in self._texts:
+                continue
+            self.nb.tab(idx, text=tab)
+            text = self._texts[idx]
+            text.configure(state="normal")
+            text.delete("1.0", "end")
+            for kind, body in blocks:
+                text.insert("end", body + "\n", kind)
+            text.configure(state="disabled")
+        names = {"main": 0, "ai": 1, "privacy": 2,
+                 items[0][0]: 0, items[1][0]: 1, items[2][0]: 2}
+        self.nb.select(names.get(self.section, 0))
+
+    def retranslate(self) -> None:
+        self.top.title(i18n.pick("WinMon 使用说明", "WinMon guide"))
+        self._render()
+
+    def close(self) -> None:
+        try:
+            self.top.destroy()
+        finally:
+            try:
+                self.app._guide_window = None
+            except Exception:
+                pass
+
+
 class _AiConnectWindow:
     """
     「接入 AI」独立窗口：MCP 配置 / API key 建议 / 独立工作区 / AI 行为。
 
     用户 2026-10-19 的意见：AI 助手窗口文字太多、太杂；接入建议应当单独一个窗口。
     这个窗口只做“怎么接、key 放哪、工作区怎么分”，不掺日常问答。
+    同日进一步去技术化：MCP / key 用高亮卡片，长解释全部放进 `_Disclosure`，
+    默认只看到状态、动作和一两行短句。
     """
 
     def __init__(self, parent: tk.Misc, app) -> None:
@@ -3071,12 +3338,13 @@ class _AiConnectWindow:
         scale = float(getattr(app, "dpi_scale", 1.0) or 1.0)
         sw, sh = parent.winfo_screenwidth(), parent.winfo_screenheight()
         w = min(int(820 * scale), int(sw * 0.92))
-        h = min(int(720 * scale), int(sh * 0.88))
+        h = min(int(700 * scale), int(sh * 0.88))
         self.top.geometry(f"{w}x{h}")
-        self.top.minsize(int(700 * scale), int(560 * scale))
+        self.top.minsize(int(700 * scale), int(520 * scale))
         self.top.protocol("WM_DELETE_WINDOW", self.close)
-        # 可滚动：150% 缩放下人设/媒体开关会把内容顶出窗口，不能靠“看不见”
+        # 可滚动：折叠块展开后仍可能超过窗口高度，不能靠“看不见”
         canvas = tk.Canvas(self.top, borderwidth=0, highlightthickness=0)
+        self.canvas = canvas
         vs = ttk.Scrollbar(self.top, orient="vertical", command=canvas.yview)
         canvas.configure(yscrollcommand=vs.set)
         vs.pack(side="right", fill="y")
@@ -3088,61 +3356,134 @@ class _AiConnectWindow:
         canvas.bind("<Configure>",
                     lambda e: canvas.itemconfigure(win_id, width=e.width))
 
-        tk.Label(wrap, text=i18n.t("connect.head"),
-                 font=("Microsoft YaHei UI", 11, "bold")).pack(anchor="w")
-        self.status_text = tk.StringVar(value="")
-        ttk.Label(wrap, textvariable=self.status_text, font=UI_FONT,
-                  foreground="#2a4a66", justify="left",
-                  wraplength=int(760 * scale)).pack(fill="x", pady=(4, 8))
+        head = ttk.Frame(wrap)
+        head.pack(fill="x")
+        tk.Label(head, text=i18n.t("connect.head"),
+                 font=("Microsoft YaHei UI", 12, "bold"), anchor="w").pack(side="left")
+        ttk.Button(head, text=i18n.pick("完整说明…", "Full guide…"),
+                   command=self.open_guide).pack(side="right")
 
-        # ---- 1) MCP ----
-        mcp_box = ttk.LabelFrame(wrap, text=i18n.t("connect.mcp"), padding=8)
-        mcp_box.pack(fill="x", pady=(0, 8))
-        ttk.Label(mcp_box, text=i18n.t("connect.mcp_hint"), font=UI_FONT,
-                  foreground="#555", wraplength=740, justify="left").pack(fill="x")
+        # 接入状态做成整块色条：这是整个窗口最该先看到的信息。
+        self.status_frame = tk.Frame(wrap, bg="#fff4df", highlightbackground="#e2bd7a",
+                                     highlightthickness=1, padx=10, pady=6)
+        self.status_frame.pack(fill="x", pady=(6, 10))
+        self.status_text = tk.StringVar(value="")
+        self.status_label = tk.Label(
+            self.status_frame, textvariable=self.status_text,
+            font=("Microsoft YaHei UI", 9, "bold"),
+            bg="#fff4df", fg="#7a5a00", justify="left", anchor="w",
+            wraplength=int(740 * scale))
+        self.status_label.pack(fill="x")
+
+        assist = getattr(app, "_ai_assist", {}) or {}
+        self._build_mcp_card(wrap)
+        self._build_key_card(wrap)
+        self._build_workspace_card(wrap)
+        self._build_behavior_card(wrap, assist)
+        self._build_proactive_section(wrap, assist)
+
+        btns = ttk.Frame(wrap)
+        btns.pack(fill="x", pady=(10, 0))
+        ttk.Button(btns, text=i18n.t("connect.close"),
+                   command=self.close).pack(side="right")
+        ttk.Button(btns, text=i18n.pick("完整说明…", "Full guide…"),
+                   command=self.open_guide).pack(side="right", padx=6)
+
+        self._refresh()
+        try:
+            i18n.translate_widgets(self.top)
+        except Exception:
+            pass
+
+    def _card(self, parent, title: str, accent: str, bg: str):
+        """带色条标题的小卡片：标题高亮，正文只放动作和一两行短句。"""
+        outer = tk.Frame(parent, bg=bg, highlightbackground=accent,
+                         highlightthickness=1)
+        outer.pack(fill="x", pady=(0, 8))
+        tk.Label(outer, text=title, font=("Microsoft YaHei UI", 10, "bold"),
+                 bg=bg, fg=accent, anchor="w").pack(fill="x", padx=10, pady=(7, 2))
+        body = tk.Frame(outer, bg=bg)
+        body.pack(fill="x", padx=10, pady=(0, 8))
+        return outer, body
+
+    def _build_mcp_card(self, wrap) -> None:
+        """MCP 卡片：蓝色、默认折叠配置，只留状态 + 复制按钮。"""
+        _box, body = self._card(
+            wrap, i18n.t("connect.mcp"), "#1f6f9e", "#eef7fd")
+        self.mcp_state_text = tk.StringVar(value="")
+        self.mcp_state_label = tk.Label(
+            body, textvariable=self.mcp_state_text,
+            font=("Microsoft YaHei UI", 9, "bold"), bg="#eef7fd", fg="#5b7285",
+            anchor="w")
+        self.mcp_state_label.pack(fill="x")
+        tk.Label(body, text=i18n.t("connect.mcp_short"), font=UI_FONT,
+                 bg="#eef7fd", fg="#274b63", anchor="w", justify="left",
+                 wraplength=720).pack(fill="x", pady=(2, 5))
         snippet = self._config_snippet()
-        self.config_text = tk.Text(mcp_box, height=6, wrap="none", font=MONO_FONT,
-                                   relief="solid", borderwidth=1)
-        self.config_text.pack(fill="x", pady=(4, 4))
-        self.config_text.insert("1.0", snippet)
-        self.config_text.configure(state="disabled")
-        row = ttk.Frame(mcp_box)
+        row = tk.Frame(body, bg="#eef7fd")
         row.pack(fill="x")
         ttk.Button(row, text=i18n.t("connect.copy_config"),
                    command=lambda: self._copy(snippet, i18n.t("connect.copied"))
                    ).pack(side="left")
         ttk.Button(row, text=i18n.t("connect.open_doc"),
                    command=self.open_doc).pack(side="left", padx=6)
+        self.mcp_disclosure = _Disclosure(
+            body, i18n.t("connect.show_steps"), bg="#eef7fd", fg="#1f6f9e")
+        self.mcp_disclosure.pack(fill="x", pady=(4, 0))
+        tk.Label(self.mcp_disclosure.body, text=i18n.t("connect.mcp_hint"),
+                 font=UI_FONT, bg="#eef7fd", fg="#4a6070", anchor="w",
+                 justify="left", wraplength=700).pack(fill="x")
+        #: 配置片段要让人真能读全：`wrap="word"` + 9 行，长路径会折行，
+        #: 不用再塞一个横向滚动条（那个更像技术工具）。
+        self.config_text = tk.Text(self.mcp_disclosure.body, height=9, wrap="word",
+                                   font=MONO_FONT, relief="solid", borderwidth=1)
+        self.config_text.pack(fill="x", pady=(4, 4))
+        self.config_text.insert("1.0", snippet)
+        self.config_text.configure(state="disabled")
 
-        # ---- 2) API key ----
-        key_box = ttk.LabelFrame(wrap, text=i18n.t("connect.key"), padding=8)
-        key_box.pack(fill="x", pady=(0, 8))
-        ttk.Label(key_box, text=i18n.t("connect.key_hint"), font=UI_FONT,
-                  foreground="#555", wraplength=740, justify="left").pack(fill="x")
-        ttk.Label(key_box, text=i18n.t("connect.key_envs"),
-                  font=("Microsoft YaHei UI", 8), foreground="#777").pack(fill="x")
+    def _build_key_card(self, wrap) -> None:
+        """API key 卡片：琥珀色；安全警告常驻，长解释折叠。"""
+        _box, body = self._card(
+            wrap, i18n.t("connect.key"), "#a86b00", "#fff8ea")
+        self.key_state_text = tk.StringVar(value="")
+        tk.Label(body, textvariable=self.key_state_text,
+                 font=("Microsoft YaHei UI", 9, "bold"), bg="#fff8ea",
+                 fg="#8a5a00", anchor="w").pack(fill="x")
+        tk.Label(body, text=i18n.t("connect.key_short"), font=UI_FONT,
+                 bg="#fff8ea", fg="#6b4a12", anchor="w", justify="left",
+                 wraplength=720).pack(fill="x", pady=(2, 3))
+        tk.Label(body, text=i18n.t("connect.key_warning"),
+                 font=("Microsoft YaHei UI", 9, "bold"), bg="#fff8ea",
+                 fg="#a33b1f", anchor="w", justify="left",
+                 wraplength=720).pack(fill="x", pady=(0, 5))
         self.key_env = self._key_env()
-        key_row = ttk.Frame(key_box)
-        key_row.pack(fill="x", pady=(4, 0))
+        key_row = tk.Frame(body, bg="#fff8ea")
+        key_row.pack(fill="x")
         ttk.Label(key_row, text=f"{self.key_env}"
                   + (": " if i18n.get_language() == "en" else "："),
                   font=UI_FONT).pack(side="left")
         self.key_var = tk.StringVar(value="")
-        ttk.Entry(key_row, textvariable=self.key_var, show="*", width=42).pack(
+        ttk.Entry(key_row, textvariable=self.key_var, show="*", width=30).pack(
             side="left", padx=4)
-        ttk.Button(key_row, text=i18n.t("connect.key_use"), width=12,
+        ttk.Button(key_row, text=i18n.t("connect.key_use"), width=11,
                    command=self.use_key).pack(side="left")
-        ttk.Label(key_row, text=i18n.t("connect.key_temp"), font=UI_FONT,
-                  foreground="#777").pack(side="left", padx=6)
+        self.key_disclosure = _Disclosure(
+            body, i18n.t("connect.show_key_help"), bg="#fff8ea", fg="#a86b00")
+        self.key_disclosure.pack(fill="x", pady=(4, 0))
+        tk.Label(self.key_disclosure.body, text=i18n.t("connect.key_hint"),
+                 font=UI_FONT, bg="#fff8ea", fg="#5f4b28", anchor="w",
+                 justify="left", wraplength=700).pack(fill="x")
+        tk.Label(self.key_disclosure.body, text=i18n.t("connect.key_envs"),
+                 font=("Microsoft YaHei UI", 8), bg="#fff8ea", fg="#7a6240",
+                 anchor="w", justify="left", wraplength=700).pack(fill="x", pady=(2, 0))
 
-        # ---- 3) workspace ----
-        ws_box = ttk.LabelFrame(wrap, text=i18n.t("connect.workspace"), padding=8)
-        ws_box.pack(fill="x", pady=(0, 8))
-        ttk.Label(ws_box, text=i18n.t("connect.workspace_hint"), font=UI_FONT,
-                  foreground="#555", wraplength=740, justify="left").pack(fill="x")
+    def _build_workspace_card(self, wrap) -> None:
+        """工作区卡片：路径与三个动作常驻，长解释默认折叠。"""
+        _box, body = self._card(
+            wrap, i18n.t("connect.workspace"), "#5b6b7a", "#f3f6f8")
         self.workspace_text = tk.StringVar(value="")
-        ws_row = ttk.Frame(ws_box)
-        ws_row.pack(fill="x", pady=(4, 0))
+        ws_row = tk.Frame(body, bg="#f3f6f8")
+        ws_row.pack(fill="x")
         ttk.Label(ws_row, textvariable=self.workspace_text, font=UI_FONT,
                   foreground="#2a4a66").pack(side="left", fill="x", expand=True)
         ttk.Button(ws_row, text=i18n.t("connect.workspace_pick"),
@@ -3151,14 +3492,21 @@ class _AiConnectWindow:
                    command=self.open_workspace).pack(side="left", padx=2)
         ttk.Button(ws_row, text=i18n.t("connect.workspace_copy"),
                    command=self.copy_advice).pack(side="left", padx=2)
+        self.ws_disclosure = _Disclosure(
+            body, i18n.t("connect.show_workspace"), bg="#f3f6f8", fg="#5b6b7a")
+        self.ws_disclosure.pack(fill="x", pady=(3, 0))
+        tk.Label(self.ws_disclosure.body, text=i18n.t("connect.workspace_hint"),
+                 font=UI_FONT, bg="#f3f6f8", fg="#4a5a68", anchor="w",
+                 justify="left", wraplength=700).pack(fill="x")
 
-        # ---- 4) behaviour ----
-        beh = ttk.LabelFrame(wrap, text=i18n.t("connect.behavior"), padding=8)
-        beh.pack(fill="x")
-        assist = getattr(app, "_ai_assist", {}) or {}
-        persona_row = ttk.Frame(beh)
+    def _build_behavior_card(self, wrap, assist) -> None:
+        """AI 行为卡片：人设、读取开关常驻；进阶动作折叠。"""
+        _box, body = self._card(
+            wrap, i18n.t("connect.behavior"), "#3b6f5a", "#f1f8f4")
+        persona_row = tk.Frame(body, bg="#f1f8f4")
         persona_row.pack(fill="x")
-        ttk.Label(persona_row, text=i18n.t("connect.persona"), font=UI_FONT).pack(side="left")
+        ttk.Label(persona_row, text=i18n.t("connect.persona"),
+                  font=UI_FONT).pack(side="left")
         self._persona_by_label = {v: k for k, v in ai.persona_labels(
             i18n.get_language()).items()}
         self.persona_var = tk.StringVar(value=ai.persona_label(
@@ -3177,13 +3525,25 @@ class _AiConnectWindow:
         self.persona_import_btn.pack(side="left", padx=6)
         self._persona_custom = ai.normalize_custom_persona(assist.get("persona_custom"))
         self.persona_status = tk.StringVar(value="")
-        ttk.Label(beh, textvariable=self.persona_status, font=("Microsoft YaHei UI", 8),
-                  foreground="#2a4a66", wraplength=720).pack(anchor="w", pady=(2, 0))
-        ttk.Label(beh, text=i18n.t("connect.persona_hint"), font=("Microsoft YaHei UI", 8),
-                  foreground="#777", wraplength=720).pack(anchor="w", pady=(2, 4))
+        tk.Label(body, textvariable=self.persona_status,
+                 font=("Microsoft YaHei UI", 8), bg="#f1f8f4", fg="#2a4a66",
+                 anchor="w", justify="left", wraplength=720).pack(fill="x", pady=(2, 0))
+        tk.Label(body, text=i18n.t("connect.persona_short"),
+                 font=("Microsoft YaHei UI", 8), bg="#f1f8f4", fg="#60756c",
+                 anchor="w", justify="left", wraplength=720).pack(fill="x", pady=(1, 3))
         self._update_persona_status()
-        facts_row = ttk.Frame(beh)
-        facts_row.pack(fill="x")
+        self.persona_disclosure = _Disclosure(
+            body, i18n.t("connect.show_persona"), bg="#f1f8f4", fg="#3b6f5a")
+        self.persona_disclosure.pack(fill="x")
+        tk.Label(self.persona_disclosure.body, text=i18n.t("connect.persona_hint"),
+                 font=("Microsoft YaHei UI", 8), bg="#f1f8f4", fg="#5c6f66",
+                 anchor="w", justify="left", wraplength=700).pack(fill="x")
+        tk.Label(self.persona_disclosure.body, text=i18n.t("connect.persona_support"),
+                 font=("Microsoft YaHei UI", 8), bg="#f1f8f4", fg="#5c6f66",
+                 anchor="w").pack(fill="x")
+
+        facts_row = tk.Frame(body, bg="#f1f8f4")
+        facts_row.pack(fill="x", pady=(4, 0))
         self.read_media_var = tk.BooleanVar(value=bool(assist.get("read_media", True)))
         ttk.Checkbutton(facts_row, text=i18n.t("connect.read_media"),
                         variable=self.read_media_var,
@@ -3196,45 +3556,48 @@ class _AiConnectWindow:
         ttk.Checkbutton(facts_row, text=i18n.t("connect.read_web"),
                         variable=self.read_web_var,
                         command=self.toggle_facts).pack(side="left")
+        self.facts_disclosure = _Disclosure(
+            body, i18n.t("connect.show_facts"), bg="#f1f8f4", fg="#3b6f5a")
+        self.facts_disclosure.pack(fill="x", pady=(2, 0))
+        tk.Label(self.facts_disclosure.body, text=i18n.t("connect.facts_hint"),
+                 font=("Microsoft YaHei UI", 8), bg="#f1f8f4", fg="#5c6f66",
+                 anchor="w", justify="left", wraplength=700).pack(fill="x")
         self.break_var = tk.BooleanVar(value=bool(assist.get("break_enabled", True)))
-        ttk.Checkbutton(beh, text=i18n.t("connect.break"), variable=self.break_var,
+        ttk.Checkbutton(body, text=i18n.t("connect.break"),
+                        variable=self.break_var,
                         command=self.toggle_break).pack(anchor="w", pady=(4, 0))
+        self.advanced_disclosure = _Disclosure(
+            body, i18n.t("connect.show_advanced"), bg="#f1f8f4", fg="#3b6f5a")
+        self.advanced_disclosure.pack(fill="x", pady=(2, 0))
         self.watch_var = tk.BooleanVar(value=bool(assist.get("enabled")))
-        self.watch_chk = ttk.Checkbutton(beh, text=i18n.t("connect.watch"),
-                                         variable=self.watch_var,
-                                         command=self.toggle_watch)
-        self.watch_chk.pack(anchor="w", pady=(4, 0))
+        self.watch_chk = ttk.Checkbutton(
+            self.advanced_disclosure.body, text=i18n.t("connect.watch"),
+            variable=self.watch_var, command=self.toggle_watch)
+        self.watch_chk.pack(anchor="w")
         self.explain_var = tk.BooleanVar(value=bool(assist.get("auto_explain")))
-        self.explain_chk = ttk.Checkbutton(beh, text=i18n.t("connect.explain"),
-                                           variable=self.explain_var,
-                                           command=self.toggle_explain)
+        self.explain_chk = ttk.Checkbutton(
+            self.advanced_disclosure.body, text=i18n.t("connect.explain"),
+            variable=self.explain_var, command=self.toggle_explain)
         self.explain_chk.pack(anchor="w")
         self._sync_behavior()
 
-        self._build_proactive_section(wrap, assist)
-
-        btns = ttk.Frame(wrap)
-        btns.pack(fill="x", pady=(10, 0))
-        ttk.Button(btns, text=i18n.t("connect.close"),
-                   command=self.close).pack(side="right")
-
-        self._refresh()
-        try:
-            i18n.translate_widgets(self.top)
-        except Exception:
-            pass
-
     def _build_proactive_section(self, wrap, assist) -> None:
         # ---- 5) C：主动搭子（默认关，用户显式开启）----
-        pro = ttk.LabelFrame(wrap, text=i18n.t("connect.proactive"), padding=8)
-        pro.pack(fill="x", pady=(8, 0))
+        pro, pro_body = self._card(
+            wrap, i18n.t("connect.proactive"), "#6b4fa8", "#f6f2fc")
         self.proactive_var = tk.BooleanVar(value=bool(assist.get("proactive_enabled", False)))
         self.proactive_chk = ttk.Checkbutton(
-            pro, text=i18n.t("connect.proactive_enable"), variable=self.proactive_var,
+            pro_body, text=i18n.t("connect.proactive_enable"), variable=self.proactive_var,
             command=self.toggle_proactive)
         self.proactive_chk.pack(anchor="w")
-        gates = ttk.Frame(pro)
-        gates.pack(fill="x", pady=(4, 0))
+        tk.Label(pro_body, text=i18n.t("connect.proactive_short"),
+                 font=("Microsoft YaHei UI", 8), bg="#f6f2fc", fg="#655a78",
+                 anchor="w", justify="left", wraplength=720).pack(fill="x", pady=(2, 3))
+        self.proactive_disclosure = _Disclosure(
+            pro_body, i18n.t("connect.show_proactive"), bg="#f6f2fc", fg="#6b4fa8")
+        self.proactive_disclosure.pack(fill="x")
+        gates = tk.Frame(self.proactive_disclosure.body, bg="#f6f2fc")
+        gates.pack(fill="x", pady=(2, 0))
         self.allow_focus_var = tk.BooleanVar(value=bool(assist.get("allow_focus", False)))
         self.allow_meeting_var = tk.BooleanVar(value=bool(assist.get("allow_meeting", False)))
         self.allow_night_var = tk.BooleanVar(value=bool(assist.get("allow_night", False)))
@@ -3250,7 +3613,7 @@ class _AiConnectWindow:
             gates, text=i18n.t("connect.proactive_night"), variable=self.allow_night_var,
             command=self.toggle_proactive_gates)
         self.allow_night_chk.pack(side="left")
-        limits = ttk.Frame(pro)
+        limits = tk.Frame(self.proactive_disclosure.body, bg="#f6f2fc")
         limits.pack(fill="x", pady=(4, 0))
         ttk.Label(limits, text=i18n.t("connect.proactive_max"), font=UI_FONT).pack(side="left")
         self.proactive_max_var = tk.StringVar(
@@ -3277,8 +3640,10 @@ class _AiConnectWindow:
         self.proactive_interval_combo.bind("<<ComboboxSelected>>",
                                            lambda _e: self.change_proactive_limits())
         ttk.Label(limits, text=i18n.t("connect.unit_min"), font=UI_FONT).pack(side="left")
-        ttk.Label(pro, text=i18n.t("connect.proactive_hint"), font=("Microsoft YaHei UI", 8),
-                  foreground="#777", wraplength=720).pack(anchor="w", pady=(3, 0))
+        tk.Label(self.proactive_disclosure.body,
+                 text=i18n.t("connect.proactive_hint"),
+                 font=("Microsoft YaHei UI", 8), bg="#f6f2fc", fg="#655a78",
+                 anchor="w", justify="left", wraplength=700).pack(fill="x", pady=(3, 0))
         self._sync_proactive()
 
     # ---- 数据 -------------------------------------------------------
@@ -3309,10 +3674,39 @@ class _AiConnectWindow:
             text = i18n.pick(f"直连就绪：{conn.get('ai')} → {conn.get('model')}",
                              f"Direct ready: {conn.get('ai')} → {conn.get('model')}")
         else:
-            text = i18n.pick("还没接上：先按第 1 步配置 MCP，或按第 2 步放 key",
-                             "Not connected yet: do step 1 (MCP) or step 2 (key)")
+            text = i18n.pick("还没接上；MCP 最省事，不想配置也能直接用剪贴板。",
+                             "Not connected yet; MCP is easiest, and clipboard works without setup.")
         self.status_text.set(i18n.t("connect.status")
                              + (": " if i18n.get_language() == "en" else "：") + text)
+        #: 状态色条：绿色=真接上了，蓝色=直连就绪，琥珀=还没接上。
+        if kind in ("mcp", "direct"):
+            self.status_frame.configure(bg="#e7f6ec", highlightbackground="#8fc9a4")
+            self.status_label.configure(bg="#e7f6ec", fg="#17663f")
+        else:
+            self.status_frame.configure(bg="#fff4df", highlightbackground="#e2bd7a")
+            self.status_label.configure(bg="#fff4df", fg="#7a5a00")
+        if hasattr(self, "mcp_state_text"):
+            if kind == "mcp":
+                self.mcp_state_text.set(i18n.pick(
+                    f"● 已接入：{conn.get('client')}",
+                    f"● Connected: {conn.get('client')}"))
+                self.mcp_state_label.configure(fg="#17663f")
+            else:
+                self.mcp_state_text.set(i18n.pick(
+                    "○ 还没接入：点「复制配置」粘到 AI 客户端即可",
+                    "○ Not connected: click “Copy config” and paste it into your AI client"))
+                self.mcp_state_label.configure(fg="#5b7285")
+        if hasattr(self, "key_state_text"):
+            try:
+                info = self.app._ai_provider_snapshot()
+                has_key = bool(info.get("key_present"))
+            except Exception:
+                has_key = False
+            self.key_state_text.set(i18n.pick(
+                "● key：已设置（只在主动 AI 模式使用）" if has_key
+                else "○ key：未设置（可选；只用 MCP 也能工作）",
+                "● key: set (Active AI mode only)" if has_key
+                else "○ key: not set (optional; MCP alone works)"))
         ws = str((getattr(self.app, "_ai_assist", {}) or {}).get("workspace_dir") or "")
         self.workspace_text.set(ws or i18n.t("connect.workspace_none"))
         try:
@@ -3354,6 +3748,7 @@ class _AiConnectWindow:
             return
         os.environ[self.key_env or "WINMON_AI_API_KEY"] = key
         self.key_var.set("")
+        self._refresh()
         self.status_text.set(i18n.t("connect.key_saved", env=self.key_env))
         try:
             self.app._ai_usage_cache = (0.0, None)
@@ -3396,6 +3791,16 @@ class _AiConnectWindow:
         except Exception as exc:
             self.status_text.set(f"{type(exc).__name__}: {exc}")
 
+    def open_guide(self) -> None:
+        """打开完整说明；主界面和接入窗口共用同一个说明窗口。"""
+        opener = getattr(self.app, "action_guide", None)
+        if callable(opener):
+            opener("ai")
+        else:
+            self.status_text.set(i18n.pick(
+                "完整说明在当前 WinMon 主界面里打开。",
+                "The full guide opens from the main WinMon window."))
+
     def toggle_break(self) -> None:
         self.app.set_assist(break_enabled=bool(self.break_var.get()))
 
@@ -3416,13 +3821,14 @@ class _AiConnectWindow:
     def _update_persona_status(self) -> None:
         tone = self._persona_by_label.get(self.persona_var.get(), ai.DEFAULT_PERSONA)
         if tone == "custom" and not self._persona_custom:
-            self.persona_status.set(i18n.t("connect.persona_none") + "  "
-                                    + i18n.t("connect.persona_support"))
+            self.persona_status.set(i18n.t("connect.persona_none"))
         elif tone == "custom":
             self.persona_status.set(i18n.t("connect.persona_loaded",
                                            n=len(self._persona_custom)))
         else:
-            self.persona_status.set(i18n.t("connect.persona_support"))
+            #: 默认/内建人设已经由下拉框写明了，不再重复一行“支持 .txt…”；
+            #: 格式说明在下面的折叠块里。
+            self.persona_status.set("")
 
     def import_persona(self) -> None:
         try:
@@ -3884,6 +4290,7 @@ class WinMonApp:
         self._ai_usage_window = None
         self._ai_assistant_window = None
         self._ai_connect_window = None
+        self._guide_window = None
         # AI 用量的界面缓存（2 秒一拍，不必每拍都扫账本）
         self._ai_budget = ai.Budget()
         self._ai_usage_cache = (0.0, None)
@@ -4047,6 +4454,9 @@ class WinMonApp:
         self._media_found = False
         #: 上一次选中的会话（失败时的提示要用）
         self._media_last_pick: dict = {}
+        #: 当前这行媒体的来源：session / title / ""（只用于说明与排错，
+        #: 不再把“从窗口标题读的”塞进主界面那一行）。
+        self._media_source = ""
         #: 后台是否正在读媒体会话（避免叠好几条 PowerShell）
         self._media_busy = False
         #: 上次读媒体会话的时刻（它要起 PowerShell，约 290ms，所以比刷新慢一拍）
@@ -4112,21 +4522,24 @@ class WinMonApp:
         ttk.Button(bar, text="加入总览", width=9,
                    command=self.gallery_add_selected).pack(side="right", padx=2)
 
-        # ---- 顶部工具栏（第二行：画面尺寸 / 刷新率 / 跟随选择 / 总览刷新）----
+        # ---- 顶部工具栏（第二行：预览大小 / 刷新速度 / 跟随选择 / 总览刷新）----
+        #
+        # 长解释不再常驻：用户 2026-10-19 的意见是“太像技术文档”。这些设置还在，
+        # 但“只影响预览、越低越省电”收进「说明…」，这一行只留控件。
         bar2 = ttk.Frame(self.root, padding=(8, 0))
         bar2.pack(fill="x")
-        ttk.Label(bar2, text="画面：", font=UI_FONT).pack(side="left")
+        ttk.Label(bar2, text="预览大小：", font=UI_FONT).pack(side="left")
         ttk.Combobox(bar2, textvariable=self.size_choice, state="readonly", width=13,
                      values=[s[0] for s in PREVIEW_SIZES], font=UI_FONT).pack(side="left", padx=2)
-        ttk.Label(bar2, text="刷新率：", font=UI_FONT).pack(side="left", padx=(8, 0))
+        ttk.Label(bar2, text="刷新速度：", font=UI_FONT).pack(side="left", padx=(8, 0))
         ttk.Combobox(bar2, textvariable=self.fps_choice, state="readonly", width=14,
                      values=[f[0] for f in FPS_CHOICES], font=UI_FONT).pack(side="left", padx=2)
         ttk.Checkbutton(bar2, text="跟随选择", variable=self.follow_selection).pack(
             side="left", padx=(10, 2))
         ttk.Checkbutton(bar2, text="总览实时刷新", variable=self.live_gallery).pack(
             side="left", padx=2)
-        ttk.Label(bar2, text="（画面与刷新率只影响预览，越低越省电）", font=UI_FONT,
-                  foreground="#888").pack(side="left", padx=(10, 0))
+        ttk.Button(bar2, text="说明…", width=7,
+                   command=self.action_guide).pack(side="right", padx=2)
 
         # ---- 视频联动 + 媒体（合成工具栏里的一行；拆成独立方法，免得 _build_ui 过长）----
         self._build_video_bars()
@@ -4339,24 +4752,27 @@ class WinMonApp:
                    command=self.stop_video_watch).pack(side="left", padx=2)
         ttk.Button(vbar, text="直接关闭视频", width=12,
                    command=self.action_stop_video).pack(side="left", padx=2)
-        ttk.Label(vbar, text="（监视后检测到播放会先问你；Space=关闭　Esc=继续）",
-                  font=UI_FONT, foreground="#6b7c8c").pack(side="left", padx=(10, 0))
 
-        # ---- 第 2 行：媒体独占一行 ----
-        mbar = ttk.Frame(self.root, padding=(8, 2))
-        mbar.pack(fill="x", pady=(0, 4))
-        ttk.Label(mbar, text="媒体：", font=BOLD_FONT).pack(side="left")
+        # ---- 第 2 行：媒体独占一行（做成高亮卡片，一眼看到“是谁在放什么”）----
+        #
+        # 来源说明（“从窗口标题读的”）不再挤在这一行：用户 2026-10-19 指出，
+        # 这类技术细节应当收进说明窗口。主界面只留应用名 + 曲名 + 状态。
+        mbar = tk.Frame(self.root, bg="#eef8f4", highlightbackground="#a9d8ce",
+                        highlightthickness=1, padx=8, pady=3)
+        mbar.pack(fill="x", padx=8, pady=(0, 4))
+        tk.Label(mbar, text="媒体", font=("Microsoft YaHei UI", 9, "bold"),
+                 bg="#0f6b5c", fg="white", padx=7, pady=1).pack(side="left", padx=(0, 8))
         #: 当前在放什么（曲名 · 歌手 · 状态）。**没有进度** —— 用户已放弃识别进度。
         self.media_text = tk.StringVar(value="（还没读取）")
-        #: 这一行的宽度（**字符**单位）：比原来宽一半，好装下真实曲名 + 来源标注
-        #: + 多会话那句"还有 N 个在放"。装不下的部分由 `fit_media_text()` 用 `…` 收尾，
-        #: 绝不静默切断（理由见那个函数）。
-        #: 64 是**实测**出来的：这一行的自然宽度必须留在 1280 以内，
-        #: 否则末尾那句"（勾了才替你启动；没有媒体会话时改用媒体键）"会被 Tk 压窄
-        #: （`test_a5` 的挤压检查会报红）。
+        #: 这一行的宽度（**字符**单位）。装不下的部分由 `fit_media_text()` 用 `…` 收尾，
+        #: 绝不静默切断（理由见那个函数）。仍取 64：去掉来源说明后腾出的空间用来
+        #: 加粗和放大，而不是牺牲“还有 N 个在放”这类信息；`test_a5` 守着不挤压。
         self.MEDIA_TEXT_WIDTH = 64
-        tk.Label(mbar, textvariable=self.media_text, font=UI_FONT, anchor="w",
-                 fg="#123", width=self.MEDIA_TEXT_WIDTH).pack(side="left", padx=(0, 8))
+        self.media_label = tk.Label(
+            mbar, textvariable=self.media_text,
+            font=("Microsoft YaHei UI", 10, "bold"), anchor="w",
+            fg="#103b36", bg="#eef8f4", width=self.MEDIA_TEXT_WIDTH)
+        self.media_label.pack(side="left", padx=(0, 8))
         # 右边的控件按"从左到右"的视觉顺序 pack（都是 side="left"，不会互相挤）
         ttk.Label(mbar, text="媒体应用：", font=("Microsoft YaHei UI", 8),
                   foreground="#5a6b7b").pack(side="left")
@@ -4379,33 +4795,57 @@ class WinMonApp:
                    command=lambda: self.media_prev_next("previous")).pack(side="left", padx=1)
         ttk.Button(mbar, text="▶▶", width=4,
                    command=lambda: self.media_prev_next("next")).pack(side="left", padx=1)
-        ttk.Label(mbar, text="（勾了才替你启动；没有媒体会话时改用媒体键）",
-                  font=("Microsoft YaHei UI", 8), foreground="#8fa8bd").pack(
-            side="left", padx=(8, 0))
         # 清单要等控件建好才能填（`_reload_media_app_list` 会 configure 这个下拉框）
         self._reload_media_app_list()
 
     def _build_ai_bar(self) -> None:
         """
-        主界面「AI 状态条」：一行同时回答"现在是谁"和"这个用量是谁的"。
+        主界面「AI 状态卡」：把“识别到谁 / 有没有接上 / 谁的用量”拆成三层。
 
         用户 2026-10-19 的原话：「界面 UI 并没有显示现在识别并正在使用的 AI，
-        我怎么知道你说的 AI 用量用的谁的」——所以这行必须常驻，不能藏在用量窗口里。
+        我怎么知道你说的 AI 用量用的谁的」；同一天又要求“读取了哪个 AI
+        要做高亮强调、一眼命中”。所以这里不再是一整行灰字，而是：
+          · 左侧深色「AI」标签做视觉锚点；
+          · 识别对象用 10 号粗体；
+          · 接入状态做成带底色的状态条（绿色=接上了，琥珀色=还没接上）；
+          · 用量收成第三行小字，不跟身份抢注意力。
 
-        文案由 `ai.format_ai_bar()` 生成（纯函数，可单测）；这里只负责布局。
-        宽度约定：这一行只有"一个标签 + 两个按钮"，自然宽度远小于 1280，
-        `test_a5` 的挤压检查会守住它。
+        文案由 `ai.format_ai_summary()` 生成（纯函数，可单测）；这里只负责布局。
         """
-        bar = ttk.Frame(self.root, padding=(8, 2))
-        bar.pack(fill="x")
+        bg = "#edf5fb"
+        bar = tk.Frame(self.root, bg=bg, highlightbackground="#b9d6ee",
+                       highlightthickness=1, padx=8, pady=4)
+        bar.pack(fill="x", padx=8, pady=(0, 4))
+        tk.Label(bar, text="AI", font=("Microsoft YaHei UI", 9, "bold"),
+                 bg="#1f5f8b", fg="white", padx=8, pady=2).pack(
+            side="left", padx=(0, 8), anchor="n")
+        body = tk.Frame(bar, bg=bg)
+        body.pack(side="left", fill="x", expand=True)
+        body.columnconfigure(0, weight=1)
         self.ai_text = tk.StringVar(value="AI：正在识别…")
-        ttk.Label(bar, textvariable=self.ai_text, font=UI_FONT,
-                  foreground="#2a4a66").pack(side="left")
-        ttk.Button(bar, text="AI 助手…", width=9,
+        self.ai_identity_text = tk.StringVar(value="正在识别当前 AI…")
+        self.ai_identity_label = tk.Label(
+            body, textvariable=self.ai_identity_text,
+            font=("Microsoft YaHei UI", 10, "bold"), bg=bg, fg="#12354d",
+            anchor="w", justify="left")
+        self.ai_identity_label.grid(row=0, column=0, sticky="ew")
+        self.ai_state_text = tk.StringVar(value="")
+        self.ai_state_label = tk.Label(
+            body, textvariable=self.ai_state_text,
+            font=("Microsoft YaHei UI", 9), bg="#fff4d6", fg="#7a5a00",
+            anchor="w", justify="left", padx=6, pady=0)
+        self.ai_state_label.grid(row=1, column=0, sticky="w", pady=(2, 0))
+        self.ai_usage_text = tk.StringVar(value="")
+        tk.Label(body, textvariable=self.ai_usage_text,
+                 font=("Microsoft YaHei UI", 8), bg=bg, fg="#5b7285",
+                 anchor="w").grid(row=2, column=0, sticky="ew", pady=(2, 0))
+        btns = ttk.Frame(bar)
+        btns.pack(side="right", padx=(6, 0))
+        ttk.Button(btns, text="AI 助手…", width=9,
                    command=self.action_ai_assistant).pack(side="right", padx=(2, 0))
-        ttk.Button(bar, text="AI 用量…", width=9,
+        ttk.Button(btns, text="AI 用量…", width=9,
                    command=self.action_ai_usage).pack(side="right", padx=2)
-        ttk.Button(bar, text="接入…", width=6,
+        ttk.Button(btns, text="接入…", width=6,
                    command=self.action_ai_connect).pack(side="right", padx=2)
 
 
@@ -4629,7 +5069,8 @@ class WinMonApp:
         约定：
           · 只认**选定的应用**，没选就按候选表挑一个"正在运行的播放器"（跳过浏览器 ——
             浏览器标题里混着标签页名，拿它当歌名就是编造）；
-          · 一律**标注来源**（"从窗口标题读的"），不冒充系统媒体会话；
+          · 来源记在 `self._media_source = "title"`，主界面不再显示技术标注；
+            说明窗口里会解释“标题读来的曲名可能带额外文字”；
           · 读不到就返回空串，由调用方照实说"没有在播放"。
         """
         app = self._picked_media_app()
@@ -4650,7 +5091,8 @@ class WinMonApp:
             except Exception:
                 title = ""
             if title:
-                return f"{cand.label}：{title}（从窗口标题读的）"
+                self._media_source = "title"
+                return f"{cand.label}：{title}"
         return ""
 
     def _set_media_line(self, text: str) -> None:
@@ -4658,8 +5100,8 @@ class WinMonApp:
         写"正在播放"那一行：先按标签宽度裁（装不下就 `…` 收尾），再上屏。
 
         为什么要过这一道：标签是定宽的（横向不能让长曲名把按钮挤坏），
-        而定宽控件会**静默**把文字切掉 —— 来源标注"（从窗口标题读的）"和
-        多会话的"还有 N 个在放"以前就是这么消失的（见 `fit_media_text`）。
+        而定宽控件会**静默**把文字切掉 —— 多会话的“还有 N 个在放”
+        以前就是这么消失的（见 `fit_media_text`）。
         """
         self.media_text.set(fit_media_text(text, getattr(self, "MEDIA_TEXT_WIDTH", 64)))
 
@@ -4694,6 +5136,9 @@ class WinMonApp:
         进度条、时间、百分比全部删掉（`media_progress` 这个变量也没了）。
         """
         self._media_busy = False
+        #: 每拍先清来源；只有真的从标题兜底时才由 `_title_hint_when_no_session()`
+        #: 标成 "title"。否则上一拍的“标题来源”会黏在新内容上。
+        self._media_source = ""
         # **会话集合一变就重算「媒体应用」清单**（2026-10-16）：新打开的播放器/浏览器
         # 只要一发布会话就自动进下拉框 —— 这就是"基于所有可识别的媒体"。
         # 在这儿做（而不是让 `_reload_media_app_list` 自己去读）是因为这份会话数据
@@ -4735,6 +5180,7 @@ class WinMonApp:
         else:
             shown = core.media_app_display_name(picked_app) or picked_app
         line = f"{shown}：{info['text']}" if shown else info["text"]
+        self._media_source = "session"
         # **多会话提示**（A.2）：不止一个在放时，补一句"还有 N 个"，
         # 否则用户看不到"另一个播放器其实也在放"。
         others = [o for o in (info.get("others") or []) if o]
@@ -4863,6 +5309,12 @@ class WinMonApp:
         # 悬停说明（延迟弹出、复用同一个 Toplevel；绝不抢焦点）
         self._row_tip = _RowTip(tv, self._row_tip_text)
         self.notebook.bind("<<NotebookTabChanged>>", lambda e: self._on_tab_changed())
+        #: F1 = 打开说明窗口。界面不再常驻长解释，但“找不到说明”不能成为新问题。
+        #: 测试里会手工构造只带 tree/notebook 的 app（没有 root），这里不能硬依赖。
+        try:
+            self.root.bind("<F1>", lambda _e: self.action_guide())
+        except (AttributeError, tk.TclError):
+            pass
 
     # ------------------------------------------------------------------
     # 状态与历史
@@ -5610,16 +6062,29 @@ class WinMonApp:
         return info
 
     def _update_ai_bar(self, res=None) -> None:
-        """把"当前是谁 + 真实/估算用量 + 直连状态"写进主界面那一行。"""
+        """把识别对象、接入状态、用量分别写进主界面的 AI 卡。"""
         if not hasattr(self, "ai_text"):
             return
         try:
             if res is None:
                 res = getattr(self, "_ai_sessions", None)
-            text = ai.format_ai_bar((res or {}).get("primary"),
-                                    self._ai_status_snapshot(),
-                                    self._ai_provider_snapshot())
-            self.ai_text.set(text)
+            primary = (res or {}).get("primary")
+            status = self._ai_status_snapshot()
+            info = self._ai_provider_snapshot()
+            #: 完整整句仍保留：状态栏/日志/复制场景还在用，测试也钉着它。
+            self.ai_text.set(ai.format_ai_bar(primary, status, info))
+            parts = ai.format_ai_summary(primary, status, info)
+            self.ai_identity_text.set(parts["identity"])
+            state = " ｜ ".join(
+                item for item in (parts["connection"], parts["mode"],
+                                  parts["follow"]) if item)
+            self.ai_state_text.set(state or i18n.pick(
+                "未接入（可复制）", "not connected (clipboard)"))
+            self.ai_usage_text.set(parts["usage"])
+            if parts["status_kind"] in ("mcp", "direct"):
+                self.ai_state_label.configure(bg="#e2f5e9", fg="#17663f")
+            else:
+                self.ai_state_label.configure(bg="#fff4d6", fg="#7a5a00")
         except Exception:
             pass
 
@@ -6201,6 +6666,25 @@ class WinMonApp:
                                        "“Connect an AI” opened: follow steps 1-3"))
         except Exception as exc:
             self._set_status(f"打不开「接入 AI」：{type(exc).__name__}: {exc}")
+
+    def action_guide(self, section: str = "main") -> None:
+        """打开「使用说明」；已经开着就切到对应标签并提到前台。"""
+        win = getattr(self, "_guide_window", None)
+        if win is not None:
+            try:
+                win.top.deiconify()
+                win.top.lift()
+                win.top.focus_force()
+                win.section = section
+                win._render()
+                return
+            except Exception:
+                self._guide_window = None
+        try:
+            self._guide_window = _GuideWindow(self.root, self, section)
+            self._set_status("说明已打开：长解释都在这里，主界面只留动作和数据")
+        except Exception as exc:
+            self._set_status(f"打不开使用说明：{type(exc).__name__}: {exc}")
 
     def _ai_notify(self, inc) -> None:
         """本地提醒：优先托盘气泡；托盘不可用就退回状态栏。"""
@@ -8014,7 +8498,7 @@ class WinMonApp:
         except Exception:
             pass
         for attr in ("_ai_assistant_window", "_ai_connect_window",
-                     "_ai_usage_window", "_history_window"):
+                     "_ai_usage_window", "_history_window", "_guide_window"):
             win = getattr(self, attr, None)
             if win is not None and hasattr(win, "retranslate"):
                 try:

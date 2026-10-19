@@ -1202,15 +1202,24 @@ def _format_seconds(seconds) -> str:
     return f"{total // 3600} 小时 {(total % 3600) // 60} 分"
 
 
-def format_ai_bar(primary: dict | None, status: dict | None,
-                  provider_info: dict | None = None,
-                  connection: dict | None = None,
-                  mode: str = "", lang: str | None = None) -> str:
+def format_ai_summary(primary: dict | None, status: dict | None,
+                      provider_info: dict | None = None,
+                      connection: dict | None = None,
+                      mode: str = "", lang: str | None = None) -> dict:
     """
-    主界面 AI 状态条的**一句话**（纯函数，方便单测）。
+    把主界面 AI 状态拆成可分别强调的几块（纯函数，方便单测）。
 
-    必须同时回答三件事：现在识别到的是谁、**AI 有没有真的接上**、
-    这个数字是谁的用量；模式（只读/本地/主动 AI）也要写出来。
+    返回值：
+      · identity    识别到的 AI（不带「AI：」前缀）
+      · connection  是否真的接上（MCP / 直连 / 只能复制）
+      · mode        只读 / 本地 / 主动 AI
+      · usage       真实 / 精确 / 估算三路 token
+      · follow      跟随哪个 AI、模型是否就绪
+      · status_kind mcp / direct / clipboard / none（界面用它选颜色）
+
+    为什么拆：一整行文本很难一眼看出「识别到谁」和「有没有接上」。
+    主界面现在把 identity 加粗放大、connection 做成彩色状态，usage 放小字；
+    `format_ai_bar()` 仍保留原来的整句输出，给日志、测试和需要复制的地方用。
     """
     lang = i18n.get_language() if lang is None else i18n.normalize_language(lang)
     en = lang == "en"
@@ -1224,44 +1233,55 @@ def format_ai_bar(primary: dict | None, status: dict | None,
             name = name[:15] + "…"
         kind = p("网页", "web") if primary.get("kind") == "web" else p("桌面", "desktop")
         proc = os.path.basename(str(primary.get("proc") or ""))[:16]
-        text = (p(f"AI：{name}（{kind}", f"AI: {name} ({kind}")
-                + (f" · {proc}" if proc else "") + p("）", ")"))
+        identity = name + p(f"（{kind}", f" ({kind}")
+        identity += (f" · {proc}" if proc else "")
+        identity += p("）", ")")
         secs = primary.get("foreground_seconds_30m") or 0
         if secs:
-            text += p(f" · 前台 {_format_seconds(secs)}", f" · foreground {_format_seconds(secs)}")
+            identity += p(f" · 前台 {_format_seconds(secs)}",
+                          f" · foreground {_format_seconds(secs)}")
     else:
-        text = p("AI：未识别到外部 AI", "AI: no external AI detected")
+        identity = p("未识别到外部 AI", "no external AI detected")
+
     info = provider_info or {}
     status = status or {}
     connection = connection or info.get("connection") or {}
     mode = mode or str(info.get("mode") or "")
     kind = str(connection.get("kind") or "")
+    connection_text = ""
+    status_kind = "none"
     if kind == "mcp":
         client = str(connection.get("client") or p("MCP 客户端", "MCP client"))[:18]
-        text += p(f" ｜ 已接入 MCP（{client}）", f" | MCP connected ({client})")
+        connection_text = p(f"已接入 MCP（{client}）", f"MCP connected ({client})")
         stamp = str(connection.get("ts") or "")[11:16]
         if stamp:
-            text += f" {stamp}"
+            connection_text += f" {stamp}"
+        status_kind = "mcp"
     elif kind == "direct":
         model = str(connection.get("model") or "")
-        text += p(" ｜ 直连就绪", " | direct ready") + (f" ({model})" if model else "")
+        connection_text = p("直连就绪", "direct ready") + (f" ({model})" if model else "")
+        status_kind = "direct"
     elif kind == "clipboard":
-        text += p(" ｜ 未接入（可复制）", " | not connected (clipboard)")
+        connection_text = p("未接入（可复制）", "not connected (clipboard)")
+        status_kind = "clipboard"
+
+    mode_text = ""
     if mode:
-        text += " ｜ " + assist_mode_label(mode, lang).split("（")[0].split(" (")[0]
-    text += p(f" ｜ 真实 {int(status.get('provider_tokens', 0) or 0):,}"
+        mode_text = assist_mode_label(mode, lang).split("（")[0].split(" (")[0]
+    usage = p(f"真实 {int(status.get('provider_tokens', 0) or 0):,}"
               f" · 精确 {int(status.get('tokenizer_tokens', 0) or 0):,}"
               f" · 估算 {int(status.get('estimated_tokens', 0) or 0):,} token",
-              f" | provider {int(status.get('provider_tokens', 0) or 0):,}"
+              f"provider {int(status.get('provider_tokens', 0) or 0):,}"
               f" · exact {int(status.get('tokenizer_tokens', 0) or 0):,}"
               f" · estimated {int(status.get('estimated_tokens', 0) or 0):,} token")
+    follow_text = ""
     if info and not kind:
         follow = str(info.get("follow_ai") or "")
         if len(follow) > 12:
             follow = follow[:11] + "…"
         if info.get("configured") is False:
-            text += (p(f" ｜ 跟随 {follow}（无直连）", f" | following {follow} (no direct)")
-                     if follow else p(" ｜ 无直连", " | no direct"))
+            follow_text = (p(f"跟随 {follow}（无直连）", f"following {follow} (no direct)")
+                           if follow else p("无直连", "no direct"))
         else:
             model = str(info.get("model") or p("模型", "model"))
             if not info.get("enabled"):
@@ -1270,9 +1290,31 @@ def format_ai_bar(primary: dict | None, status: dict | None,
                 state = p("缺 key", "no key")
             else:
                 state = p("就绪", "ready")
-            text += (p(f" ｜ 跟随 {follow} → {model} {state}",
-                       f" | following {follow} → {model} {state}") if follow
-                     else p(f" ｜ {model} {state}", f" | {model} {state}"))
+            follow_text = (p(f"跟随 {follow} → {model} {state}",
+                             f"following {follow} → {model} {state}") if follow
+                           else p(f"{model} {state}", f"{model} {state}"))
+    return {"identity": identity, "connection": connection_text,
+            "mode": mode_text, "usage": usage, "follow": follow_text,
+            "status_kind": status_kind, "lang": lang}
+
+
+def format_ai_bar(primary: dict | None, status: dict | None,
+                  provider_info: dict | None = None,
+                  connection: dict | None = None,
+                  mode: str = "", lang: str | None = None) -> str:
+    """
+    主界面 AI 状态条的**一句话**（纯函数，方便单测）。
+
+    必须同时回答三件事：现在识别到的是谁、**AI 有没有真的接上**、
+    这个数字是谁的用量；模式（只读/本地/主动 AI）也要写出来。
+    """
+    summary = format_ai_summary(primary, status, provider_info, connection, mode, lang)
+    en = summary["lang"] == "en"
+    sep = " | " if en else " ｜ "
+    text = ("AI: " if en else "AI：") + summary["identity"]
+    for key in ("connection", "mode", "usage", "follow"):
+        if summary[key]:
+            text += sep + summary[key]
     return text
 
 

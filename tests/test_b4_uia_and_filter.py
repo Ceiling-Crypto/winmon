@@ -630,8 +630,9 @@ class TestMediaSessionLogic(unittest.TestCase):
 
     def test_media_line_falls_back_to_the_window_title(self):
         """
-        会话里没有它、但它的窗口标题就是歌名时，那一行要显示歌名并**标注来源**
-        （网易云音乐客户端实测就是这样：在放歌，却不发布会话）。
+        会话里没有它、但它的窗口标题就是歌名时，那一行要显示歌名。
+        来源不再挤在主界面那一行（用户 2026-10-19：技术标注进说明窗口），
+        改由 `_media_source` 记住，说明窗口负责解释。
         """
         app = self._media_app_for_display()
         app.media_app_pin.set(core.MediaApp("网易云音乐", "cloudmusic.exe", False).title)
@@ -645,7 +646,8 @@ class TestMediaSessionLogic(unittest.TestCase):
         text = app.media_text.get()
         self.assertIn("网易云音乐", text)
         self.assertIn("某首歌 - 某歌手", text)
-        self.assertIn("窗口标题", text, "从标题读来的必须标注来源，不能冒充系统会话")
+        self.assertNotIn("窗口标题", text, "来源说明应进说明窗口，不再挤主界面")
+        self.assertEqual(app._media_source, "title")
 
     def test_media_line_says_nothing_is_playing_when_title_is_empty(self):
         app = self._media_app_for_display()
@@ -2163,8 +2165,8 @@ class TestMediaLineFits(unittest.TestCase):
     「正在播放」那一行：**装不下要用 `…` 明说**，不能静默切断。
 
     2026-10-13 修的真问题：那个标签是定宽的（不定宽就会把右边的按钮挤坏），
-    实测 300px 的宽度会把 `网易云音乐：…（从窗口标题读的）` 的**来源标注**切掉、
-    把多会话那句"还有 N 个在放（…）"整句吞掉 —— 用户以为后面没有内容。
+    长文案会被静默切掉、连省略号都没有。2026-10-19 又按用户意见把
+    “从窗口标题读的”这类来源说明移出主界面；但“还有 N 个在放”必须留下。
     """
 
     def test_short_text_is_untouched(self):
