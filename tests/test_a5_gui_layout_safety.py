@@ -69,7 +69,6 @@ class TestMainWindowLayout(unittest.TestCase):
         app.follow_selection = tk.BooleanVar(value=True)
         app.live_gallery = tk.BooleanVar(value=True)
         app.history_visible = tk.BooleanVar(value=False)
-        app.size_choice = tk.StringVar(value=winmon.PREVIEW_SIZES[1][0])
         app.fps_choice = tk.StringVar(value="很流畅 10 FPS")
         app.search_text = tk.StringVar()
         app.status_text = tk.StringVar(value="测试")
@@ -114,7 +113,7 @@ class TestMainWindowLayout(unittest.TestCase):
                          "TPanedwindow", "Panedwindow", "TNotebook", "Notebook",
                          "TSeparator", "Separator", "Toplevel", "Tk")
 
-    def _squeezed(self, min_deficit=5):
+    def _squeezed(self, min_deficit=5, geometry=None):
         """
         找出"实际宽度明显小于自身需要宽度"的**交互控件**。
 
@@ -126,7 +125,7 @@ class TestMainWindowLayout(unittest.TestCase):
         实测在 1120 宽下，顶部工具条正是这种情况：
         「移除选中总览」被压成 38px、「加入总览」被压到 1px 而彻底消失。
         """
-        self.root.geometry(f"{APP_W}x{APP_H}")
+        self.root.geometry(geometry or f"{APP_W}x{APP_H}")
         self.root.update_idletasks()
         self.root.update()
         bad = []
@@ -162,6 +161,33 @@ class TestMainWindowLayout(unittest.TestCase):
         """
         bad = self._overflow()
         self.assertEqual(bad[:5], [], f"有控件在 {APP_W} 宽度下被挤坏：{bad[:5]}")
+
+    def test_largest_font_still_fits_the_minimum_window(self):
+        """字号上限 12 必须在最小窗口 1080×660 下仍然完整显示。"""
+        import winmon
+        old = winmon.UI_FONT_SIZE
+
+        def restore():
+            winmon.apply_font_size_live(self.root, old)
+            self.app._sync_media_width()
+            self.app._sync_action_rail_spacing()
+
+        self.addCleanup(restore)
+        self.addCleanup(self.root.geometry, f"{APP_W}x{APP_H}")
+        winmon.apply_font_size_live(self.root, winmon.FONT_SIZE_MAX)
+        self.app._sync_media_width()
+        self.app._sync_action_rail_spacing()
+        self.root.geometry(f"{MIN_W}x{MIN_H}")
+        self.root.update()
+        bad = self._squeezed(geometry=f"{MIN_W}x{MIN_H}")
+        self.assertEqual(bad[:5], [],
+                         f"字号 {winmon.FONT_SIZE_MAX} 在 {MIN_W}×{MIN_H} 下挤坏了：{bad[:5]}")
+        rail = self.app.action_rail
+        last = rail.winfo_children()[-1]
+        self.assertEqual(str(last.cget("text")), "说明…")
+        self.assertLessEqual(last.winfo_y() + last.winfo_height(),
+                             rail.winfo_height() + 1,
+                             "字号 12 时左侧竖栏最后一个动作被挤出可视区")
 
     def test_all_tabs_do_not_overflow(self):
         """逐个标签页检查（隐藏的标签页不会创建真实控件树，必须切过去）。"""

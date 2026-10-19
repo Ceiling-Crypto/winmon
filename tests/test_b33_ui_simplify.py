@@ -110,7 +110,6 @@ class TestMainUiHierarchy(unittest.TestCase):
         app.only_windowed = tk.BooleanVar(value=True)
         app.follow_selection = tk.BooleanVar(value=True)
         app.live_gallery = tk.BooleanVar(value=True)
-        app.size_choice = tk.StringVar(value=winmon.PREVIEW_SIZES[1][0])
         app.fps_choice = tk.StringVar(value="很流畅 10 FPS")
         app.search_text = tk.StringVar()
         app.status_text = tk.StringVar(value="就绪")
@@ -181,7 +180,7 @@ class TestMainUiHierarchy(unittest.TestCase):
             self.root.update()
             self.assertEqual(len(win.nb.tabs()), 3)
             text = win._texts[0].get("1.0", "end")
-            self.assertIn("预览大小和刷新速度", text)
+            self.assertIn("预览和刷新速度", text)
             self.assertIn("窗口标题", text)
         finally:
             win.close()
@@ -195,7 +194,7 @@ class TestMainUiHierarchy(unittest.TestCase):
         try:
             self.root.update()
             self.assertEqual(win.nb.tab(0, "text"), "Main window")
-            self.assertIn("Preview size", win._texts[0].get("1.0", "end"))
+            self.assertIn("Preview and refresh speed", win._texts[0].get("1.0", "end"))
             self.assertEqual(win.nb.index("current"), 1)
         finally:
             win.close()

@@ -293,26 +293,26 @@ class TestConfirmDialog(unittest.TestCase):
                            f"tk.Label 的红底没渲染出来（{self.CAPTURE_RETRIES} 次抓屏"
                            f"最多只数到 {hit} 个红像素）")
 
-    def test_confirm_dialog_uses_tk_label_for_dark_card(self):
+    def test_confirm_dialog_uses_tk_label_for_card(self):
         """
-        弹窗的深色卡片必须由 tk.Label 承担。
+        弹窗的说明卡片必须由 tk.Label 承担。
 
-        判据：弹窗里存在"深色背景 + 浅色文字"的 tk.Label。
+        判据：弹窗里存在"页面底色 + 另一色文字"的 tk.Label。
         注意不能只比较 cget —— 见上面 ttk 的教训。
         """
         d = self._dialog()
-        dark = []
+        labels = []
         for child in walk(d.top):
             try:
                 if child.winfo_class() != "Label":
                     continue
                 bg = str(child.cget("background"))
                 fg = str(child.cget("foreground"))
-                if bg == self.winmon.UI_BG and fg:
-                    dark.append((bg, fg))
+                if bg == self.winmon.UI_BG and fg and fg != bg:
+                    labels.append((bg, fg))
             except Exception:
                 pass
-        self.assertTrue(dark, "弹窗里没有找到深色背景的 tk.Label（深色字压黑底会看不清）")
+        self.assertTrue(labels, "弹窗里没有找到与页面底色一致的 tk.Label 卡片")
 
     def test_dialog_is_topmost_and_centered(self):
         d = self._dialog()

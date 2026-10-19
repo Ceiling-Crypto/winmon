@@ -260,7 +260,7 @@ class TestProactiveDecision(unittest.TestCase):
         day = time.strftime("%Y-%m-%d", time.localtime(self.now))
         capped = dict(self.base, proactive_count=3, proactive_day=day)
         self.assertFalse(ai.proactive_decision(
-            game, capped, stable_seconds=300)["allowed"])
+            game, capped, stable_seconds=300, now=self.now)["allowed"])
         recent = dict(self.base, proactive_last_ts=self.now - 100,
                       proactive_day=day, proactive_count=1)
         self.assertFalse(ai.proactive_decision(

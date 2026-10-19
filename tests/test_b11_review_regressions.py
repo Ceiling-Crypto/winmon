@@ -1043,12 +1043,11 @@ class TestP2TrayGalleryAndRestore(unittest.TestCase):
         app.root = _Root(state="normal")
         app._set_status = lambda text: None
         requested: list = []
-        app.worker = types.SimpleNamespace(request=lambda *a: requested.append(a),
+        app.worker = types.SimpleNamespace(request=lambda *a, **k: requested.append(a),
                                            forget=lambda key: None)
         app.win_by_hwnd = {0x123: _StubWin(hwnd=0x123, rect_w=800, rect_h=600)}
         app.preview_key = 0x123
         app.paused = False
-        app.size_choice = _Var("")            # 认不出来 → 走默认尺寸（确定性）
         app.fps_choice = _Var("")
         app._last_preview_req = None          # 真 __init__ 会设成 None，替身要补齐
 

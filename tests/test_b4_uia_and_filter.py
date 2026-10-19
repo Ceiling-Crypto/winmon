@@ -1162,7 +1162,6 @@ class TestCloseBehavior(unittest.TestCase):
         app.follow_selection = tk.BooleanVar(value=True)
         app.live_gallery = tk.BooleanVar(value=True)
         app.history_visible = tk.BooleanVar(value=False)
-        app.size_choice = tk.StringVar(value=winmon.PREVIEW_SIZES[1][0])
         app.fps_choice = tk.StringVar(value="很流畅 10 FPS")
         app.search_text = tk.StringVar()
         app.status_text = tk.StringVar()
@@ -1198,7 +1197,6 @@ class TestCloseBehavior(unittest.TestCase):
                           ("live_gallery", tk.BooleanVar(value=True)),
                           ("history_visible", tk.BooleanVar(value=False))):
             setattr(app2, name, var)
-        app2.size_choice = tk.StringVar(value=winmon.PREVIEW_SIZES[1][0])
         app2.fps_choice = tk.StringVar(value="很流畅 10 FPS")
         app2.search_text = tk.StringVar()
         app2.status_text = tk.StringVar()

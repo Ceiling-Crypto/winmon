@@ -3,7 +3,7 @@
 > 用途：在新的对话里快速恢复上下文。读这一份即可继续开发。
 > **正式发布名 `winmon1.0`**（`APP_VER = "1.0"`，查版本：`py winmon.py --version`）。
 > **先读 §一点五「WinMon 的定位与能力边界」** —— 输入注入已明确不再投入。
-> 代码状态：**928 个测试用例全绿**（约 105 秒）+ 代码复检 0 新增问题（基线为空）、
+> 代码状态：**934 个测试用例全绿**（约 110 秒）+ 代码复检 0 新增问题（基线为空）、
 > 自检 8/8、界面冒烟通过、
 > 桌面快捷方式可用、程序目录端到端可用、
 > 视频联动 = **监视当前窗口 / 停止监视 / 直接关闭视频**（自动识别与「用链接打开」已删掉）、
@@ -20,10 +20,10 @@
 
 | | |
 | --- | --- |
-| 测试 | **928 用例全绿**（`py tests\run_tests.py`，约 105 秒；含 7 条按环境 skip） |
+| 测试 | **934 用例全绿**（`py tests\run_tests.py`，约 110 秒；含 7 条按环境 skip） |
 | 代码复检 | `py tests\lint_check.py` → **新增问题 0**（基线已清空，见 §四） |
 | 自检 / 冒烟 | `py winmon.py --selftest` 8/8 通过；`--smoke` 通过 |
-| 规模 | `winmon_core.py` ~6750 行 / `winmon.py` ~10600 行 / 测试 47 个 .py（34 个测试模块） |
+| 规模 | `winmon_core.py` ~6800 行 / `winmon.py` ~10900 行 / 测试 47 个 .py（34 个测试模块） |
 | 运行方式 | `py winmon.py`（GUI）或双击「WinMon 程序监控」快捷方式；**单实例**：第二个实例会把已有窗口带到前台后自己退出 |
 | 窗口尺寸 | 设计稿 **1160×730**，开窗时**按 DPI 缩放**（本机 150% → 1740×1095；见 §9.15 第 14 条） |
 | 数据文件 | `winmon_settings.json`（界面偏好/收藏）、`winmon_history.log`（操作留痕）、`winmon_catalog.json`（程序目录缓存）、`winmon_media.jsonl`（媒体快照缓存，可删） |
@@ -70,7 +70,7 @@
 1. **把媒体那一行做精**：常驻快照已经有了，可以顺手把"播放速率/时间线"接进来
    （当初删掉的进度显示，明确说过"以后再说" —— **动手前先确认**）；
 2. **托盘右键加播放控制**（上一首/播放暂停/下一首）+ 显示当前曲名，不用切回主窗口；
-3. **测试提速**：928 用例 105 秒里，`test_b5`/`test_b6` 的"真开窗+真抓画面"占大头，
+3. **测试提速**：934 用例 110 秒里，`test_b5`/`test_b6` 的"真开窗+真抓画面"占大头，
    可给它们打标记 + `run_tests.py --fast`；
 4. **GUI 拆分**：`winmon.py` 已 7000 行，可按标签页拆包（注意 §§布局不变量与 lint 的 200 行阈值）。
 
@@ -104,7 +104,7 @@
 | `winmon_mcp.py` | ~800 | **MCP 服务器**：双时代 stdio + 本地 HTTP + 四个只读工具 |
 | `winmon_ai_provider.py` | ~250 | **可选**直连模型 API（默认关；精确 usage；key 只从环境变量读） |
 | `media_session.ps1` | ~230 | 系统媒体会话（GSMTC）桥接脚本（PowerShell + Windows 自带 WinRT 投影；**必须纯 ASCII 无 BOM**） |
-| `tests/` | 47 个 .py | **可重复运行的测试**（928 用例，纯 unittest） + 开发辅助工具 + `lint_check.py` / `lint_baseline.txt` |
+| `tests/` | 47 个 .py | **可重复运行的测试**（934 用例，纯 unittest） + 开发辅助工具 + `lint_check.py` / `lint_baseline.txt` |
 | `启动WinMon.bat` | — | 菜单式启动器（纯 ASCII，避免批处理编码问题） |
 | `scan_windows.py` | — | 命令行窗口清单 |
 | `close_others.py` | — | 批量关闭除当前窗口外的窗口 |
@@ -157,7 +157,7 @@ python winmon.py --videos --open 3 --watch --close-window   :: 完整视频链�
 python winmon.py --version          :: 打印版本（winmon1.0）
 python winmon.py --idle             :: 列出"长期开着、没人用"的程序（只看，不关任何东西）
 python winmon.py --idle --idle-minutes 5   :: 换个闲置阈值（分钟）
-py tests\run_tests.py               :: 全部测试（928 用例，约 105 秒）
+py tests\run_tests.py               :: 全部测试（934 用例，约 110 秒）
 ```
 
 ---
@@ -2173,6 +2173,77 @@ AI 助手窗口太杂，API key 建议应单独一个窗口；设置里要加语
   收紧 padding 后完整可见）；设置/接入/人设库窗口目视无裁切；150% 冒烟截图里
   预览页正常显示，侧栏状态列按 DPI 缩放后完整。
 
+#### 三点八、8.6：纯白主题 / 预览填满 / 向上操作栏 / 字号上限（2026-10-20 凌晨）
+
+用户反馈（四条 + 两个疑问 + 复查要求）：
+
+1. 改回原来的**纯白色黑字**；
+2. 实时预览下面改成一个“先选后执行”的工具条：点箭头**向上**列出
+   「关闭窗口」「结束进程」，选中项用填充色明确表示；
+3. 疑问一：为什么“预览大小”选小，实时预览反而变大？
+4. 疑问二：实时预览根本看不到东西，能改善清晰度吗？
+5. 字号最小 9，最大不超过界面允许的上限；
+6. 复查并修 bug、简化代码。
+
+**根因（两个都是真 bug）**：
+
+- `_ensure_display()` 用**上一次 zoom 后**的 `photo_w/photo_h` 当原图尺寸。
+  底图 640×400 放大到 900×600 后，下一次判断把 900 当原图、算出不需要放大，
+  又退回 640×400；画面在两次调用间来回跳，最后停在最小值。
+  现在始终用 `base_w/base_h` 计算，并把画布尺寸纳入缓存键。
+- `PreviewPane` 的 `<Configure>` 只 `after(140ms)` 防抖登记取帧。实测这个
+  after 在事件流里一直没有触发（`after info` 里能看到它，但 3 秒后仍未执行），
+  画布已变成 977×542，取帧请求还停在 640×400 的回退值。
+  现在 Configure **直接**登记（参数去重由 `_last_preview_req` 负责），不再依赖防抖 after。
+- 另有一个“看起来像 bug”的设计问题：旧「预览大小」只改抓取分辨率，
+  画面仍由 Tk 按面板缩放。选 340×220 时 `fit` 可能算出 2 倍 zoom，反而
+  比 480×300 更大；选大尺寸又可能停在原尺寸。**该选项已删除**，抓取尺寸
+  自动跟随画布，画面始终填满预览区。
+
+**落地**：
+
+- **纯白主题**：`UI_BG="#ffffff"`、`UI_INK="#111827"`、`UI_SURFACE_ALT="#f2f5f9"`；
+  ttk 按钮/输入框/Notebook/Treeview/滚动条、`option_add` 默认色、所有 Toplevel
+  全部改白底黑字。媒体浅绿卡、AI 浅蓝卡、接入窗口的 MCP/key/工作区/人设/C 卡
+  保持原高亮色。状态色改为深绿 `#1b7a3a`、深红 `#c0392b`、琥珀 `#9a6700`。
+- **预览**：
+  - 删除 `PREVIEW_SIZES` 与 `size_choice`（设置读写、顶部组合框、`_current_out_size`
+    全部移除）；`_current_out_size()` 直接返回画布尺寸（320×200–2200×1400）。
+  - `_maybe_start_initial_preview()` 首次刷新自动选前台窗口并开始预览；
+    `choose_initial_preview()` 是纯函数，跳过 WinMon 自己、最小化/隐藏窗口。
+  - 上屏改为 `core.bgr_to_png()` + `base64` + `PhotoImage(data=...)`：
+    旧路径 `bgr_to_tk_hex_data` + `PhotoImage.put` 在 640×400 约 80–190ms/帧，
+    PNG 约 3ms 编码 + 8ms Tk 解码；帧率从约 5 FPS 恢复到 9–10 FPS，且不抽样、
+    按画布原生分辨率显示。
+  - `_ensure_display()` 的 zoom/subsample 改为 round（不是 ceil）：底图 977
+    放进 965 画布只裁十几像素，不会直接抽成 2 倍变半个画面。
+  - 整张黑图的帧不再静默显示，改提示“画面为空（可能受保护或硬件加速）”。
+  - 右上角只显示「实时 · N FPS」；标题只显示窗口标题，应用名放进 meta 行，
+    避免长标题被“应用名 + 标题”挤掉。
+- **操作栏**：`PREVIEW_ACTIONS=(("close","关闭窗口"),("terminate","结束进程"))`，
+  默认 `close`；点按钮箭头在**上方**弹出 `Toplevel`，当前项 `UI_ACCENT` 整行填充、
+  未选项白底；选完只改当前操作，点「执行」才调用 `action_close_window/
+  action_terminate`（结束进程仍走原确认框）。点击主窗口任意其它位置收起；
+  不再用 `<FocusOut>`（overrideredirect 弹层会立刻收到 FocusOut，菜单一闪就没）。
+- **字号**：`FONT_SIZE_MIN=9`、`FONT_SIZE_MAX=12`、`FONT_SIZE_CHOICES` 由范围生成；
+  设置文案写明“12 是界面允许的最大字号”。媒体行字符宽度改为
+  `62 - (size-9)*8`，播放器下拉框宽度 `18 - (size-9)`；11/12 号字下
+  `_sync_action_rail_spacing()` 收紧竖栏行距，侧栏四列改为 30+72+96+58px，
+  12 号字下播放/上一首/下一首、动作栏「说明…」和侧栏「状态」都不再被压扁。
+- **smoke**：`final_shot()` 先截完最后一张再 `after(100, finish)`；固定
+  `after(seconds*1000, finish)` 会被 `snapshot()` 里的 `root.update()` 提前执行，
+  报 “application has been destroyed”。
+- **清理**：移除 `PREVIEW_SIZES`、`size_choice`、`_last_capture_cost`、
+  `PreviewPane.scale`、`set_frame` 旧十六进制路径、`_close_actions_for` 等死代码；
+  更新说明窗口文案（不再有“预览大小”）。
+
+**验收**：`test_b34` 20 条（新增 PNG 通道、向上操作栏、预览填满、字号上限、
+自动选前台窗口）；`test_a5` 新增“字号 12 在 1080×660 不挤坏”；全量 **934 用例**，
+失败 0 / 错误 0 / 跳过 7（约 110 秒）；`D:\test` 便携数据目录 **934 用例，0 失败 /
+0 错误 / 跳过 9**（110.9 秒）；`lint_check` 0 新增问题。
+（`test_b32` 的每日上限用例原先把 `proactive_day` 按固定 `self.now` 算、
+调用却用真实当前时间，跨午夜会误判；已补 `now=self.now`，属测试自身的时区/时钟 bug。）
+
 ## 三、踩过的坑（**最重要，别重复踩**）
 
 ### 编码类（最容易毁掉成果）
@@ -2725,7 +2796,7 @@ AI 助手窗口太杂，API key 建议应单独一个窗口；设置里要加语
 ## 四、测试体系（**改代码后先跑这个**）
 
 ```bat
-py tests\run_tests.py            :: 928 用例，约 105 秒
+py tests\run_tests.py            :: 934 用例，约 110 秒
 py tests\run_tests.py -v         :: 逐个看
 py tests\run_tests.py -k capture :: 只跑关心的
 py tests\lint_check.py           :: 代码复检（退出码 1 = 有新增问题）
@@ -2883,7 +2954,7 @@ py tests\lint_check.py           :: 代码复检（退出码 1 = 有新增问题
    把 `WinMonApp` 瘦成协调者。拆分时注意那些布局不变量（见坑 21~24），
    以及 `lint_check.py` 的"函数过长"（>200 行）阈值 —— `_build_ui` 已经贴着线走了，
    当时就是靠把视频联动那三行拆成 `_build_video_bars()` 才压下去的。
-5. **测试提速**：~~244 用例 17 秒~~ → 现在 **928 用例约 105 秒**。
+5. **测试提速**：~~244 用例 17 秒~~ → 现在 **934 用例约 110 秒**。
    变慢的是 `test_b5`/`test_b6` 里"真开窗、真抓画面、真关窗"的端到端用例
    （每次要采 2 秒画面，这是必要的 —— 播放判定本来就靠画面变化）。
    想快可以给它们打 `slow` 标记，`run_tests.py` 加 `--fast` 跳过
@@ -3408,7 +3479,7 @@ C 盘那份**保持原样、一字未改**（用户 2026-10-11 确认：暂不�
 
 > 继续开发 **WinMon 1.0（`winmon1.0`）** —— Windows 程序监控与终止工具，纯标准库，在 `项目根目录\`。
 > 请先读 `HANDOFF.md` 和 `README.md`，然后跑 `py tests\run_tests.py`
-> 确认基线是 **928 用例全绿**（需要哔哩哔哩/UIA 页面的用例会按需 skip）、
+> 确认基线是 **934 用例全绿**（需要哔哩哔哩/UIA 页面的用例会按需 skip）、
 > `py tests\lint_check.py` 退出码 0（无新增问题）。
 > **版式要另眼验收**：测试进程没有开 DPI 感知，布局检查看不到"真实 DPI 下控件被挤没"，
 > 所以改动界面后还要跑一次 `py winmon.py --smoke` 看截图（见 §9.15 第 14 条）。

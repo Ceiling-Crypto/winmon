@@ -360,7 +360,6 @@ _STATIC_EN = {
     "关闭": "Close",
     "关闭窗口": "Close window",
     "关闭选中的 (Enter)": "Close selected (Enter)",
-    "预览大小：": "Preview:",
     "刷新速度：": "Refresh:",
     "说明…": "Guide…",
     "媒体": "Media",

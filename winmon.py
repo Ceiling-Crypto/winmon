@@ -33,6 +33,7 @@ WinMon —— Windows 桌面程序实时监控与终止工具（图形界面 + �
 
 from __future__ import annotations
 
+import base64
 import ctypes
 import json
 import os
@@ -111,7 +112,12 @@ def scaled_window_size(scale: float, screen=(0, 0),
 # 默认 9；所有窗口（主界面 / AI 助手 / 用量 / 接入 / 说明 / 设置 / 弹窗）
 # 都按这里的基准字号创建，保存后由 `apply_font_size_live` 当场重设。
 FONT_SIZE_DEFAULT = 9
-FONT_SIZE_CHOICES = ((9, "9"), (10, "10"), (11, "11"), (12, "12"))
+#: 最小 9；上限取**主界面仍不挤坏**的最大值（1080×660 下实测 12：
+#: 再大媒体行和顶部工具条就会压出省略号）。这不是随便定的上限。
+FONT_SIZE_MIN = 9
+FONT_SIZE_MAX = 12
+FONT_SIZE_CHOICES = tuple((size, str(size))
+                          for size in range(FONT_SIZE_MIN, FONT_SIZE_MAX + 1))
 UI_FONT_SIZE = FONT_SIZE_DEFAULT
 UI_FONT = ("Microsoft YaHei UI", UI_FONT_SIZE)
 BOLD_FONT = ("Microsoft YaHei UI", UI_FONT_SIZE + 1, "bold")
@@ -121,18 +127,19 @@ TITLE_FONT = ("Microsoft YaHei UI", UI_FONT_SIZE + 2, "bold")
 BIG_TITLE_FONT = ("Microsoft YaHei UI", UI_FONT_SIZE + 4, "bold")
 MONO_FONT = ("Consolas", max(9, UI_FONT_SIZE))
 
-# 纯黑底 / 白字主题。高亮卡片（媒体 / AI / 接入卡片）继续用各自的浅色底，
-# 不跟着变成黑底 —— 用户要求「不得影响定义的高亮卡片」。
-UI_BG = "#000000"
-UI_SURFACE = "#0b0b0b"
-UI_SURFACE_ALT = "#151515"
-UI_INK = "#ffffff"
-UI_MUTED = "#b9c2ca"
-UI_LINE = "#333333"
-UI_ACCENT = "#5aa9e6"
+# 纯白底 / 黑字主题（2026-10-20 用户要求改回）。
+# 高亮卡片（媒体 / AI / 接入卡片）继续用各自的浅色底，不会被纯白页面吃掉。
+UI_BG = "#ffffff"
+UI_SURFACE = "#ffffff"
+UI_SURFACE_ALT = "#f2f5f9"
+UI_INK = "#111827"
+UI_MUTED = "#5b6573"
+UI_LINE = "#d3dae4"
+UI_ACCENT = "#1f5f8b"
 UI_ACCENT_DARK = "#174a6c"
-UI_INDICATOR = "#3f9bd8"
-UI_INDICATOR_BORDER = "#7cc4ff"
+#: 勾选填充色：浅色页面上选深一点的蓝，未选是白底灰框。
+UI_INDICATOR = "#2f7fc1"
+UI_INDICATOR_BORDER = "#1f5f8b"
 
 
 def set_font_size(size) -> int:
@@ -267,12 +274,27 @@ TILE_W, TILE_H = 216, 150
 # 设 WINMON_ICON_SIZE 环境变量可覆盖（调试用，不必改代码）。
 ICON_SIZE = int(os.environ.get("WINMON_ICON_SIZE") or 28)
 
-PREVIEW_SIZES = [
-    ("小 (340×220)", 340, 220),
-    ("中 (480×300)", 480, 300),
-    ("大 (640×400)", 640, 400),
-    ("特大 (800×500)", 800, 500),
-]
+# 预览下方的操作选择：只保留两个不可逆动作，顺序固定（弹层从下往上列）。
+# 结束整树仍在右键菜单与进程树页，不再挤进预览工具条。
+PREVIEW_ACTIONS = (("close", "关闭窗口"), ("terminate", "结束进程"))
+PREVIEW_ACTION_DEFAULT = "close"
+
+
+def choose_initial_preview(windows, fg_hwnd: int = 0, self_pid: int | None = None):
+    """
+    启动后第一次刷新时，自动挑一个窗口给预览（纯逻辑，便于单测）。
+
+    优先当前前台窗口，其次第一个可见、未最小化的窗口；跳过 WinMon 自己。
+    这样用户一打开就能看到画面，不必先猜“要先去右边点一下”。
+    """
+    own = os.getpid() if self_pid is None else int(self_pid)
+    usable = [wi for wi in windows
+              if wi.pid != own and not wi.iconic and not wi.is_hidden_surface]
+    for wi in usable:
+        if fg_hwnd and wi.hwnd == fg_hwnd:
+            return wi
+    return usable[0] if usable else None
+
 FPS_CHOICES = [("极省电 1 FPS", 1000), ("省电 2 FPS", 500), ("流畅 5 FPS", 200),
                ("很流畅 10 FPS", 100), ("极流畅 15 FPS", 66), ("最高 30 FPS", 33)]
 # ---- 左栏列表的点击手势（`plan_window_click` 的返回值）----
@@ -747,19 +769,20 @@ class PreviewPane:
         self.lbl_title.grid(row=0, column=0, columnspan=2, sticky="ew")
         self.lbl_meta = ttk.Label(head, text="", font=UI_FONT, foreground=UI_MUTED, anchor="w")
         self.lbl_meta.grid(row=1, column=0, sticky="ew")
-        self.lbl_stats = ttk.Label(head, text="", font=MONO_FONT, foreground="#52d273", anchor="e")
+        self.lbl_stats = ttk.Label(head, text="", font=MONO_FONT, foreground="#1b7a3a", anchor="e")
         self.lbl_stats.grid(row=1, column=1, sticky="e")
-        #: 暂停刷新移到标题右侧：底部留给“关闭/结束”这类动作，
+        #: 暂停刷新移到标题右侧：底部留给操作栏，
         #: 右侧预览变窄时也不会把暂停键挤成一条线。
         self.btn_pause = ttk.Button(head, text="暂停刷新", width=9,
                                     command=self.app.toggle_pause)
         self.btn_pause.grid(row=0, column=2, rowspan=2, sticky="e", padx=(6, 0))
 
-        holder = tk.Frame(self.frame, bg="#101418", bd=1, relief="solid")
+        holder = tk.Frame(self.frame, bg=UI_SURFACE_ALT, bd=1, relief="solid",
+                          highlightbackground=UI_LINE)
         holder.grid(row=1, column=0, sticky="nsew", padx=6, pady=4)
         holder.rowconfigure(0, weight=1)
         holder.columnconfigure(0, weight=1)
-        self.canvas = tk.Canvas(holder, bg="#101418", highlightthickness=0)
+        self.canvas = tk.Canvas(holder, bg=UI_SURFACE_ALT, highlightthickness=0)
         self.canvas.grid(row=0, column=0, sticky="nsew")
         self.img_item = self.canvas.create_image(0, 0, anchor="nw")
         self.canvas.bind("<Configure>", self._on_canvas_resize)
@@ -771,36 +794,58 @@ class PreviewPane:
         self.base_photo: tk.PhotoImage | None = None
         self.photo_w = self.photo_h = 0
         self.base_w = self.base_h = 0
-        self.scale = 1
         self._display_mode: tuple[int, int] = (0, 0)
+        self._display_canvas: tuple[int, int] = (0, 0)
         self.placeholder = self.canvas.create_text(
-            12, 12, anchor="nw", fill="#9aa9b6", font=UI_FONT, justify="left",
+            14, 14, anchor="nw", fill="#5f6b7a", font=UI_FONT, justify="left",
             text=("请选择右侧窗口列表中的程序\n\n"
                   "· 选中后此处显示该程序的实时画面\n"
                   "· 双击画面 = 最小化/还原该程序（与列表一致）\n"
-                  "· 列表里单击只选中；Enter / 中键切到前台\n"
-                  "· 底部按钮可关闭或结束该程序"))
+                  "· 列表里单击只选中；Enter / 中键切到前台"))
 
-        btns = ttk.Frame(self.frame)
-        btns.grid(row=2, column=0, sticky="ew", padx=6, pady=(2, 0))
-        ttk.Button(btns, text="关闭窗口",
-                   command=self.app.action_close_window).pack(side="left", padx=1)
-        ttk.Button(btns, text="结束进程",
-                   command=self.app.action_terminate).pack(side="left", padx=1)
-        ttk.Button(btns, text="结束整树", width=6,
-                   command=self.app.action_terminate_tree).pack(side="left", padx=1)
-        #: “切到前台”不再占一个按钮：Enter / 中键 / 右键菜单都能做，
-        #: 底部只留给关闭与结束这类不可逆动作。
+        # ---- 预览下方：先选操作，再执行（用户 2026-10-20 的方案）----
+        # 不再并排三个按钮；点箭头从下往上列出两个操作，选中项整行填充，
+        # 未选中项白底，状态一眼可辨。结束整树仍留在右键菜单 / 进程树页。
+        self.action = PREVIEW_ACTION_DEFAULT
+        self._action_popup: tk.Toplevel | None = None
+        self._action_rows: dict[str, tuple] = {}
+        self._action_root_bind = None
+        bar = ttk.Frame(self.frame)
+        bar.grid(row=2, column=0, sticky="ew", padx=6, pady=(2, 0))
+        ttk.Label(bar, text="操作", font=SMALL_BOLD_FONT,
+                  foreground=UI_MUTED).pack(side="left", padx=(0, 4))
+        self.action_button = ttk.Button(
+            bar, text=self._action_label() + "  ▾", width=15,
+            command=self.open_actions)
+        self.action_button.pack(side="left")
+        self.run_button = ttk.Button(bar, text="执行", style="Accent.TButton",
+                                     width=7, command=self.run_action)
+        self.run_button.pack(side="left", padx=(6, 0))
+        self.action_hint = ttk.Label(bar, text="先选，再执行", font=SMALL_FONT,
+                                     foreground=UI_MUTED)
+        self.action_hint.pack(side="left", padx=(8, 0))
 
         self.hint = ttk.Label(self.frame, text="", font=UI_FONT, foreground=UI_MUTED, anchor="w")
         self.hint.grid(row=3, column=0, sticky="ew", padx=8, pady=(2, 6))
 
     # -- 画面显示 --
-    # 显示链路：抓取 → 抽样成小图 → PhotoImage 缩放 → canvas 居中
-    #   · 抽样把 Python 侧像素生成量降到 1/scale²（这是主要耗时点）
-    #   · zoom / subsample 由 Tk 在 C 层完成，比在 Python 里重建像素快得多
+    # 显示链路：按画布尺寸抓取 → 编码 PNG → Tk 在 C 层解码上屏。
+    # 抓取尺寸由面板实时决定，不再有“预览大小”这个与画面大小打架的选项。
+    def canvas_size(self) -> tuple[int, int]:
+        """预览画布当前的可用像素尺寸（未映射时返回 0,0）。"""
+        try:
+            return max(0, self.canvas.winfo_width()), max(0, self.canvas.winfo_height())
+        except Exception:
+            return 0, 0
+
     def _on_canvas_resize(self, _event=None) -> None:
         self._place_image()
+        notify = getattr(self.app, "on_preview_resize", None)
+        if callable(notify):
+            try:
+                notify()
+            except Exception:
+                pass
 
     def _ensure_display(self) -> None:
         """按面板大小决定显示用的缩放（zoom 或 subsample），必要时重建显示图。"""
@@ -808,19 +853,26 @@ class PreviewPane:
             return
         cw = max(2, self.canvas.winfo_width())
         ch = max(2, self.canvas.winfo_height())
+        # **按底图尺寸算**，不能用上一次 zoom 后的 photo_w：否则放大一次后
+        # 再进来会把 600 当成“原图”，算出不需要放大，又缩回 100 —— 画面
+        # 在两次调用之间来回跳，最终停在最小那张（2026-10-20 实测的 bug）。
+        bw, bh = max(1, self.base_w), max(1, self.base_h)
         nz, ns = 1, 1
-        if self.photo_w > cw or self.photo_h > ch:
-            ns = max(1, -(-self.photo_w // cw), -(-self.photo_h // ch))
+        if bw > cw or bh > ch:
+            # 取最接近的整数倍，不用 ceil：977 底图放进 965 画布时 ceil 会
+            # 直接抽成 2 倍（半个画面），round 只裁掉边缘十几像素。
+            ratio = max(bw / cw, bh / ch)
+            ns = max(1, int(ratio + 0.5))
         else:
-            fit = min(cw / self.photo_w, ch / self.photo_h)
+            fit = min(cw / bw, ch / bh)
             if fit >= 1.2:
-                nz = max(1, min(6, int(fit)))
-        if (nz, ns) == self._display_mode and self.photo is not None:
+                nz = max(1, min(6, int(fit + 0.5)))
+        if ((nz, ns) == self._display_mode and (cw, ch) == self._display_canvas
+                and self.photo is not None):
             return
         self._display_mode = (nz, ns)
+        self._display_canvas = (cw, ch)
         img = self.base_photo
-        if self.scale > 1:
-            img = img.zoom(self.scale)
         if nz > 1:
             img = img.zoom(nz)
         if ns > 1:
@@ -831,7 +883,7 @@ class PreviewPane:
 
     def _place_image(self) -> None:
         if self.base_photo is None or self.photo_w <= 0 or self.photo_h <= 0:
-            self.canvas.coords(self.placeholder, 12, 12)
+            self.canvas.coords(self.placeholder, 14, 14)
             self.canvas.itemconfigure(self.placeholder, state="normal")
             return
         self.canvas.itemconfigure(self.placeholder, state="hidden")
@@ -842,36 +894,141 @@ class PreviewPane:
         y = max(0, (ch - self.photo_h) // 2) if ch > 1 else 0
         self.canvas.coords(self.img_item, x, y)
 
-    def set_frame(self, data: str, base_w: int, base_h: int, scale: int = 1) -> None:
-        """data 是按 (base_w × base_h) 抽样得到的像素串，scale 为抽样间隔。"""
-        scale = max(1, int(scale))
-        if self.base_photo is None or self.base_w != base_w or self.base_h != base_h:
-            self.base_photo = tk.PhotoImage(master=self.canvas, width=base_w,
-                                            height=base_h)
-            self.base_w, self.base_h = base_w, base_h
-            self._display_mode = (0, 0)
+    def set_png(self, png: bytes) -> None:
+        """显示一张 PNG；Tk 在 C 层解码，帧率比十六进制像素串高得多。"""
         try:
-            self.base_photo.put(data)
+            img = tk.PhotoImage(master=self.canvas, data=png)
         except tk.TclError:
             return
-        self.scale = scale
-        img = self.base_photo.zoom(scale) if scale > 1 else self.base_photo
+        self.base_photo = img
+        self.base_w, self.base_h = img.width(), img.height()
         self.photo = img
-        self.photo_w, self.photo_h = img.width(), img.height()
-        self._display_mode = (1 if scale > 1 else 0, 1)
+        self.photo_w, self.photo_h = self.base_w, self.base_h
+        self._display_mode = (0, 0)
+        self._display_canvas = (0, 0)
         self.canvas.itemconfigure(self.img_item, image=img)
         self._place_image()
 
     def clear(self, text: str = "") -> None:
+        self.close_actions()
         self.photo = None
         self.base_photo = None
         self.base_w = self.base_h = 0
         self.photo_w = self.photo_h = 0
         self._display_mode = (0, 0)
+        self._display_canvas = (0, 0)
         self.canvas.itemconfigure(self.img_item, image="")
         if text:
             self.canvas.itemconfigure(self.placeholder, text=text, state="normal")
-            self.canvas.coords(self.placeholder, 12, 12)
+            self.canvas.coords(self.placeholder, 14, 14)
+
+    # -- 操作选择（先选，再执行） --
+    def _action_label(self) -> str:
+        return dict(PREVIEW_ACTIONS).get(self.action, PREVIEW_ACTIONS[0][1])
+
+    def open_actions(self) -> None:
+        """在操作按钮**上方**展开两个操作；选中项整行填充。"""
+        if self._action_popup is not None:
+            self.close_actions()
+            return
+        pop = tk.Toplevel(self.frame)
+        pop.overrideredirect(True)
+        pop.attributes("-topmost", True)
+        pop.configure(bg=UI_LINE)
+        self._action_popup = pop
+        self._action_rows = {}
+        outer = tk.Frame(pop, bg=UI_BG, padx=1, pady=1)
+        outer.pack(fill="both", expand=True)
+        for key, label in PREVIEW_ACTIONS:
+            selected = (key == self.action)
+            row_bg = UI_ACCENT if selected else UI_BG
+            row = tk.Frame(outer, bg=row_bg, cursor="hand2")
+            row.pack(fill="x")
+            # 整格填充的小方块：选中 = 蓝底，未选 = 白底灰框。
+            box = tk.Frame(row, width=14, height=14, bg=(
+                "#ffffff" if selected else UI_BG),
+                highlightthickness=1,
+                highlightbackground=("#ffffff" if selected else "#8a94a3"))
+            box.pack_propagate(False)
+            box.pack(side="left", padx=(9, 7), pady=6)
+            txt = tk.Label(row, text=label, font=UI_FONT, anchor="w",
+                           bg=row_bg, fg=("#ffffff" if selected else UI_INK),
+                           padx=2, pady=5, cursor="hand2")
+            txt.pack(side="left", fill="x", expand=True, padx=(0, 12))
+            self._action_rows[key] = (row, box, txt)
+            for widget in (row, box, txt):
+                widget.bind("<Button-1>", lambda _e, k=key: self.choose_action(k))
+                if not selected:
+                    widget.bind("<Enter>", lambda _e, r=row, t=txt: (
+                        r.configure(bg="#eef4fa"), t.configure(bg="#eef4fa")))
+                    widget.bind("<Leave>", lambda _e, r=row, t=txt: (
+                        r.configure(bg=UI_BG), t.configure(bg=UI_BG)))
+        pop.update_idletasks()
+        w = max(180, self.action_button.winfo_width())
+        h = pop.winfo_reqheight()
+        x = self.action_button.winfo_rootx()
+        y = self.action_button.winfo_rooty() - h - 3
+        if y < 0:                                  # 顶部空间不够时才向下
+            y = self.action_button.winfo_rooty() + self.action_button.winfo_height() + 3
+        pop.geometry(f"{w}x{h}+{x}+{y}")
+        pop.bind("<Escape>", lambda _e: self.close_actions())
+        # 不用 <FocusOut> 自动收：overrideredirect 弹层在 Windows 上会立刻
+        # 收到 FocusOut，表现为“点了箭头但菜单一闪就没”。改成全局点一下
+        # 关掉；弹层内部的点击不会触发根窗口的绑定。
+        try:
+            self._action_root_bind = self.app.root.bind(
+                "<Button-1>", self._on_root_click_for_actions, add="+")
+        except Exception:
+            self._action_root_bind = None
+        try:
+            pop.focus_force()
+        except tk.TclError:
+            pass
+
+    def choose_action(self, key: str) -> None:
+        if key not in dict(PREVIEW_ACTIONS):
+            return
+        self.action = key
+        self.action_button.configure(text=self._action_label() + "  ▾")
+        self.close_actions()
+        try:
+            self.run_button.focus_set()
+        except tk.TclError:
+            pass
+
+    def run_action(self) -> None:
+        self.close_actions()
+        if self.action == "terminate":
+            self.app.action_terminate()
+        else:
+            self.app.action_close_window()
+
+    def close_actions(self) -> None:
+        bind_id, self._action_root_bind = self._action_root_bind, None
+        if bind_id is not None:
+            try:
+                self.app.root.unbind("<Button-1>", bind_id)
+            except Exception:
+                pass
+        pop, self._action_popup = self._action_popup, None
+        if pop is None:
+            return
+        try:
+            pop.destroy()
+        except tk.TclError:
+            pass
+        self._action_rows = {}
+
+    def _on_root_click_for_actions(self, event) -> None:
+        """点主窗口任何地方都收起弹层；操作按钮自己交给命令去切换。"""
+        if self._action_popup is None:
+            return
+        try:
+            if str(event.widget) == str(self.action_button):
+                return
+        except Exception:
+            pass
+        self.close_actions()
 
     def set_title(self, text: str) -> None:
         self.lbl_title.configure(text=text)
@@ -899,7 +1056,7 @@ class GalleryPane:
         self.frame.rowconfigure(0, weight=1)
         self.frame.columnconfigure(0, weight=1)
 
-        self.canvas = tk.Canvas(self.frame, bg="#0d1116", highlightthickness=0)
+        self.canvas = tk.Canvas(self.frame, bg=UI_SURFACE_ALT, highlightthickness=0)
         self.canvas.grid(row=0, column=0, sticky="nsew")
         bar = ttk.Scrollbar(self.frame, orient="vertical", command=self.canvas.yview)
         bar.grid(row=0, column=1, sticky="ns")
@@ -1113,9 +1270,9 @@ class ProcessTreePane:
         tv.configure(yscrollcommand=vs.set)
         tv.grid(row=1, column=0, sticky="nsew", padx=(6, 0), pady=(0, 6))
         vs.grid(row=1, column=1, sticky="ns", pady=(0, 6))
-        tv.tag_configure("haswin", foreground="#69d98c")
+        tv.tag_configure("haswin", foreground="#1b7a3a")
         tv.tag_configure("self", background="#d6ecff")
-        tv.tag_configure("critical", foreground="#8e44ad")
+        tv.tag_configure("critical", foreground="#7b3fa0")
         tv.bind("<<TreeviewSelect>>", self._on_select)
 
     def _on_select(self, _event=None) -> None:
@@ -1440,9 +1597,9 @@ class ProgramCatalogPane:
         tv.grid(row=3, column=0, sticky="nsew", padx=(6, 0), pady=(0, 6))
         vs.grid(row=3, column=1, sticky="ns", pady=(0, 6))
         tv.tag_configure("running", background="#d6ecff")
-        tv.tag_configure("missing", foreground="#ff7b72")
+        tv.tag_configure("missing", foreground="#c0392b")
         tv.tag_configure("group", background="#eef2f6")
-        tv.tag_configure("fav", foreground="#e3b341")
+        tv.tag_configure("fav", foreground="#9a6700")
         tv.bind("<Double-1>", lambda e: self.launch_selected())
         tv.bind("<<TreeviewSelect>>", lambda e: self._sync_fav_button())
         # 右键菜单（B.4）：以前程序目录没有右键菜单，只能靠底部那几个按钮；
@@ -1973,7 +2130,7 @@ class _TextInputDialog:
     让用户输入一行文字的模态对话框（用于「保存工作区」起名字）。
 
     用自己写的而不是 `tkinter.simpledialog.askstring`：那个弹窗不跟随本程序的
-    深色主题，在一堆深色面板之间跳出一个系统灰框很突兀；而且这里需要
+    主题，在自定义面板之间跳出一个系统灰框很突兀；而且这里需要
     "回车确定 / Esc 取消 / 默认选中原文（便于改名）"这几个小行为。
     """
 
@@ -2000,7 +2157,7 @@ class _TextInputDialog:
         self.entry = tk.Entry(wrap, textvariable=self.var, font=UI_FONT, width=38,
                               bg=UI_SURFACE_ALT, fg=UI_INK, insertbackground=UI_INK,
                               relief="flat", highlightthickness=1,
-                              highlightbackground="#3a4a5a")
+                              highlightbackground=UI_LINE)
         self.entry.pack(fill="x", pady=(10, 12))
         self.entry.select_range(0, "end")
 
@@ -2064,7 +2221,7 @@ class _ChoiceDialog:
         self.listbox = tk.Listbox(wrap, height=min(10, max(3, len(choices))),
                                  font=UI_FONT, activestyle="none",
                                  bg=UI_SURFACE_ALT, fg=UI_INK,
-                                 selectbackground="#2d6ea8", selectforeground="#ffffff",
+                                 selectbackground=UI_ACCENT_DARK, selectforeground="#ffffff",
                                  relief="flat", highlightthickness=0)
         for c in choices:
             self.listbox.insert("end", c)
@@ -2119,7 +2276,7 @@ class _MultiSelectDialog:
 
     为什么不用下拉框：`ttk.Combobox` 只能单选，而"我想同时看游戏和影音"
     是很自然的需求。这里用一组复选框，点确定后回调生效。
-    界面沿用弹窗那套深色卡片风格（tk.Label 才有背景色，见坑 14）。
+    界面沿用弹窗那套高对比卡片风格（tk.Label 才有背景色，见坑 14）。
     """
 
     def __init__(self, parent: tk.Misc, title: str, message: str,
@@ -2361,16 +2518,16 @@ class _SettingsDialog:
         tk.Radiobutton(wrap, text="隐藏到托盘（推荐：音乐继续放、监控继续跑）",
                        variable=self.close_mode, value="tray", font=UI_FONT,
                        bg=UI_BG, fg=UI_INK, selectcolor=UI_SURFACE_ALT,
-                       activebackground=UI_BG, activeforeground="#ffffff",
+                       activebackground=UI_BG, activeforeground=UI_INK,
                        anchor="w").pack(anchor="w", fill="x")
         tk.Radiobutton(wrap, text="结束进程（真的退出，托盘图标一起清掉）",
                        variable=self.close_mode, value="exit", font=UI_FONT,
                        bg=UI_BG, fg=UI_INK, selectcolor=UI_SURFACE_ALT,
-                       activebackground=UI_BG, activeforeground="#ffffff",
+                       activebackground=UI_BG, activeforeground=UI_INK,
                        anchor="w").pack(anchor="w", fill="x")
         if not tray_available:
             tk.Label(wrap, text="　（本机托盘不可用，选「隐藏到托盘」会自动退回结束进程）",
-                     font=SMALL_FONT, bg=UI_BG, fg="#e0a458",
+                     font=SMALL_FONT, bg=UI_BG, fg="#9a6700",
                      anchor="w").pack(anchor="w", fill="x")
 
         # ---- 3) 启动时直接收进托盘 ----
@@ -2427,9 +2584,10 @@ class _SettingsDialog:
             font=UI_FONT, values=list(self._font_by_label.keys()))
         font_combo.pack(anchor="w", pady=(2, 0))
         tk.Label(wrap, text="　　" + i18n.pick(
-                     "保存后主界面、AI 助手、用量、接入、说明、设置和弹窗一起变；"
-                     "不用重启。",
-                     "Applies to the main window and every WinMon window immediately; "
+                     "可选 9–12；12 是界面允许的最大字号。保存后主界面、AI 助手、"
+                     "用量、接入、说明、设置和弹窗一起变；不用重启。",
+                     "9–12; 12 is the largest size the layout supports. Applies "
+                     "to the main window and every WinMon window immediately; "
                      "no restart."),
                  font=SMALL_FONT, bg=UI_BG, fg=UI_MUTED,
                  anchor="w", justify="left", wraplength=560).pack(anchor="w", fill="x")
@@ -2437,7 +2595,7 @@ class _SettingsDialog:
         #: 自启动那条要写注册表（有副作用），所以点"保存"才生效，并当场回报结果
         self.status = tk.StringVar(value="")
         tk.Label(wrap, textvariable=self.status, font=SMALL_FONT,
-                 bg=UI_BG, fg="#9fd6a0", anchor="w", justify="left",
+                 bg=UI_BG, fg="#1b7a3a", anchor="w", justify="left",
                  wraplength=560).pack(anchor="w", fill="x", pady=(10, 0))
 
         btns = tk.Frame(wrap, bg=UI_BG)
@@ -2592,8 +2750,8 @@ class _HistoryWindow:
         tv.configure(yscrollcommand=vs.set)
         tv.pack(side="left", fill="both", expand=True)
         vs.pack(side="left", fill="y")
-        tv.tag_configure("fail", foreground="#ff7b72")
-        tv.tag_configure("ok", foreground="#69d98c")
+        tv.tag_configure("fail", foreground="#c0392b")
+        tv.tag_configure("ok", foreground="#1b7a3a")
 
         # ---- 底部：危险动作与说明 ----
         foot = ttk.Frame(wrap)
@@ -3012,7 +3170,7 @@ class _AiAssistantWindow:
 
         self.header = tk.StringVar(value=i18n.t("assistant.header_reading"))
         ttk.Label(wrap, textvariable=self.header, font=UI_FONT,
-                  foreground="#9dc3df", justify="left",
+                  foreground=UI_ACCENT, justify="left",
                   wraplength=int(810 * scale)).pack(fill="x")
         self.time_text = tk.StringVar(value=i18n.t("assistant.time_reading"))
         ttk.Label(wrap, textvariable=self.time_text, font=UI_FONT,
@@ -3340,7 +3498,7 @@ class _PersonaManager:
 
         self.status = tk.StringVar(value="")
         tk.Label(self.top, textvariable=self.status, font=SMALL_FONT,
-                 bg=UI_BG, fg="#9fd6a0", anchor="w").pack(fill="x", padx=12)
+                 bg=UI_BG, fg="#1b7a3a", anchor="w").pack(fill="x", padx=12)
 
         btns = ttk.Frame(self.top, padding=(12, 8))
         btns.pack(fill="x")
@@ -3556,9 +3714,11 @@ _GUIDE_CONTENT = {
             ("h", "三句话上手"),
             ("p", "右侧窗口列表选中程序，左侧预览画面；双击最小化/还原，"
                   "Enter 或中键切到最前，右键是完整菜单。"),
-            ("h", "预览大小和刷新速度"),
-            ("p", "它们只影响预览，不改变被监控的程序。调低会更省电；"
-                  "要看视频或玩游戏时再调高。"),
+            ("h", "预览和刷新速度"),
+            ("p", "预览会自动跟随面板大小，按原分辨率显示，不需要再选“大小”。"
+                  "刷新速度只影响预览，不改变被监控的程序；调低会更省电。"),
+            ("p", "预览下方先选「关闭窗口 / 结束进程」，再点「执行」；"
+                  "结束进程仍会先确认。"),
             ("h", "媒体这一行"),
             ("p", "WinMon 先读 Windows 的媒体会话，显示“应用：曲名 · 状态”。"),
             ("p", "有些播放器（例如网易云音乐）不向系统发布会话，WinMon 会退一步"
@@ -3616,9 +3776,12 @@ _GUIDE_CONTENT = {
             ("p", "Select a program in the right-hand window list to preview it on the left. "
                   "Double-click minimizes/restores; Enter or middle-click brings it "
                   "to the front; right-click opens the full menu."),
-            ("h", "Preview size and refresh speed"),
-            ("p", "They only affect the preview, not the monitored program. Lower "
-                  "settings use less power; raise them for video or games."),
+            ("h", "Preview and refresh speed"),
+            ("p", "The preview now follows the pane size and renders at native "
+                  "resolution, so there is no size picker. Refresh speed only "
+                  "affects the preview, not the monitored program."),
+            ("p", "Below the preview, choose Close or End process, then press Run. "
+                  "Ending a process still asks for confirmation."),
             ("h", "The media line"),
             ("p", "WinMon first reads the Windows media session: “app: track · state”."),
             ("p", "Some players (e.g. NetEase Cloud Music) do not publish a session, "
@@ -3726,8 +3889,8 @@ class _GuideWindow:
             text.pack(side="left", fill="both", expand=True)
             scroll.pack(side="right", fill="y")
             text.tag_configure("h", font=BOLD_FONT,
-                               foreground="#9dc3df", spacing1=10, spacing3=4)
-            text.tag_configure("p", font=UI_FONT, foreground="#e6edf3",
+                               foreground=UI_ACCENT, spacing1=10, spacing3=4)
+            text.tag_configure("p", font=UI_FONT, foreground=UI_INK,
                                lmargin1=2, lmargin2=2)
             text.configure(state="disabled")
             self._frames[idx] = frame
@@ -4766,13 +4929,13 @@ class ConfirmDialog:
             pass
 
         # 容器用 ttk.Frame（它支持 padding 但没有 bg），
-        # 里面的文字用 tk.Label（它才有 bg/fg）—— 这样既是"深色卡片"效果又不会报错。
+        # 里面的文字用 tk.Label（它才有 bg/fg）—— 这样既是"高对比卡片"效果又不会报错。
         wrap = ttk.Frame(top, padding=22)
         wrap.pack(fill="both", expand=True)
 
         # 注意：这里必须用 tk.Label 而不是 ttk.Label。
-        # ttk.Label 不支持 background 选项，深色背景不会生效，
-        # 结果就是"深色文字压在黑色底上"完全看不清（实测踩到过）。
+        # ttk.Label 不支持 background 选项，自定义背景不会生效，
+        # 结果就是"文字颜色和底色的对比度完全失控"（实测踩到过）。
         tk.Label(wrap, text=message, font=BIG_TITLE_FONT,
                  bg=UI_BG, fg=UI_INK, anchor="w").pack(anchor="w")
         if detail:
@@ -4914,7 +5077,6 @@ class WinMonApp:
         self.show_no_window = tk.BooleanVar(value=False)
         self.show_hidden = tk.BooleanVar(value=False)
         self.live_gallery = tk.BooleanVar(value=True)
-        self.size_choice = tk.StringVar(value=PREVIEW_SIZES[1][0])
         self.fps_choice = tk.StringVar(value="很流畅 10 FPS")
         self.search_text = tk.StringVar()
         #: 字号大小（9/10/11/12，默认 9），设置里可调；保存时写入设置文件。
@@ -4956,10 +5118,10 @@ class WinMonApp:
         self._ui_msg: queue.Queue = queue.Queue()
         self._fps_window: list[float] = []
         self._pump_counter = 0
-        self._last_capture_cost = 0.0
         self._close_watch: list[tuple[int, int, float, bool]] = []
         self._rebuilding = False
         self._last_preview_req: tuple | None = None
+        self._initial_preview_done = False
         self._tree_pid_of: dict = {}
         self._tree_sig: tuple | None = None
         # 视频联动状态
@@ -5163,9 +5325,9 @@ class WinMonApp:
         self.ws_minimize_others = tk.BooleanVar(value=False)
 
     def _configure_style(self) -> None:
-        """纯黑底 / 白字主题；AI、媒体、接入卡片保留各自的浅色高亮。"""
+        """纯白底 / 黑字主题；AI、媒体、接入卡片保留各自的浅色高亮。"""
         base_bg = UI_BG
-        panel_bg = UI_SURFACE
+        panel_bg = "#e8eef6"
         ink = UI_INK
         accent = UI_ACCENT
         line = UI_LINE
@@ -5181,30 +5343,30 @@ class WinMonApp:
         except tk.TclError:
             pass
         style.configure(".", font=UI_FONT, background=base_bg, foreground=ink,
-                        fieldbackground=UI_SURFACE_ALT, bordercolor=line)
+                        fieldbackground=UI_BG, bordercolor=line)
         style.configure("TFrame", background=base_bg)
         style.configure("TLabel", background=base_bg, foreground=ink)
         style.configure("TLabelframe", background=base_bg, bordercolor=line)
         style.configure("TLabelframe.Label", background=base_bg, foreground=accent)
-        style.configure("TButton", font=UI_FONT, background=UI_SURFACE_ALT,
+        style.configure("TButton", font=UI_FONT, background="#eef2f7",
                         foreground=ink, bordercolor=line, relief="flat",
                         padding=(6, 2))
         style.map("TButton",
-                  background=[("active", "#262626"), ("pressed", "#303030"),
-                              ("disabled", "#101010")],
-                  foreground=[("disabled", "#777777")])
+                  background=[("active", "#dde8f4"), ("pressed", "#cbdced"),
+                              ("disabled", "#f4f6f9")],
+                  foreground=[("disabled", "#9aa4b2")])
         style.configure("Accent.TButton", font=UI_FONT, background=accent,
-                        foreground="#04121d", bordercolor=UI_INDICATOR_BORDER,
+                        foreground="#ffffff", bordercolor=UI_ACCENT_DARK,
                         relief="flat", padding=(8, 3))
         style.map("Accent.TButton",
-                  background=[("active", "#7cc4ff"), ("pressed", "#3f8fc9")],
-                  foreground=[("disabled", "#9aa7b2")])
+                  background=[("active", "#2871a2"), ("pressed", UI_ACCENT_DARK)],
+                  foreground=[("disabled", "#eef4f8")])
         style.configure("TCheckbutton", background=base_bg, foreground=ink,
                         padding=(2, 2))
         style.map("TCheckbutton",
                   background=[("active", base_bg)],
-                  foreground=[("disabled", "#777777")])
-        # 浅色高亮卡片里的勾选框：背景跟卡片走，否则会在卡片上挖出一块黑底。
+                  foreground=[("disabled", "#9aa4b2")])
+        # 浅色高亮卡片里的勾选框：背景跟卡片走，否则会在卡片上挖出一块白底。
         for style_name, card_bg, card_fg in (
                 ("GreenCard", "#f1f8f4", "#2a4a66"),
                 ("PurpleCard", "#f6f2fc", "#655a78"),
@@ -5216,60 +5378,60 @@ class WinMonApp:
                       foreground=[("disabled", "#8a9b93")])
         style.configure("TRadiobutton", background=base_bg, foreground=ink)
         style.map("TRadiobutton", background=[("active", base_bg)])
-        style.configure("TEntry", fieldbackground=UI_SURFACE_ALT, foreground=ink,
+        style.configure("TEntry", fieldbackground=UI_BG, foreground=ink,
                         insertcolor=ink, bordercolor=line)
         style.map("TEntry",
-                  fieldbackground=[("readonly", UI_SURFACE_ALT)],
-                  foreground=[("disabled", "#777777")])
-        style.configure("TCombobox", fieldbackground=UI_SURFACE_ALT, foreground=ink,
-                        bordercolor=line, arrowcolor=ink)
+                  fieldbackground=[("readonly", UI_BG)],
+                  foreground=[("disabled", "#9aa4b2")])
+        style.configure("TCombobox", fieldbackground=UI_BG, foreground=ink,
+                        background=UI_BG, bordercolor=line, arrowcolor=ink)
         style.map("TCombobox",
-                  fieldbackground=[("readonly", UI_SURFACE_ALT),
-                                   ("disabled", UI_SURFACE)],
-                  foreground=[("readonly", ink), ("disabled", "#777777")],
-                  selectbackground=[("readonly", UI_SURFACE_ALT)],
+                  fieldbackground=[("readonly", UI_BG),
+                                   ("disabled", "#f4f6f9")],
+                  foreground=[("readonly", ink), ("disabled", "#9aa4b2")],
+                  selectbackground=[("readonly", UI_BG)],
                   selectforeground=[("readonly", ink)])
         style.configure("TNotebook", background=base_bg, bordercolor=line)
         style.configure("TNotebook.Tab", font=UI_FONT, padding=(14, 6),
-                        background=UI_SURFACE, foreground=UI_MUTED)
+                        background=panel_bg, foreground="#40566b")
         style.map("TNotebook.Tab",
-                  background=[("selected", UI_SURFACE_ALT), ("active", "#242424")],
+                  background=[("selected", UI_BG), ("active", "#f1f5fa")],
                   foreground=[("selected", ink), ("active", ink)])
         style.configure("Treeview", font=UI_FONT, rowheight=ICON_SIZE + 6,
-                        background=UI_SURFACE, fieldbackground=UI_SURFACE,
+                        background=UI_BG, fieldbackground=UI_BG,
                         foreground=ink, bordercolor=line)
         style.configure("Treeview.Heading",
                         font=("Microsoft YaHei UI", UI_FONT_SIZE, "bold"),
-                        background=UI_SURFACE_ALT, foreground=ink, relief="flat")
-        style.map("Treeview.Heading", background=[("active", "#242424")])
+                        background=panel_bg, foreground=accent, relief="flat")
+        style.map("Treeview.Heading", background=[("active", "#dce8f3")])
         style.map("Treeview",
-                  background=[("selected", "#174a6c")],
-                  foreground=[("selected", "#ffffff")])
-        style.configure("TScrollbar", background="#2a2a2a", troughcolor=base_bg,
-                        bordercolor=line, arrowcolor=UI_MUTED)
+                  background=[("selected", "#d6e8f7")],
+                  foreground=[("selected", ink)])
+        style.configure("TScrollbar", background="#d9e2ec", troughcolor=base_bg,
+                        bordercolor=line, arrowcolor=accent)
         self._install_check_indicators(style)
-        # 主界面里还有少量 tk.Label/tk.Frame 没有显式背景；统一成黑底白字。
+        # 主界面里还有少量 tk.Label/tk.Frame 没有显式背景；统一成白底黑字。
         # 高亮卡片都显式设置了 bg/fg，不会被这些默认值覆盖。
         try:
             for pattern, value in (
                     ("*Label.background", base_bg), ("*Label.foreground", ink),
                     ("*Frame.background", base_bg), ("*Canvas.background", base_bg),
                     ("*Canvas.highlightBackground", base_bg),
-                    ("*Text.background", UI_SURFACE),
+                    ("*Text.background", UI_BG),
                     ("*Text.foreground", ink), ("*Text.insertBackground", ink),
-                    ("*Listbox.background", UI_SURFACE),
+                    ("*Listbox.background", UI_BG),
                     ("*Listbox.foreground", ink),
-                    ("*Menu.background", UI_SURFACE_ALT), ("*Menu.foreground", ink),
-                    ("*Menu.activeBackground", UI_ACCENT_DARK),
-                    ("*Menu.activeForeground", "#ffffff"),
+                    ("*Menu.background", UI_BG), ("*Menu.foreground", ink),
+                    ("*Menu.activeBackground", "#d6e8f7"),
+                    ("*Menu.activeForeground", ink),
                     ("*Checkbutton.background", base_bg),
                     ("*Checkbutton.foreground", ink),
                     ("*Radiobutton.background", base_bg),
                     ("*Radiobutton.foreground", ink),
-                    ("*TCombobox*Listbox.background", UI_SURFACE),
+                    ("*TCombobox*Listbox.background", UI_BG),
                     ("*TCombobox*Listbox.foreground", ink),
-                    ("*TCombobox*Listbox.selectBackground", UI_ACCENT_DARK),
-                    ("*TCombobox*Listbox.selectForeground", "#ffffff")):
+                    ("*TCombobox*Listbox.selectBackground", "#d6e8f7"),
+                    ("*TCombobox*Listbox.selectForeground", ink)):
                 self.root.option_add(pattern, value)
         except Exception:
             pass
@@ -5295,9 +5457,9 @@ class WinMonApp:
             return img
 
         images = {
-            "normal": square(UI_SURFACE_ALT, "#767676"),
+            "normal": square(UI_BG, "#8a94a3"),
             "selected": square(UI_INDICATOR, UI_INDICATOR_BORDER),
-            "disabled": square("#101010", "#3a3a3a"),
+            "disabled": square("#f4f6f9", "#c8ced8"),
         }
         #: 生命周期跟着 root；Tk 图片不能用完就丢。
         self.root._winmon_check_images = images
@@ -5350,16 +5512,16 @@ class WinMonApp:
         #: 总览 / AI / 工具动作都移到左侧竖栏（`_build_action_rail`）：
         #: 顶部只留“搜索 + 过滤”，主体（窗口列表 + 预览）才是第一眼看到的东西。
 
-        # ---- 顶部工具栏（第二行：预览大小 / 刷新速度 / 跟随选择 / 总览刷新）----
+        # ---- 顶部工具栏（第二行：刷新速度 / 跟随选择 / 总览刷新）----
         #
         # 长解释不再常驻：用户 2026-10-19 的意见是“太像技术文档”。这些设置还在，
         # 但“只影响预览、越低越省电”收进「说明…」，这一行只留控件。
+        #
+        # 2026-10-20 删掉「预览大小」：它实际只是抓取分辨率，画面仍由画布
+        # 缩放，导致选“小”反而被放大成一张巨图。现在抓取尺寸自动跟随面板。
         bar2 = ttk.Frame(self.root, padding=(8, 0))
         bar2.pack(fill="x")
-        ttk.Label(bar2, text="预览大小：", font=UI_FONT).pack(side="left")
-        ttk.Combobox(bar2, textvariable=self.size_choice, state="readonly", width=13,
-                     values=[s[0] for s in PREVIEW_SIZES], font=UI_FONT).pack(side="left", padx=2)
-        ttk.Label(bar2, text="刷新速度：", font=UI_FONT).pack(side="left", padx=(8, 0))
+        ttk.Label(bar2, text="刷新速度：", font=UI_FONT).pack(side="left")
         ttk.Combobox(bar2, textvariable=self.fps_choice, state="readonly", width=14,
                      values=[f[0] for f in FPS_CHOICES], font=UI_FONT).pack(side="left", padx=2)
         ttk.Checkbutton(bar2, text="跟随选择", variable=self.follow_selection).pack(
@@ -5373,7 +5535,7 @@ class WinMonApp:
         self._build_ai_bar()
 
         for var in (self.show_hidden, self.show_no_window, self.only_windowed,
-                    self.follow_selection, self.live_gallery, self.size_choice, self.fps_choice):
+                    self.follow_selection, self.live_gallery, self.fps_choice):
             var.trace_add("write", self._schedule_save_settings)
         for var in (self.video_close_mode, self.media_app_pin, self.media_auto_wake,
                     self.close_mode, self.start_minimized, self.history_days):
@@ -5485,7 +5647,7 @@ class WinMonApp:
         """
         左侧动作竖栏（用户 2026-10-19 的方案）：顶部不再摆一排按钮。
 
-        纯黑底白字下，按钮用深灰底 + 白字；主体（实时预览）占满剩下的宽度。
+        纯白底黑字下，按钮用浅灰底 + 深色字；主体（实时预览）占满剩下的宽度。
         """
         rail_bg = UI_BG
         button_bg = UI_SURFACE_ALT
@@ -5495,22 +5657,27 @@ class WinMonApp:
         rail.grid(row=0, column=0, sticky="ns", padx=(8, 6), pady=(0, 4))
         rail.grid_propagate(False)
         self.action_rail = rail
-        tk.Label(rail, text=i18n.pick("操作", "Actions"),
-                 font=SMALL_BOLD_FONT,
-                 bg=rail_bg, fg=UI_MUTED, anchor="w").pack(
-            fill="x", padx=10, pady=(8, 2))
+        self._rail_title = tk.Label(rail, text=i18n.pick("操作", "Actions"),
+                                    font=SMALL_BOLD_FONT,
+                                    bg=rail_bg, fg=UI_MUTED, anchor="w")
+        self._rail_title.pack(fill="x", padx=10, pady=(8, 2))
+        self._rail_groups: list[tk.Label] = []
+        self._rail_buttons: list[tk.Button] = []
 
         def group(title):
-            tk.Label(rail, text=title, font=SMALL_FONT,
-                     bg=rail_bg, fg="#8a949c", anchor="w").pack(
-                fill="x", padx=10, pady=(6, 1))
+            lbl = tk.Label(rail, text=title, font=SMALL_FONT,
+                           bg=rail_bg, fg=UI_MUTED, anchor="w")
+            lbl.pack(fill="x", padx=10, pady=(6, 1))
+            self._rail_groups.append(lbl)
 
         def action(label, command):
-            tk.Button(rail, text=label, font=UI_FONT, fg=ink, bg=button_bg,
-                      activebackground=UI_ACCENT_DARK, activeforeground="#ffffff",
-                      relief="flat", borderwidth=0, highlightthickness=0,
-                      anchor="w", padx=10, pady=2, cursor="hand2",
-                      command=command).pack(fill="x", padx=8, pady=1)
+            btn = tk.Button(rail, text=label, font=UI_FONT, fg=ink, bg=button_bg,
+                            activebackground="#d6e8f7", activeforeground=ink,
+                            relief="flat", borderwidth=0, highlightthickness=0,
+                            anchor="w", padx=10, pady=2, cursor="hand2",
+                            command=command)
+            btn.pack(fill="x", padx=8, pady=1)
+            self._rail_buttons.append(btn)
 
         group(i18n.pick("总览", "Overview"))
         action("加入总览", self.gallery_add_selected)
@@ -5524,6 +5691,25 @@ class WinMonApp:
         action("操作历史…", self.action_history)
         action("设置…", self.action_settings)
         action("说明…", self.action_guide)
+        self._sync_action_rail_spacing()
+
+    def _sync_action_rail_spacing(self) -> None:
+        """
+        字号变大时收紧左侧竖栏的行距，保证 12 号字 + 最小窗口仍看得到「说明…」。
+
+        为什么不能只把按钮字体改大：`apply_font_size_live()` 只改字体，不会动
+        pack 的 pady；9 号字下的行距在 12 号字时会把最后一个动作挤出可视区。
+        """
+        compact = UI_FONT_SIZE >= 11
+        try:
+            self._rail_title.pack_configure(
+                pady=(3, 0) if compact else (8, 2))
+            for lbl in self._rail_groups:
+                lbl.pack_configure(pady=(2, 0) if compact else (6, 1))
+            for btn in self._rail_buttons:
+                btn.pack_configure(pady=0 if compact else 1)
+        except Exception:
+            pass
 
     def _build_left_pane(self, left: tk.Misc) -> None:
         """
@@ -5555,21 +5741,24 @@ class WinMonApp:
         side_scale = max(1.0, min(3.0, float(
             getattr(self, "dpi_scale", 1.0) or 1.0)))
         icon_w = int(round(30 * side_scale))
-        app_w = int(round(90 * side_scale))
-        title_w = int(round(132 * side_scale))
-        state_w = int(round(52 * side_scale))
+        app_w = int(round(72 * side_scale))
+        title_w = int(round(96 * side_scale))
+        #: 状态列必须放得下「运行中」三个字（12 号字约 48px + 单元格留白）。
+        #: 四列合计 30+72+96+58=256px，小于 1080 最小窗口下侧栏的约 280px；
+        #: 旧值合计 304px，状态列会被右边缘裁掉最后一个字。
+        state_w = int(round(58 * side_scale))
         tv.column("#0", width=icon_w, stretch=False, minwidth=icon_w)
         tv.column("act", width=int(round(50 * side_scale)), anchor="center",
                   stretch=False)
         tv.column("app", width=app_w, anchor="w", stretch=True,
-                  minwidth=int(round(70 * side_scale)))
+                  minwidth=int(round(62 * side_scale)))
         tv.column("title", width=title_w, anchor="w", stretch=True,
-                  minwidth=int(round(90 * side_scale)))
+                  minwidth=int(round(80 * side_scale)))
         tv.column("pid", width=int(round(70 * side_scale)), anchor="e", stretch=False)
         tv.column("mem", width=int(round(155 * side_scale)), anchor="e", stretch=False)
         tv.column("cpu", width=int(round(56 * side_scale)), anchor="e", stretch=False)
         tv.column("state", width=state_w, anchor="center", stretch=False,
-                  minwidth=int(round(44 * side_scale)))
+                  minwidth=int(round(52 * side_scale)))
 
         vs = ttk.Scrollbar(left, orient="vertical", command=tv.yview)
         tv.configure(yscrollcommand=vs.set)
@@ -5579,13 +5768,13 @@ class WinMonApp:
         left.columnconfigure(0, weight=1)
         self._build_left_extras(left)
 
-        tv.tag_configure("noresp", foreground="#ff7b72")
-        tv.tag_configure("minimized", foreground="#9aa5ad")
-        tv.tag_configure("hidden", foreground="#7b868e")
-        tv.tag_configure("critical", foreground="#d2a8ff")
-        tv.tag_configure("nowin", foreground="#8b949e")
-        tv.tag_configure("fg", background="#123a5a")          # 前台窗口高亮
-        tv.tag_configure("fg_hidden", background="#101820", foreground="#7b868e")
+        tv.tag_configure("noresp", foreground="#c0392b")
+        tv.tag_configure("minimized", foreground="#6b7280")
+        tv.tag_configure("hidden", foreground="#8a94a3")
+        tv.tag_configure("critical", foreground="#7b3fa0")
+        tv.tag_configure("nowin", foreground="#6b7280")
+        tv.tag_configure("fg", background="#d6e8f7")          # 前台窗口高亮
+        tv.tag_configure("fg_hidden", background="#eef2f6", foreground="#6b7280")
 
     def _build_left_extras(self, left: tk.Misc) -> None:
         """
@@ -5680,7 +5869,8 @@ class WinMonApp:
         tk.Label(mbar, text="播放器：", font=SMALL_FONT,
                  bg="#eef8f4", fg="#5a6b7b").pack(side="left")
         self.media_app_combo = ttk.Combobox(mbar, textvariable=self.media_app_pin,
-                                           state="readonly", width=18, font=UI_FONT,
+                                           state="readonly",
+                                           width=self._media_combo_width(), font=UI_FONT,
                                            values=[MEDIA_APP_ANY])
         self.media_app_combo.pack(side="left", padx=(0, 4))
         # 点下拉框 = 出**多选**面板（tkinter 的 Combobox 只能单选，见 `_edit_media_app_multi`）
@@ -5790,7 +5980,7 @@ class WinMonApp:
         outer = ttk.Frame(pop, padding=8)
         outer.pack(fill="both", expand=True)
         tk.Label(outer, text="可多选（不勾 = 自动跟随正在放的那个）", bg=UI_BG,
-                 fg="#9fd6a0", font=SMALL_FONT).pack(anchor="w")
+                 fg="#1b7a3a", font=SMALL_FONT).pack(anchor="w")
         vars_: dict[str, tk.BooleanVar] = {}
         for label in [MEDIA_APP_ANY] + labels:
             v = tk.BooleanVar(value=(label in current_labels))
@@ -5992,15 +6182,22 @@ class WinMonApp:
 
     @staticmethod
     def _media_text_width() -> int:
-        """媒体行的字符宽度：字号越大，能放的字符越少，但永不挤坏右边按钮。"""
-        return max(42, int(round(62 * 10 / max(1, UI_FONT_SIZE)))
-                   - max(0, UI_FONT_SIZE - 10))
+        """媒体行的字符宽度：每大一号收 8 个字符，给右边按钮让位。"""
+        return max(42, 62 - max(0, UI_FONT_SIZE - 9) * 8)
+
+    @staticmethod
+    def _media_combo_width() -> int:
+        """播放器下拉框宽度：12 号字时收窄，给播放/上一首/下一首留位置。"""
+        return max(13, 18 - max(0, UI_FONT_SIZE - 9))
 
     def _sync_media_width(self) -> None:
-        width = self._media_text_width()
-        self.MEDIA_TEXT_WIDTH = width
+        self.MEDIA_TEXT_WIDTH = self._media_text_width()
         try:
-            self.media_label.configure(width=width)
+            self.media_label.configure(width=self.MEDIA_TEXT_WIDTH)
+        except Exception:
+            pass
+        try:
+            self.media_app_combo.configure(width=self._media_combo_width())
         except Exception:
             pass
 
@@ -6447,8 +6644,6 @@ class WinMonApp:
                              (self.live_gallery, "live_gallery")):
                 if key in data:
                     var.set(bool(data[key]))
-            if data.get("size_choice") in [s[0] for s in PREVIEW_SIZES]:
-                self.size_choice.set(data["size_choice"])
             if data.get("fps_choice") in [f[0] for f in FPS_CHOICES]:
                 self.fps_choice.set(data["fps_choice"])
             # 关闭方式：设置里存的是 slug（含老版本的 "smart" 等），界面显示中文
@@ -6530,7 +6725,6 @@ class WinMonApp:
                 "only_windowed": self.only_windowed.get(),
                 "follow_selection": self.follow_selection.get(),
                 "live_gallery": self.live_gallery.get(),
-                "size_choice": self.size_choice.get(),
                 "fps_choice": self.fps_choice.get(),
                 # 存 slug（不是界面上的中文），这样设置文件跨版本都认得住
                 "video_close_mode": _close_mode_slug(self.video_close_mode.get()),
@@ -6702,7 +6896,33 @@ class WinMonApp:
                 self._path_cache[wi.pid] = wi.path
             wi.cpu = self._cpu_pct.get(wi.pid, 0.0)
         self._rebuild_tree(keep)
+        self._maybe_start_initial_preview()
         self._update_overview_text()
+
+    def _maybe_start_initial_preview(self) -> None:
+        """
+        首次刷新后自动预览一个窗口（前台优先）。
+
+        为什么：用户打开程序时预览区是空的，必须先猜“去右边点一下”才看得到画面；
+        2026-10-20 反馈“实时预览根本看不到任何东西”，根因之一就是这里默认空着。
+        只做一次，之后完全尊重用户自己的选择。
+        """
+        if getattr(self, "_initial_preview_done", True):
+            return
+        if self.preview_key is not None or not self.follow_selection.get():
+            return
+        wi = choose_initial_preview(self.windows, self._fg_hwnd)
+        if wi is None:
+            return
+        item = self.row_of_hwnd.get(wi.hwnd)
+        if not item:
+            return
+        self._initial_preview_done = True
+        self.tree.selection_set(item)
+        self.tree.see(item)
+        self.selected_hwnd = wi.hwnd
+        self.selected_pid = wi.pid
+        self.start_preview(wi.hwnd)
 
     def _row_is_open(self, iid: str) -> bool:
         """这一行现在是展开的吗？（读不到就当没展开，绝不抛异常。）"""
@@ -8385,7 +8605,7 @@ class WinMonApp:
         self.preview_key = hwnd
         self._last_preview_req = None
         title = wi.title if len(wi.title) <= 80 else wi.title[:79] + "…"
-        self.preview.set_title(f"{wi.real_name}   —   {title}")
+        self.preview.set_title(title or wi.real_name)
         self._refresh_preview_header()
         self._request_preview_frame(force=True)
 
@@ -8401,7 +8621,7 @@ class WinMonApp:
         if not hwnd or hwnd not in self.win_by_hwnd:
             return
         wi = self.win_by_hwnd[hwnd]
-        parts = [f"PID {wi.pid}", f"{wi.rect_w}×{wi.rect_h}", wi.state]
+        parts = [wi.real_name, f"PID {wi.pid}", f"{wi.rect_w}×{wi.rect_h}", wi.state]
         if wi.path:
             parts.append(os.path.basename(wi.path))
         if wi.always_on_top:
@@ -8427,14 +8647,29 @@ class WinMonApp:
         return 0.1
 
     def _current_out_size(self) -> tuple[int, int]:
-        for name, w_, h_ in PREVIEW_SIZES:
-            if name == self.size_choice.get():
-                return w_, h_
-        return PREVIEW_SIZES[1][1], PREVIEW_SIZES[1][2]
+        """
+        抓取尺寸 = 预览画布当前大小（上限 2200×1400）。
+
+        2026-10-20 改：以前用固定的 340~800 宽，再交给 Tk 放大，于是
+        “选小尺寸”反而被放大成巨图，画面既小又糊。现在直接按画布抓取、
+        按画布 PNG 上屏，预览填满自己的区域，也不再有缩放歧义。
+        """
+        try:
+            cw, ch = self.preview.canvas_size()
+        except Exception:
+            cw, ch = 0, 0
+        if cw < 32 or ch < 32:                 # 首次映射前给一个稳妥的回退
+            cw, ch = 640, 400
+        return max(320, min(2200, cw)), max(200, min(1400, ch))
+
+    def on_preview_resize(self) -> None:
+        """预览画布尺寸变了：按新尺寸重新登记取帧（同样参数会被去重）。"""
+        self._last_preview_req = None
+        self._request_preview_frame()
 
     def _request_preview_frame(self, force: bool = False) -> None:
         """向捕获线程登记预览需求（参数无变化时不重复提交）。"""
-        hwnd = self.preview_key
+        hwnd = getattr(self, "preview_key", None)
         if hwnd is None:
             return
         # P2 优化：隐藏到托盘时画面没人看，不取帧（恢复时会 force 一帧）
@@ -8453,7 +8688,9 @@ class WinMonApp:
         if not force and req == self._last_preview_req:
             return
         self._last_preview_req = req
-        self.worker.request(("win", hwnd), hwnd, ow, oh, sw, sh, interval)
+        # quality=True → HALFTONE，缩小时比 COLORONCOLOR 清楚得多。
+        self.worker.request(("win", hwnd), hwnd, ow, oh, sw, sh, interval,
+                            quality=True)
 
     def _on_tab_changed(self) -> None:
         idx = self.notebook.index("current")
@@ -8655,21 +8892,22 @@ class WinMonApp:
                     self.preview.set_hint(f"无法捕获画面：{error}")
                 return
             raw, ow, oh = frame
-            # 抽样 + zoom 放大：把 Python 侧像素生成量降到 1/scale²
-            scale = 2 if ow >= 240 else 1
-            t0 = time.perf_counter()
-            data = core.bgr_to_tk_hex_data(raw, ow, oh, scale)
-            t1 = time.perf_counter()
-            self.preview.set_frame(data, (ow + scale - 1) // scale,
-                                   (oh + scale - 1) // scale, scale)
-            t2 = time.perf_counter()
-            self._last_capture_cost = (t1 - t0) * 1000
+            # 个别受保护 / 硬件加速窗口会“成功”返回一整张黑图。不要假装正常：
+            # 至少告诉用户为什么看不到，而不是留一块静默的黑框。
+            if raw and raw.count(0) == len(raw):
+                self.preview.set_stats("画面为空")
+                self.preview.clear(
+                    "当前窗口没有可显示的画面\n\n"
+                    "可能受保护或使用硬件加速；最小化 / 托盘窗口通常也抓不到。\n"
+                    "先切换到该窗口再试，或换一个窗口。")
+                self.preview.set_hint("")
+                return
+            # PNG 由 Tk 在 C 层解码；比 put(十六进制串) 快一个数量级，
+            # 且可以按画布原生分辨率显示，不再抽样降清晰度。
+            self.preview.set_png(base64.b64encode(
+                core.bgr_to_png(raw, ow, oh)))
             self._record_frame()
-            wi = self.win_by_hwnd.get(ident)
-            name = wi.real_name if wi else f"PID {ident}"
-            self.preview.set_stats(
-                f"{ow}×{oh} · 生图{self._last_capture_cost:.0f}ms · "
-                f"上屏{(t2 - t1) * 1000:.0f}ms · {name}")
+            self.preview.set_stats(f"实时 · {self._current_fps():.0f} FPS")
             self._update_overview_text()
         elif kind == "tile":
             if ident not in self.gallery_keys:
@@ -9483,6 +9721,7 @@ class WinMonApp:
             apply_font_size_live(self.root, new_font)
             try:
                 self._sync_media_width()
+                self._sync_action_rail_spacing()
             except Exception:
                 pass
         new_lang = i18n.set_language(got.get("language", old_lang))
@@ -9773,7 +10012,7 @@ def smoke_test(seconds: float = 6.0) -> int:
     def snapshot(tag: str = "") -> None:
         try:
             # 切标签后 Tk 的绘制是异步的；不先消化一遍，抓到的会是上一页的
-            # 黑底（2026-10-19 实测：preview 截图整页黑，控件其实都 mapped）。
+            # 空白画面（2026-10-19 实测：preview 截图整页黑，控件其实都 mapped）。
             # 只跑 update_idletasks()：不能用 update()，否则 sleep 期间会把
             # 后面的 finish 也执行掉，root 在抓屏前就被销毁了。
             root.update_idletasks()
@@ -9812,14 +10051,20 @@ def smoke_test(seconds: float = 6.0) -> int:
         app._cancel_pending_after()
         root.destroy()
 
+    def final_shot() -> None:
+        # 先截完最后一张再安排收尾：如果按固定时间收尾，snapshot 里的
+        # root.update() 可能在抓屏前就把 finish 执行掉（实测报
+        # “can't invoke winfo: application has been destroyed”）。
+        snapshot("preview")
+        root.after(100, finish)
+
     root.after(700, pick_target)
     root.after(2000, lambda: app.notebook.select(1))
     root.after(3400, lambda: snapshot("gallery"))
     root.after(3600, lambda: app.notebook.select(2))
     root.after(4800, lambda: snapshot("proctree"))
     root.after(5000, lambda: app.notebook.select(0))
-    root.after(int(seconds * 1000) - 800, lambda: snapshot("preview"))
-    root.after(int(seconds * 1000), finish)
+    root.after(int(seconds * 1000) - 800, final_shot)
     root.mainloop()
     print(f"后台捕获线程共取帧 {app.worker.frames_done} 次；句柄池 {core._PROC_POOL.stats()}")
     return 0

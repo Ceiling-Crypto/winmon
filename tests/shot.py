@@ -78,7 +78,6 @@ def build_app(width: int, height: int):
     app.follow_selection = tk.BooleanVar(value=True)
     app.live_gallery = tk.BooleanVar(value=True)
     app.history_visible = tk.BooleanVar(value=False)
-    app.size_choice = tk.StringVar(value=winmon.PREVIEW_SIZES[1][0])
     app.fps_choice = tk.StringVar(value="很流畅 10 FPS")
     app.search_text = tk.StringVar()
     app.status_text = tk.StringVar(value="WinMon 就绪（截图用）")

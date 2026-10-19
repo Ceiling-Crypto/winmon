@@ -1,18 +1,20 @@
 # -*- coding: utf-8 -*-
 """
-B34 —— 纯黑主题、预览主体、字号与社区人设库。
+B34 —— 纯白主题、预览主体/工具栏、字号与社区人设库。
 
-用户 2026-10-19 的七条要求里，这一组守住其中可程序化的部分：
-  · 字号设置默认 9，标签叫「字号大小」，所有窗口字体从同一基准派生；
-  · 主界面纯黑底白字，但 AI / 媒体高亮卡片保持原色；
+用户 2026-10-19 / 10-20 的要求里，这一组守住其中可程序化的部分：
+  · 字号默认 9，最小 9，上限不超过界面能容纳的 12；
+  · 主界面纯白底黑字，但 AI / 媒体高亮卡片保持原色；
   · 勾选框选中时是整格填充，不再是「×」；
-  · 实时预览是主体，窗口列表是右侧紧凑侧栏；
+  · 实时预览是主体，窗口列表是右侧紧凑侧栏；预览会自动填满画布；
+  · 预览下方只有「关闭窗口 / 结束进程」两个操作，向上弹出、选中项填充；
   · AI 助手不再重复显示「当前工作」；
   · 人设下拉有「更多…」，社区角色卡可读取、命名、保存、删除；
   · MCP 配置使用当前解释器，提示里不写死本机盘符。
 """
 from __future__ import annotations
 
+import base64
 import json
 import os
 import sys
@@ -42,12 +44,15 @@ class TestFontDefaults(unittest.TestCase):
         old = winmon.UI_FONT_SIZE
         self.addCleanup(winmon.set_font_size, old)
         self.assertEqual(winmon.FONT_SIZE_DEFAULT, 9)
+        self.assertEqual(winmon.FONT_SIZE_MIN, 9)
+        self.assertGreaterEqual(winmon.FONT_SIZE_MAX, 12)
         self.assertEqual([label for _v, label in winmon.FONT_SIZE_CHOICES],
-                         ["9", "10", "11", "12"])
-        winmon.set_font_size(12)
-        self.assertIn("12", str(winmon.UI_FONT))
-        self.assertIn("14", str(winmon.TITLE_FONT))
-        self.assertIn("11", str(winmon.SMALL_BOLD_FONT))
+                         [str(n) for n in range(winmon.FONT_SIZE_MIN,
+                                                winmon.FONT_SIZE_MAX + 1)])
+        winmon.set_font_size(winmon.FONT_SIZE_MAX)
+        self.assertIn(str(winmon.FONT_SIZE_MAX), str(winmon.UI_FONT))
+        self.assertIn(str(winmon.FONT_SIZE_MAX + 2), str(winmon.TITLE_FONT))
+        self.assertIn(str(winmon.FONT_SIZE_MAX - 1), str(winmon.SMALL_BOLD_FONT))
         winmon.set_font_size(9)
 
     def test_invalid_saved_font_falls_back_to_nine(self):
@@ -132,13 +137,14 @@ class TestEnvironmentIndependence(unittest.TestCase):
 
 
 @h.needs_tk
-class TestDarkThemeAndPreviewFirst(unittest.TestCase):
+class TestLightThemeAndPreviewFirst(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         import tkinter as tk
         import winmon
         import winmon_core as core
         cls.winmon = winmon
+        cls.core = core
         cls.root = tk.Tk()
         cls.root.geometry("1160x730+0+0")
         app = cls.app = winmon.WinMonApp.__new__(winmon.WinMonApp)
@@ -153,7 +159,6 @@ class TestDarkThemeAndPreviewFirst(unittest.TestCase):
         app.only_windowed = tk.BooleanVar(value=True)
         app.follow_selection = tk.BooleanVar(value=True)
         app.live_gallery = tk.BooleanVar(value=True)
-        app.size_choice = tk.StringVar(value=winmon.PREVIEW_SIZES[1][0])
         app.fps_choice = tk.StringVar(value="很流畅 10 FPS")
         app.search_text = tk.StringVar()
         app.status_text = tk.StringVar(value="就绪")
@@ -168,18 +173,22 @@ class TestDarkThemeAndPreviewFirst(unittest.TestCase):
     def tearDownClass(cls):
         h.destroy_root(cls.root)
 
-    def test_pure_black_theme_but_highlight_cards_stay_colored(self):
+    def test_pure_white_theme_but_highlight_cards_stay_colored(self):
         self.assertEqual(str(self.root.cget("background")), self.winmon.UI_BG)
-        self.assertEqual(self.winmon.UI_BG, "#000000")
+        self.assertEqual(self.winmon.UI_BG, "#ffffff")
+        self.assertNotEqual(self.winmon.UI_INK, "#ffffff",
+                            "白底必须配深色字，否则什么都看不见")
         self.assertNotEqual(str(self.app.media_label.cget("bg")),
                             str(self.root.cget("background")),
-                            "媒体高亮卡片不能被黑色主题吃掉")
+                            "媒体高亮卡片不能被白色主题吃掉")
         self.assertNotEqual(str(self.app.ai_state_label.cget("bg")),
                             str(self.root.cget("background")),
-                            "AI 高亮卡片不能被黑色主题吃掉")
+                            "AI 高亮卡片不能被白色主题吃掉")
         from tkinter import ttk
         style = ttk.Style(self.root)
-        self.assertNotEqual(style.lookup("TButton", "background"), "#ffffff")
+        button_bg = str(style.lookup("TButton", "background"))
+        self.assertNotIn(button_bg, ("#000000", self.winmon.UI_BG),
+                         "按钮要和纯白页面区分开")
 
     def test_checkbox_indicator_is_a_filled_square_not_cross(self):
         from tkinter import ttk
@@ -202,7 +211,75 @@ class TestDarkThemeAndPreviewFirst(unittest.TestCase):
         shown = tuple(str(c) for c in self.app.tree["displaycolumns"])
         self.assertEqual(shown, ("app", "title", "state"),
                          "侧栏只显示选窗口必需的三列，明细留给悬停/预览")
+        widths = sum(int(self.app.tree.column(c, "width"))
+                     for c in ("#0",) + shown)
+        self.assertLessEqual(
+            widths, self.app.tree.winfo_width(),
+            f"侧栏显示列合计 {widths}px 超过 Treeview 宽度 "
+            f"{self.app.tree.winfo_width()}px，状态列会被裁掉")
         self.assertEqual(self.app.notebook.index("current"), 0)
+
+    def test_preview_toolbar_has_two_actions_and_fill_state(self):
+        pane = self.app.preview
+        self.addCleanup(pane.close_actions)
+        self.assertEqual([key for key, _label in self.winmon.PREVIEW_ACTIONS],
+                         ["close", "terminate"])
+        self.assertEqual(pane.action, "close")
+        pane.open_actions()
+        self.assertIsNotNone(pane._action_popup)
+        row, _box, _txt = pane._action_rows["close"]
+        other, _box2, _txt2 = pane._action_rows["terminate"]
+        self.assertEqual(str(row.cget("bg")), self.winmon.UI_ACCENT,
+                         "当前操作必须整行填充，用户一眼知道选了哪个")
+        self.assertEqual(str(other.cget("bg")), self.winmon.UI_BG,
+                         "未选中的操作保持白底")
+        pane.choose_action("terminate")
+        self.assertEqual(pane.action, "terminate")
+        self.assertIn("结束进程", str(pane.action_button.cget("text")))
+        self.assertIsNone(pane._action_popup)
+        texts = [str(w.cget("text")) for w in walk(pane.frame)
+                 if w.winfo_class() in ("TButton", "Button")]
+        self.assertNotIn("结束整树", texts,
+                         "预览工具条只留两个不可逆动作，整树在右键菜单里")
+
+        calls = []
+        with mock.patch.object(self.app, "action_close_window",
+                               side_effect=lambda: calls.append("close")), \
+                mock.patch.object(self.app, "action_terminate",
+                                  side_effect=lambda: calls.append("terminate")):
+            pane.run_action()
+        self.assertEqual(calls, ["terminate"])
+
+    def test_preview_capture_size_follows_the_canvas(self):
+        self.root.update()
+        cw, ch = self.app.preview.canvas_size()
+        self.assertGreater(cw, 300)
+        self.assertGreater(ch, 200)
+        ow, oh = self.app._current_out_size()
+        self.assertEqual(ow, max(320, min(2200, cw)))
+        self.assertEqual(oh, max(200, min(1400, ch)))
+        self.assertFalse(hasattr(self.winmon, "PREVIEW_SIZES"),
+                         "误导性的固定预览尺寸已经删除")
+
+    def test_small_frame_is_enlarged_instead_of_left_tiny(self):
+        pane = self.app.preview
+        self.addCleanup(pane.clear)
+        cw, _ch = pane.canvas_size()
+        png = self.core.bgr_to_png(bytes(100 * 50 * 3), 100, 50)
+        pane.set_png(base64.b64encode(png))
+        pane._place_image()
+        self.assertGreater(pane.photo_w, 100,
+                           "小图必须按画布放大，不能缩在角落")
+        self.assertLessEqual(pane.photo_w, cw * 2,
+                             "放大不能超过预览区，避免把画面裁掉")
+
+    def test_png_encoder_preserves_bgr_channels(self):
+        """蓝底 BGR 必须解成 RGB 蓝色；编码错通道会让整个预览变黑。"""
+        import tkinter as tk
+        png = self.core.bgr_to_png(bytes([0, 0, 255]) * 100 * 50, 100, 50)
+        self.assertTrue(png.startswith(b"\x89PNG\r\n\x1a\n"))
+        photo = tk.PhotoImage(master=self.root, data=base64.b64encode(png))
+        self.assertEqual(tuple(photo.get(5, 5)), (255, 0, 0))
 
 
 @h.needs_tk
@@ -276,6 +353,26 @@ class TestAssistantHasNoCurrentWorkLine(unittest.TestCase):
             self.assertEqual(win.time_text.get(), "现在 12:00")
         finally:
             win.close()
+
+
+class TestInitialPreviewChoice(unittest.TestCase):
+    class Win:
+        def __init__(self, hwnd, pid=10, iconic=False, hidden=False):
+            self.hwnd = hwnd
+            self.pid = pid
+            self.iconic = iconic
+            self.is_hidden_surface = hidden
+
+    def test_prefers_foreground_visible_window_and_skips_self(self):
+        import winmon
+        wins = [self.Win(1, pid=99), self.Win(2, pid=10),
+                self.Win(3, pid=11, iconic=True), self.Win(4, pid=12, hidden=True)]
+        self.assertEqual(winmon.choose_initial_preview(
+            wins, fg_hwnd=2, self_pid=99).hwnd, 2)
+        self.assertEqual(winmon.choose_initial_preview(
+            wins, fg_hwnd=0, self_pid=99).hwnd, 2)
+        self.assertIsNone(winmon.choose_initial_preview(
+            [self.Win(1, pid=99)], self_pid=99))
 
 
 @h.needs_tk

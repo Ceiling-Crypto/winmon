@@ -416,7 +416,6 @@ class TestCatalogPaneSettingsRoundTrip(unittest.TestCase):
                 app.only_windowed = tk.BooleanVar(value=True)
                 app.follow_selection = tk.BooleanVar(value=True)
                 app.live_gallery = tk.BooleanVar(value=True)
-                app.size_choice = tk.StringVar(value=winmon.PREVIEW_SIZES[1][0])
                 app.fps_choice = tk.StringVar(value="很流畅 10 FPS")
                 # save_settings_now 会读的其余变量统一由它创建（漏一个就整体保存失败）。
                 # 用户砍掉"自动打开视频"后，这里改成媒体/关闭行为/日志保留天数
@@ -456,7 +455,6 @@ class TestCatalogPaneSettingsRoundTrip(unittest.TestCase):
                 app2.only_windowed = tk.BooleanVar()
                 app2.follow_selection = tk.BooleanVar()
                 app2.live_gallery = tk.BooleanVar()
-                app2.size_choice = tk.StringVar()
                 app2.fps_choice = tk.StringVar()
                 app2._init_video_vars()            # 媒体/关闭行为/保留天数都在里面
                 app2.program_prefs = core.CatalogPrefs()

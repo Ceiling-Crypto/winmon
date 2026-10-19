@@ -35,6 +35,7 @@ import subprocess
 import sys
 import threading
 import time
+import zlib
 from ctypes import wintypes as w
 
 #: 本程序所在目录（**只有源与文档**；运行时的数据见 `data_dir()`）。
@@ -1146,7 +1147,11 @@ class WindowCapturer:
         """捕获窗口画面。返回 (BGR 裸像素, 宽, 高)。"""
         ow, oh = max(16, min(ow, sw)), max(16, min(oh, sh))
         self._ensure_source(hwnd, sw, sh)
-        user32.PrintWindow(w.HWND(hwnd), w.HDC(self.mdc), PW_RENDERFULLCONTENT)
+        target = w.HWND(hwnd)
+        if not user32.PrintWindow(target, w.HDC(self.mdc), PW_RENDERFULLCONTENT):
+            # 少数老程序 / 特殊表面不认 PW_RENDERFULLCONTENT；退回普通
+            # PrintWindow 往往还能画出客户区，比安静地交一张黑图好。
+            user32.PrintWindow(target, w.HDC(self.mdc), 0)
         self._ensure_target(ow, oh)
         gdi32.SetStretchBltMode(w.HDC(self.sdc), HALFTONE if quality else COLORONCOLOR)
         gdi32.SetBrushOrgEx(w.HDC(self.sdc), 0, 0, None)
@@ -1303,6 +1308,43 @@ def bgr_to_tk_hex_data(bgr: bytes, ow: int, oh: int, scale: int = 1) -> str:
         s = y * row_chars
         rows.append("{" + " ".join("#" + hx[k:k + 6] for k in range(s, s + row_chars, 6)) + "}")
     return " ".join(rows)
+
+
+def bgr_to_png(bgr: bytes, ow: int, oh: int, level: int = 1) -> bytes:
+    """
+    把 BGR 裸像素编码成 PNG（只用 zlib，不依赖 Pillow）。
+
+    为什么预览改用 PNG：`PhotoImage.put()` 解析 640×400 的十六进制颜色串
+    实测约 **80~190ms/帧**，抓取线程 10 FPS 时队列永远积压，用户看到的是
+    几秒前的旧画面；Tk 自带的 PNG 解码器只要 **4~8ms**，而且不用抽样，
+    可以按画布原始分辨率上屏。PNG 编码本身约 3ms（level=1）。
+    """
+    ow, oh = max(1, int(ow)), max(1, int(oh))
+    stride = ow * 3
+    if len(bgr) < stride * oh:
+        raise ValueError(f"像素数据不足：需要 {stride * oh} 字节，实际 {len(bgr)}")
+    # 每行前加一个 filter 字节 0（None），再按 RGB 顺序排列。
+    # 用切片赋值让 C 层完成通道交换，比逐像素 Python 循环快一个数量级。
+    raw = bytearray((stride + 1) * oh)
+    for y in range(oh):
+        src = y * stride
+        dst = y * (stride + 1)
+        raw[dst] = 0
+        row = bgr[src:src + stride]
+        rgb = bytearray(stride)
+        rgb[0::3] = row[2::3]
+        rgb[1::3] = row[1::3]
+        rgb[2::3] = row[0::3]
+        raw[dst + 1:dst + 1 + stride] = rgb
+
+    def chunk(tag: bytes, data: bytes) -> bytes:
+        return (struct.pack(">I", len(data)) + tag + data
+                + struct.pack(">I", zlib.crc32(tag + data) & 0xFFFFFFFF))
+
+    return (b"\x89PNG\r\n\x1a\n"
+            + chunk(b"IHDR", struct.pack(">IIBBBBB", ow, oh, 8, 2, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(bytes(raw), max(0, min(9, int(level)))))
+            + chunk(b"IEND", b""))
 
 
 # ============================================================================
