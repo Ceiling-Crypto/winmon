@@ -512,7 +512,11 @@ def quip_prompt(companion: dict | None, lang: str | None = None) -> str:
     """用户手动点“搭子说一句”时的直连提示词：只要一句，不要解释。"""
     lang = ai.i18n.get_language() if lang is None else ai.i18n.normalize_language(lang)
     en = lang == "en"
-    block = _companion_block(companion, lang)
+    # 一句调侃不需要整段角色/工作区建议；只留事实 + 人设 + 兜底，省 token。
+    compact = dict(companion or {})
+    compact["role_text"] = ""
+    compact["workspace_advice"] = ""
+    block = _companion_block(compact, lang)
     if en:
         return (f"{block}\n"
                 "The user just clicked “say something”. Reply with exactly one short "

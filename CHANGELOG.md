@@ -72,6 +72,11 @@
   `test_b26`（12）、`test_b27`（9）、`test_b28`（2）、`test_b29`（18）、
   `test_b30`（22）、`test_b31`（14）、`test_b32`（8）；全量 **889 用例**。
 
+### 修复
+
+- 阶段 8.1 审计：暂停的媒体不再被说成“正在放”；B 直连提示词去掉重复的角色/工作区段；
+  `read_game=false` 时 `foreground.kind` 不再泄露“游戏”；浏览器标题不再被误判成游戏。
+
 ### 说明
 
 - 主 AI 判据：**MCP 连接 > 前台时长 > 交互新鲜度 > 用户 pin > 资源占比**；
@@ -91,7 +96,7 @@
 
 | 项目 | 结果 |
 | --- | --- |
-| `py tests\run_tests.py` | 889 用例，失败 0 / 错误 0 / 跳过 7（约 94 秒，stderr 0 行） |
+| `py tests\run_tests.py` | 889 用例，失败 0 / 错误 0 / 跳过 7（约 96 秒，stderr 0 行） |
 | `py winmon.py --mcp-selftest` | 13/13 OK，退出 0 |
 | `py winmon.py --smoke` | 退出 0，stderr 0（中英文启动均验证） |
 | `--ai-usage` / `--ai-context --copy` | 正常；中文剪贴板实测通过 |

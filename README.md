@@ -188,7 +188,7 @@ py winmon.py
 ### 跑测试（可选，纯标准库）
 
 ```bat
-py tests\run_tests.py            :: 全部用例（889 个，约 94 秒）
+py tests\run_tests.py            :: 全部用例（889 个，约 96 秒）
 py tests\run_tests.py -v         :: 详细输出
 py tests\run_tests.py -k capture :: 只跑名字里含 capture 的用例
 py tests\run_tests.py --list     :: 只列出会跑哪些用例
@@ -1017,7 +1017,7 @@ py winmon.py --ai-assist                       :: 跟随当前 AI（见下）
 以后改代码可以直接跑，不用重新手工试一遍。
 
 ```bat
-py tests\run_tests.py              :: 全部跑一遍（约 94 秒）
+py tests\run_tests.py              :: 全部跑一遍（约 96 秒）
 py tests\run_tests.py -v           :: 看每个用例的名字与结果
 py tests\run_tests.py -k capture   :: 只跑关心的部分
 py tests\lint_check.py             :: 代码复检（新增问题才退出码 1）

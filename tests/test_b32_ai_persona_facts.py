@@ -140,6 +140,15 @@ class TestLocalQuip(unittest.TestCase):
         self.assertIn("SomePlayer", tease)
         self.assertNotIn("网易云", care + tease, "不能把本机环境写死")
         self.assertNotEqual(care, tease, "不同人设应给出不同说法")
+        paused = ai.companion_payload(
+            time.mktime((2026, 10, 19, 15, 0, 0, 0, 0, -1)),
+            foreground=ai.foreground_facts(
+                [W(1, "Code.exe", "x.py — Code", "VS Code")], 1),
+            media={"app": "SomePlayer", "playing": False},
+            persona="care", intent="quip")
+        line = ai.local_quip(paused, "zh")
+        self.assertIn("开着", line)
+        self.assertNotIn("在放", line, "暂停的媒体不能说成正在播放")
 
     def test_ai_quip_cli_returns_local_line(self):
         import winmon

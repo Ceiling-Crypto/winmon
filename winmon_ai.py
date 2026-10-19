@@ -1923,6 +1923,7 @@ def local_quip(companion: dict, lang: str | None = None) -> str:
     game = facts.get("game") or {}
     app = str(fg.get("app") or "")
     media_app = str(media.get("app") or "")
+    media_playing = bool(media.get("playing"))
     game_app = str(game.get("app") or "")
     fallback = str((companion or {}).get("fallback") or "")
 
@@ -1936,9 +1937,11 @@ def local_quip(companion: dict, lang: str | None = None) -> str:
             return f"{media_app} 开着，{app} 也开着——今天想让歌单替你写吗？"
         if media_app:
             if en:
-                return (f"{media_app} is playing at {clock}. Slacking is fine; just don't "
+                state = "playing" if media_playing else "open"
+                return (f"{media_app} is {state} at {clock}. Slacking is fine; just don't "
                         "let the progress bar slack too.")
-            return f"{media_app} 放着，{clock} 了；摸鱼可以，别让进度条也摸鱼。"
+            state = "放着" if media_playing else "开着"
+            return f"{media_app} {state}，{clock} 了；摸鱼可以，别让进度条也摸鱼。"
         if game_app:
             if en:
                 return f"{game_app} is open — I won't nag; come back after this round."
@@ -1960,8 +1963,10 @@ def local_quip(companion: dict, lang: str | None = None) -> str:
         return f"现在 {clock}，{game_app} 开着；这局打完记得站起来活动一下。"
     if media_app:
         if en:
-            return f"{media_app} is playing at {clock}; finish this bit, then get some water."
-        return f"现在 {clock}，{media_app} 在放；先把手头这段收个尾，起来倒杯水。"
+            state = "playing" if media_playing else "open"
+            return (f"{media_app} is {state} at {clock}; finish this bit, then get some water.")
+        state = "在放" if media_playing else "开着"
+        return f"现在 {clock}，{media_app} {state}；先把手头这段收个尾，起来倒杯水。"
     if fallback:
         return fallback
     if app and fg.get("kind") == "查资料":
