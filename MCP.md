@@ -1353,13 +1353,29 @@ est_tokens ≈ ceil(ascii_chars / 4 + cjk_chars / 1.6 + 24)
 | mode | 自动调用模型 | 用途 |
 | --- | --- | --- |
 | `passive` | 否 | 写程序/写项目：只读窗口与事件，不提醒、不自动调用 |
-| `local`（默认） | 否 | 24 小时制时间提醒 + 本地事件提醒，0 token |
+| `local`（默认） | 否 | 0 token；把当前时段/角色说明交给**接入的 AI**，由它决定说不说 |
 | `active` | 是（显式） | 值守/自动解释；仍受预算与"前台变化才调用"约束 |
 
-**时间提醒**（`break_enabled`）完全本地：按**当前 24 小时制时段**
-（22:00–05:59 深夜 / 06:00–08:59 早上 / 11:00–13:59 中午 / 17:00–19:59 傍晚）
-每个时段每天只提醒一次；`GetLastInputInfo` 判断离开电脑超过 5 分钟就不打扰；
-**不按连续使用时长**，也不产生任何 API 调用。
+**休息提醒归 AI，不归 WinMon**（2026-10-19 用户纠正）：
+
+- WinMon **不再**按时间弹托盘/消息框，也**不再**保存"已提醒时段"；
+- `time_slot()` 只按**当前 24 小时制时段**
+  （22:00–05:59 深夜 / 06:00–08:59 早上 / 11:00–13:59 中午 / 17:00–19:59 傍晚）
+  产出 `label / message / once_key`，不按连续使用时长；
+- `companion_payload()` 产出 `{role, delivery:"ai_chat", clock, slot, reminder,
+  once_key, workspace, workspace_advice, role_text, note}`；
+  `passive`、`break_enabled=false`、非时段时 `reminder` 为空；
+- `initialize.instructions` 写入**角色记忆**：对话开始先调一次
+  `winmon_ai_sessions`，有 `companion.reminder` 才转达，按 `once_key` 每天一次；
+  用户写代码/做项目时不要主动打断；
+- `winmon_ai_sessions` 的 `structuredContent.companion` 带同样数据，text 里追加
+  "伴侣提示（由你在回答中转达…）"；预算照常按整段结果记账；
+- 剪贴板交接 / 直连提示词（`handoff_prompt` / `assistant_prompt`）也带这段角色、
+  提醒与工作区建议，所以**没接 MCP 的网页 AI** 同样能按角色说话。
+
+**独立工作区建议**：`winmon_ai_assist.json` 的 `workspace_dir` 只存路径，
+「接入 AI」窗口可选文件夹/打开/复制建议；提示词里会写“给新项目单独建工作区、
+新开对话，避免旧上下文串味”。WinMon 不自动建/移文件。
 
 ### 10.8 新增的 MCP 面
 
@@ -1381,8 +1397,9 @@ est_tokens ≈ ceil(ascii_chars / 4 + cjk_chars / 1.6 + 24)
 
 **明确不新增**：改预算、改设置、改 pin、开关公网暴露 —— 这些只能本地 UI 操作。
 
-> **实现状态（2026-10-18）**：已注册 **四个 tools**
+> **实现状态（2026-10-19）**：已注册 **四个 tools**
 > （`winmon_ai_sessions` / `winmon_incidents` / `winmon_playbooks` / `winmon_budget_status`）；
+> `winmon_ai_sessions` 额外返回 `companion`（角色/时段提醒/工作区建议）；
 > 上表里的 `resources`、`winmon_window_text`、`winmon_browser_tab` **尚未注册**。
 
 ### 10.9 分阶段（插进 §五 的既有阶段之间）
@@ -1421,13 +1438,16 @@ est_tokens ≈ ceil(ascii_chars / 4 + cjk_chars / 1.6 + 24)
 >   AI 助手窗口可"保存 AI 回复"；值守/自动解释只在当前 AI 直连可用时才跑；
 > - **7（2026-10-19）**：界面直接显示**接入状态**
 >   （`last_mcp` → 已接入 MCP / 直连就绪 / 未接入）+ 三种定位
->   （只读 / 本地提醒 / 主动 AI，默认 local）；按 24 小时制时段的本地时间提醒
->   （每个时段每天一次；离开 5 分钟不打扰；不按使用时长）；
->   本地"当前工作"快照（编程/文档/查资料，0 token）；助手显示
->   `本次 N 次 / N token`，主动模式之外不自动调用；
+>   （只读 / 本地 / 主动 AI，默认 local）；本地"当前工作"快照
+>   （编程/文档/查资料，0 token）；助手显示 `本次 N 次 / N token`，
+>   主动模式之外不自动调用；
+> - **8（2026-10-19）**：按用户纠正，**WinMon 不再自己弹休息提醒**；
+>   `companion_payload` + MCP `instructions` 角色记忆，由接入的 AI 在对话里说；
+>   独立「接入 AI」窗口（MCP / key / 独立工作区 / 行为），助手窗口精简；
+>   设置增加语言（中文 / English），`winmon_i18n.py` 负责静态文案与 AI 提示词；
 > - 测试：`test_b22`（23）、`test_b23`（15）、`test_b24`（22）、
 >   `test_b25`（15）、`test_b26`（12）、`test_b27`（9）、`test_b28`（2）、
->   `test_b29`（18）、`test_b30`（19）；全量 **864 用例**。
+>   `test_b29`（18）、`test_b30`（22）、`test_b31`（14）；全量 **881 用例**。
 > - 每日 token 预算默认 **1000 万**（`winmon_ai.DEFAULT_DAILY_TOKEN_BUDGET`）。
 
 ### 10.10 测试策略（不接真 AI 也能测）

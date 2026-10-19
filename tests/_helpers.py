@@ -39,7 +39,8 @@ import winmon_core as core                                    # noqa: E402
 #: 项目里的六个 Python 源文件（测试会逐个做语法/编码检查）。
 #: 新增顶层模块时记得加进来 —— 否则它的编码损坏不会被 test_a1 拦住。
 SOURCE_FILES = ["winmon_core.py", "winmon.py", "winmon_ai.py", "winmon_mcp.py",
-                "winmon_ai_provider.py", "scan_windows.py", "close_others.py"]
+                "winmon_ai_provider.py", "winmon_i18n.py",
+                "scan_windows.py", "close_others.py"]
 
 #: 测试期间不要弹系统通知（AI 事件检测是新的常驻逻辑，别打扰跑测试的人）
 os.environ.setdefault("WINMON_AI_NOTIFY", "0")

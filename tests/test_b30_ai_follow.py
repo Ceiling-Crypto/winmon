@@ -136,7 +136,7 @@ class TestBarFollowsAi(unittest.TestCase):
             mode="local")
         self.assertIn("已接入 MCP（Claude Desktop）", text)
         self.assertIn("01:33", text)
-        self.assertIn("本地提醒", text)
+        self.assertIn("本地", text)
 
 
 class TestWorkAndBreak(unittest.TestCase):
@@ -259,57 +259,60 @@ class TestAssistantDoesNotFallback(unittest.TestCase):
         self.assertEqual(rows[-1]["ai"], "DeepSeek")
 
 
-class TestWellnessTick(unittest.TestCase):
-    def _app(self, mode="local"):
+class TestCompanionPayload(unittest.TestCase):
+    """提醒不再由 WinMon 弹窗：只产出数据，由接入的 AI 在对话里说。"""
+
+    def _night(self):
+        return time.mktime((2026, 10, 19, 1, 54, 0, 0, 0, -1))
+
+    def test_local_mode_carries_reminder_and_role(self):
+        comp = ai.companion_payload(self._night(), break_enabled=True, mode="local",
+                                    workspace="D:\\work\\demo", lang="zh")
+        self.assertEqual(comp["delivery"], "ai_chat", "必须说明由 AI 在对话里说")
+        self.assertEqual(comp["slot"], "night")
+        self.assertIn("01:54", comp["reminder"])
+        self.assertIn("休息", comp["reminder"])
+        self.assertEqual(comp["once_key"], "night:2026-10-18")
+        self.assertIn("winmon_companion", comp["role_text"])
+        self.assertIn("D:\\work\\demo", comp["workspace_advice"])
+
+    def test_no_reminder_outside_slots_or_when_disabled(self):
+        noon = time.mktime((2026, 10, 19, 15, 0, 0, 0, 0, -1))
+        quiet = ai.companion_payload(noon, break_enabled=True, mode="local", lang="zh")
+        self.assertEqual(quiet["reminder"], "")
+        self.assertIn("不在提醒时段", quiet["note"])
+        off = ai.companion_payload(self._night(), break_enabled=False, mode="local",
+                                   lang="zh")
+        self.assertEqual(off["reminder"], "")
+        self.assertIn("关闭", off["note"])
+        passive = ai.companion_payload(self._night(), break_enabled=True,
+                                       mode="passive", lang="zh")
+        self.assertEqual(passive["reminder"], "")
+        self.assertIn("只读", passive["note"])
+
+    def test_english_messages_switch_with_language(self):
+        comp = ai.companion_payload(self._night(), break_enabled=True, mode="local",
+                                    lang="en")
+        self.assertEqual(comp["slot_label"], "deep night")
+        self.assertIn("deep night", comp["reminder"])
+        self.assertIn("workspace", comp["workspace_advice"].lower())
+
+    def test_winmon_no_longer_pops_time_reminders(self):
+        import inspect
+        import winmon
+        self.assertFalse(hasattr(winmon.WinMonApp, "_ai_wellness_tick"),
+                         "WinMon 不应再自己弹时间提醒")
+        src = inspect.getsource(winmon.WinMonApp._ai_tick)
+        self.assertNotIn("_ai_wellness_tick", src)
+
+    def test_app_exposes_companion_without_notifying(self):
         import winmon
         app = winmon.WinMonApp.__new__(winmon.WinMonApp)
-        app._ai_assist = {"mode": mode, "break_enabled": True}
-        app._ai_log_lines = []
-        app._ai_assistant_window = None
-        app._ai_notify_enabled = False
-        app._last_time_slot = ""
-        app._work_since = time.time()
-        app._set_status = lambda text: None
-        return app
-
-    def test_clock_slots_fire_once_per_slot(self):
-        import time
-        import winmon
-        app = self._app("local")
-        night = time.mktime((2026, 10, 19, 1, 54, 0, 0, 0, -1))
-        with mock.patch.object(winmon.core, "seconds_since_last_input",
-                               return_value=0.0):
-            app._ai_wellness_tick(night)
-        self.assertTrue(any("时间提醒 01:54" in line for line in app._ai_log_lines),
-                        app._ai_log_lines)
-        self.assertTrue(any("深夜" in line for line in app._ai_log_lines))
-        count = len(app._ai_log_lines)
-        with mock.patch.object(winmon.core, "seconds_since_last_input",
-                               return_value=0.0):
-            app._ai_wellness_tick(night + 60)
-        self.assertEqual(len(app._ai_log_lines), count,
-                         "同一时段每天只提醒一次")
-        morning = time.mktime((2026, 10, 19, 7, 30, 0, 0, 0, -1))
-        with mock.patch.object(winmon.core, "seconds_since_last_input",
-                               return_value=0.0):
-            app._ai_wellness_tick(morning)
-        self.assertEqual(len(app._ai_log_lines), count + 1)
-        self.assertTrue(any("早上" in line for line in app._ai_log_lines))
-
-    def test_idle_and_passive_do_not_remind(self):
-        import time
-        import winmon
-        app = self._app("local")
-        night = time.mktime((2026, 10, 19, 1, 54, 0, 0, 0, -1))
-        with mock.patch.object(winmon.core, "seconds_since_last_input",
-                               return_value=400.0):
-            app._ai_wellness_tick(night)
-        self.assertEqual(app._ai_log_lines, [], "离开电脑时不打扰")
-        passive = self._app("passive")
-        with mock.patch.object(winmon.core, "seconds_since_last_input",
-                               return_value=0.0):
-            passive._ai_wellness_tick(night)
-        self.assertEqual(passive._ai_log_lines, [])
+        app._ai_assist = {"mode": "local", "break_enabled": True,
+                          "workspace_dir": "D:\\work\\x"}
+        comp = app._ai_companion(self._night())
+        self.assertEqual(comp["slot"], "night")
+        self.assertIn("D:\\work\\x", comp["workspace_advice"])
 
 
 if __name__ == "__main__":

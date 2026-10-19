@@ -362,7 +362,7 @@ class TestAssistantWindow(unittest.TestCase):
 
         self.app = FakeApp(self.root)
 
-    def test_window_wires_analyze_send_and_toggles(self):
+    def test_window_is_compact_and_wires_actions(self):
         win = self.winmon._AiAssistantWindow(self.root, self.app)
         self.app._ai_assistant_window = win
         text = win.body.get("1.0", "end")
@@ -374,17 +374,11 @@ class TestAssistantWindow(unittest.TestCase):
         win.send()
         self.assertEqual(self.app.asked[-1], "为什么这么卡？")
         self.assertEqual(win.question.get(), "")
-        win.watch_var.set(True)
-        win.toggle_watch()
-        self.assertTrue(self.app._ai_assist["enabled"])
-        win.explain_var.set(True)
-        win.toggle_explain()
-        self.assertTrue(self.app._ai_assist["auto_explain"])
-        win.key_var.set("test-key-only-in-memory")
-        win.use_key()
-        self.assertEqual(os.environ.get("WINMON_AI_API_KEY"), "test-key-only-in-memory")
-        self.assertEqual(win.key_var.get(), "")
-        os.environ.pop("WINMON_AI_API_KEY", None)
+        # 接入/提醒设置已移到独立窗口：主助手窗口不再承担这些开关
+        self.assertFalse(hasattr(win, "watch_var"))
+        self.assertFalse(hasattr(win, "break_var"))
+        self.assertFalse(hasattr(win, "key_var"))
+        self.assertTrue(hasattr(win, "connect_btn"))
         win.question.set("交给当前 AI")
         win.handoff()
         self.assertEqual(self.app.asked[-1], "交给当前 AI")
@@ -397,7 +391,6 @@ class TestAssistantWindow(unittest.TestCase):
         win.mode_var.set("主动 AI（会花 token）")
         win.change_mode()
         self.assertEqual(self.app._ai_assist.get("mode"), "active")
-        self.assertEqual(str(win.watch_chk.cget("state")), "normal")
         win.close()
         self.assertIsNone(self.app._ai_assistant_window)
 

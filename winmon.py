@@ -43,11 +43,12 @@ import sys
 import threading
 import time
 import tkinter as tk
-from tkinter import messagebox, ttk
+from tkinter import filedialog, messagebox, ttk
 
 import winmon_ai as ai
 import winmon_ai_provider as provider
 import winmon_core as core
+import winmon_i18n as i18n
 import winmon_mcp as mcp
 
 APP_NAME = "WinMon"
@@ -2147,7 +2148,8 @@ class _SettingsDialog:
     """
     **独立设置界面**（约定："winmon 设计一个独立的设置 UI"）。
 
-    目前只放用户点名的两项（他明确说"暂时先这样，不加入别的东西"）：
+    目前放：开机自启动 / 关闭按钮行为 / 启动收进托盘 / 历史保留天数 /
+    界面语言（中文 / English）。
 
       1. **开机自启动** —— 写 `HKCU\\...\\CurrentVersion\\Run`（**不需要管理员权限**）。
          勾选框的初值**读的是注册表真实状态**，不是"上次点了什么"：
@@ -2161,11 +2163,12 @@ class _SettingsDialog:
 
     def __init__(self, parent: tk.Misc, close_mode: str, tray_available: bool,
                  start_minimized: bool = False,
-                 history_days: int = HISTORY_DAYS_DEFAULT) -> None:
+                 history_days: int = HISTORY_DAYS_DEFAULT,
+                 language: str = "zh") -> None:
         self.result: dict | None = None
         self.top = tk.Toplevel(parent)
         top = self.top
-        top.title("WinMon 设置")
+        top.title(i18n.t("settings.title"))
         top.configure(bg="#1b2027")
         top.attributes("-topmost", True)
         top.resizable(False, False)
@@ -2236,6 +2239,19 @@ class _SettingsDialog:
                  font=("Microsoft YaHei UI", 8), bg="#1b2027", fg="#8fa8bd",
                  anchor="w", justify="left", wraplength=560).pack(anchor="w", fill="x")
 
+        # ---- 5) 语言（中文 / English）----
+        tk.Label(wrap, text=i18n.t("settings.language"), font=UI_FONT, bg="#1b2027",
+                 fg="#eaf2f8", anchor="w").pack(anchor="w", pady=(14, 0))
+        self._lang_by_label = {v: k for k, v in i18n.LANGUAGES.items()}
+        self.language = tk.StringVar(value=i18n.language_label(language))
+        combo = ttk.Combobox(wrap, textvariable=self.language, state="readonly",
+                             width=14, font=UI_FONT,
+                             values=list(i18n.LANGUAGES.values()))
+        combo.pack(anchor="w", pady=(2, 0))
+        tk.Label(wrap, text="　　" + i18n.t("settings.language_hint"),
+                 font=("Microsoft YaHei UI", 8), bg="#1b2027", fg="#8fa8bd",
+                 anchor="w", justify="left", wraplength=560).pack(anchor="w", fill="x")
+
         #: 自启动那条要写注册表（有副作用），所以点"保存"才生效，并当场回报结果
         self.status = tk.StringVar(value="")
         tk.Label(wrap, textvariable=self.status, font=("Microsoft YaHei UI", 9),
@@ -2250,6 +2266,10 @@ class _SettingsDialog:
         top.bind("<Return>", lambda e: self._ok())
         top.bind("<KP_Enter>", lambda e: self._ok())
         top.bind("<Escape>", lambda e: self._cancel())
+        try:
+            i18n.translate_widgets(top)
+        except Exception:
+            pass
 
         top.update_idletasks()
         w, h = top.winfo_width(), top.winfo_height()
@@ -2277,7 +2297,9 @@ class _SettingsDialog:
                 return
         self.result = {"autostart": want, "close_mode": self.close_mode.get(),
                        "start_minimized": bool(self.start_minimized.get()),
-                       "history_days": int(self.history_days.get() or HISTORY_DAYS_DEFAULT)}
+                       "history_days": int(self.history_days.get() or HISTORY_DAYS_DEFAULT),
+                       "language": self._lang_by_label.get(
+                           self.language.get(), i18n.get_language())}
         self.top.destroy()
 
     def _cancel(self) -> None:
@@ -2779,79 +2801,43 @@ class _AiUsageWindow:
 
 class _AiAssistantWindow:
     """
-    「AI 助手」窗口（阶段 6）：**跟随用户正在用的 AI**。
+    「AI 助手」窗口（阶段 8）：只保留三件事 —— 看状态、把现场交给 AI、存回复。
 
-    它不再固定调用 GLM-5.3：
-      · 当前 AI 有它自己的直连配置 → 调用那个模型，显示真实 token；
-      · 没有直连配置 → 把现场复制到剪贴板，交给用户正在用的 AI 粘贴；
-      · 两条路都不会"偷偷换成另一个模型"。
-    窗口里的记录来自 `winmon_ai_chat.jsonl`：直连回答、剪贴板交接、
-    以及用户手动保存回来的回答——所以关掉 AI 的对话窗口后，这里仍有留痕。
+    接入步骤 / API key / 独立工作区建议都移到独立的 `_AiConnectWindow`；
+    休息提醒也不在这里开关：是否提醒由**接入的 AI** 按角色说明决定，
+    WinMon 只提供当前时段的数据（`companion.reminder`）。
     """
 
     def __init__(self, parent: tk.Misc, app) -> None:
         self.app = app
         self.top = tk.Toplevel(parent)
-        self.top.title("WinMon AI 助手（跟随当前 AI）")
+        self.top.title(i18n.t("assistant.title"))
         scale = float(getattr(app, "dpi_scale", 1.0) or 1.0)
-        self.top.geometry(f"{int(900 * scale)}x{int(660 * scale)}")
-        self.top.minsize(int(720 * scale), int(480 * scale))
+        sw, sh = parent.winfo_screenwidth(), parent.winfo_screenheight()
+        w = min(int(860 * scale), int(sw * 0.92))
+        h = min(int(600 * scale), int(sh * 0.88))
+        self.top.geometry(f"{w}x{h}")
+        self.top.minsize(int(700 * scale), int(460 * scale))
         self.top.protocol("WM_DELETE_WINDOW", self.close)
 
-        wrap = ttk.Frame(self.top, padding=(10, 8))
+        wrap = ttk.Frame(self.top, padding=(12, 10))
         wrap.pack(fill="both", expand=True)
-        self.header = tk.StringVar(value="正在读取当前 AI…")
+
+        self.header = tk.StringVar(value=i18n.t("assistant.header_reading"))
         ttk.Label(wrap, textvariable=self.header, font=UI_FONT,
-                  foreground="#2a4a66", justify="left").pack(fill="x")
-        self.work_text = tk.StringVar(value="正在读取当前工作…")
+                  foreground="#2a4a66", justify="left",
+                  wraplength=int(810 * scale)).pack(fill="x")
+        self.work_text = tk.StringVar(value=i18n.t("assistant.work_reading"))
         ttk.Label(wrap, textvariable=self.work_text, font=UI_FONT,
-                  foreground="#3d5a73", justify="left").pack(fill="x", pady=(2, 0))
-
-        #: 模式 = 使用定位：只读 / 本地提醒 / 主动 AI。默认 local（0 token）。
-        assist0 = getattr(app, "_ai_assist", {}) or {}
-        mode_row = ttk.Frame(wrap)
-        mode_row.pack(fill="x", pady=(5, 0))
-        ttk.Label(mode_row, text="模式：", font=UI_FONT).pack(side="left")
-        self._mode_by_label = {v: k for k, v in ai.ASSIST_MODE_LABELS.items()}
-        self.mode_var = tk.StringVar(
-            value=ai.assist_mode_label(str(assist0.get("mode") or "local")))
-        self.mode_combo = ttk.Combobox(mode_row, textvariable=self.mode_var,
-                                       state="readonly", width=20,
-                                       values=list(ai.ASSIST_MODE_LABELS.values()),
-                                       font=UI_FONT)
-        self.mode_combo.pack(side="left", padx=(0, 8))
-        self.mode_combo.bind("<<ComboboxSelected>>", lambda _e: self.change_mode())
-        self.break_var = tk.BooleanVar(value=bool(assist0.get("break_enabled", True)))
-        ttk.Checkbutton(mode_row, text="按时间提醒（24 小时制）",
-                        variable=self.break_var,
-                        command=self.toggle_break).pack(side="left", padx=2)
-        self.time_text = tk.StringVar(value="正在读取时间…")
-        ttk.Label(mode_row, textvariable=self.time_text, font=UI_FONT,
-                  foreground="#555").pack(side="left", padx=(8, 0))
-
-        #: 没配 key 时给一个"只用于本次运行"的入口：不写盘、不进日志。
-        self.key_row = ttk.Frame(wrap)
-        self.key_var = tk.StringVar(value="")
-        try:
-            _pinfo = app._ai_provider_snapshot()
-        except Exception:
-            _pinfo = {}
-        self._key_env = str(_pinfo.get("api_key_env") or "WINMON_AI_API_KEY")
-        if (_pinfo.get("configured") and _pinfo.get("enabled")
-                and not _pinfo.get("key_present")):
-            self.key_row.pack(fill="x", pady=(4, 0))
-            ttk.Label(self.key_row, text=f"API key（{self._key_env}，仅本次运行）：",
-                      font=UI_FONT, foreground="#7a4a00").pack(side="left")
-            ttk.Entry(self.key_row, textvariable=self.key_var, show="*",
-                      width=32).pack(side="left", padx=4)
-            ttk.Button(self.key_row, text="用于本次运行", width=12,
-                       command=self.use_key).pack(side="left")
-            ttk.Label(self.key_row, text="（长期用同名环境变量）",
-                      font=UI_FONT, foreground="#777").pack(side="left", padx=6)
+                  foreground="#3d5a73", justify="left",
+                  wraplength=int(810 * scale)).pack(fill="x", pady=(3, 0))
+        self.time_text = tk.StringVar(value=i18n.t("assistant.time_reading"))
+        ttk.Label(wrap, textvariable=self.time_text, font=UI_FONT,
+                  foreground="#555").pack(fill="x", pady=(2, 6))
 
         body_holder = ttk.Frame(wrap)
-        body_holder.pack(fill="both", expand=True, pady=(8, 6))
-        self.body = tk.Text(body_holder, height=18, wrap="word", font=MONO_FONT,
+        body_holder.pack(fill="both", expand=True)
+        self.body = tk.Text(body_holder, height=15, wrap="word", font=MONO_FONT,
                             relief="solid", borderwidth=1)
         scroll = ttk.Scrollbar(body_holder, orient="vertical", command=self.body.yview)
         self.body.configure(yscrollcommand=scroll.set)
@@ -2859,77 +2845,82 @@ class _AiAssistantWindow:
         scroll.pack(side="left", fill="y")
         self.body.configure(state="disabled")
 
+        ttk.Label(wrap, text=i18n.t("assistant.ask_hint"), font=UI_FONT,
+                  foreground="#6b7c8c").pack(fill="x", pady=(8, 2))
         ask = ttk.Frame(wrap)
-        ask.pack(fill="x", pady=(0, 4))
+        ask.pack(fill="x")
         self.question = tk.StringVar(value="")
         entry = ttk.Entry(ask, textvariable=self.question, font=UI_FONT)
-        entry.pack(side="left", fill="x", expand=True, padx=(0, 4))
+        entry.pack(side="left", fill="x", expand=True, padx=(0, 6))
         entry.bind("<Return>", lambda _e: self.send())
-        self.analyze_btn = ttk.Button(ask, text="分析当前窗口", width=13,
-                                      command=self.analyze)
-        self.analyze_btn.pack(side="right", padx=2)
-        ttk.Button(ask, text="发送", width=8,
-                   command=self.send).pack(side="right", padx=2)
+        self.send_btn = ttk.Button(ask, text=i18n.t("assistant.send"), width=11,
+                                   command=self.send)
+        self.send_btn.pack(side="right")
 
-        more = ttk.Frame(wrap)
-        more.pack(fill="x", pady=(0, 4))
-        ttk.Button(more, text="复制现场给 AI", width=13,
-                   command=self.handoff).pack(side="left", padx=2)
-        ttk.Button(more, text="保存 AI 回复", width=12,
-                   command=self.save_reply).pack(side="left", padx=2)
-        ttk.Button(more, text="接入说明", width=9,
-                   command=self.show_connect_help).pack(side="left", padx=2)
-        ttk.Button(more, text="AI 用量…", width=9,
-                   command=self.app.action_ai_usage).pack(side="right", padx=2)
+        bottom = ttk.Frame(wrap)
+        bottom.pack(fill="x", pady=(8, 0))
+        ttk.Label(bottom, text=i18n.t("assistant.mode"), font=UI_FONT).pack(side="left")
+        assist0 = getattr(app, "_ai_assist", {}) or {}
+        self._mode_by_label = {}
+        self._mode_labels = ai.assist_mode_labels(i18n.get_language())
+        for slug in ai.ASSIST_MODES:
+            self._mode_by_label[self._mode_labels[slug]] = slug
+        self.mode_var = tk.StringVar(
+            value=ai.assist_mode_label(str(assist0.get("mode") or "local"),
+                                       i18n.get_language()))
+        self.mode_combo = ttk.Combobox(bottom, textvariable=self.mode_var,
+                                       state="readonly", width=18,
+                                       values=list(self._mode_by_label.keys()),
+                                       font=UI_FONT)
+        self.mode_combo.pack(side="left", padx=(0, 10))
+        self.mode_combo.bind("<<ComboboxSelected>>", lambda _e: self.change_mode())
 
-        opts = ttk.Frame(wrap)
-        opts.pack(fill="x")
-        assist = getattr(app, "_ai_assist", {}) or {}
-        self.watch_var = tk.BooleanVar(value=bool(assist.get("enabled")))
-        self.explain_var = tk.BooleanVar(value=bool(assist.get("auto_explain")))
-        self.watch_chk = ttk.Checkbutton(opts, text="值守（前台变化时检查）",
-                                        variable=self.watch_var,
-                                        command=self.toggle_watch)
-        self.watch_chk.pack(side="left", padx=2)
-        self.explain_chk = ttk.Checkbutton(opts, text="出问题时自动解释",
-                                          variable=self.explain_var,
-                                          command=self.toggle_explain)
-        self.explain_chk.pack(side="left", padx=8)
-        interval = int(assist.get("interval_seconds", 300) or 300)
-        ttk.Label(wrap, text=f"最快每 {max(1, interval // 60)} 分钟一次；"
-                            "只在前台窗口变化或出现新事件时调用，且受预算限制。"
-                            "只读/本地提醒模式不会自动调用，只用剪贴板交接。",
-                  font=UI_FONT, foreground="#777").pack(fill="x", pady=(2, 0))
+        self.connect_btn = ttk.Button(bottom, text=i18n.t("assistant.connect"),
+                                      command=self.open_connect)
+        self.connect_btn.pack(side="left", padx=2)
+        self.history_btn = ttk.Button(bottom, text=i18n.t("assistant.history"),
+                                      command=self.show_history)
+        self.history_btn.pack(side="left", padx=2)
+        self.save_btn = ttk.Button(bottom, text=i18n.t("assistant.save"),
+                                   command=self.save_reply)
+        self.save_btn.pack(side="right", padx=2)
+        self.usage_btn = ttk.Button(bottom, text=i18n.t("assistant.usage"),
+                                    command=self.app.action_ai_usage)
+        self.usage_btn.pack(side="right", padx=2)
 
-        self._sync_mode_widgets()
+        self._seed()
         try:
             self.set_work(app._ai_work_text())
         except Exception:
-            self.set_work("当前工作：（主界面还没跑采集）")
+            pass
         try:
             self.set_time(app._ai_time_status())
         except Exception:
-            self.set_time("现在 " + time.strftime("%H:%M") + " · 24 小时制")
+            pass
+        try:
+            self.set_header(app._ai_header_text())
+        except Exception:
+            pass
+        try:
+            i18n.translate_widgets(self.top)
+        except Exception:
+            pass
 
-        records = ai.load_chat(limit=8)
-        if records:
-            self.append("== 本地记录（直连回答 / 剪贴板交接 / 手动保存的回复）==")
-            for record in records:
-                self.append(ai.format_chat_record(record))
-        else:
-            for line in list(getattr(app, "_ai_log_lines", []) or []):
-                self.append(line)
-            if not getattr(app, "_ai_log_lines", None):
-                self.append("[提示] 「分析当前窗口」会跟随当前 AI：能直连就调用，"
-                            "否则把现场复制给你粘贴；不会偷换成别的模型。")
-        self.set_header(app._ai_header_text()
-                        if hasattr(app, "_ai_header_text") else "")
-
+    # ---- 输出 / 状态 -------------------------------------------------
     def append(self, text: str) -> None:
         self.body.configure(state="normal")
         self.body.insert("end", text + "\n\n")
         self.body.see("end")
         self.body.configure(state="disabled")
+
+    def _seed(self) -> None:
+        lines = list(getattr(self.app, "_ai_log_lines", []) or [])[-6:]
+        if lines:
+            for line in lines:
+                self.append(line)
+        else:
+            self.append(i18n.t("assistant.empty"))
+            self.append(i18n.t("assistant.reminder_owner"))
 
     def set_header(self, text: str) -> None:
         if text:
@@ -2943,77 +2934,7 @@ class _AiAssistantWindow:
         if text:
             self.time_text.set(text)
 
-    def show_connect_help(self) -> None:
-        """用户点「接入说明」时给出可复制的 MCP 配置（不自动改任何设置）。"""
-        script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "winmon.py")
-        snippet = json.dumps(
-            {"mcpServers": {"winmon": {"command": "python",
-                                       "args": [script, "--mcp-stdio"]}}},
-            ensure_ascii=False, indent=1)
-        messagebox.showinfo(
-            "让 AI 接入 WinMon",
-            "桌面 AI（Claude Desktop / Cursor / 其它支持 MCP 的客户端）：\n"
-            "在它的 MCP 配置里加入：\n\n"
-            f"{snippet}\n\n"
-            "重启客户端后，工具栏会显示「已接入 MCP（客户端名）」。\n\n"
-            "网页 AI：用 py winmon.py --ai-context --copy 复制现场，"
-            "或 --mcp-http 配隧道。\n\n"
-            "直连：模式选「主动 AI」并配置对应 key；没有 key 时只会复制现场，"
-            "不会偷偷调用模型。",
-            parent=self.top)
-
-    def _sync_mode_widgets(self) -> None:
-        """按模式启用/禁用"会花 token"的开关。"""
-        mode = self._mode_by_label.get(self.mode_var.get(), "local")
-        active = mode == "active"
-        state = "normal" if active else "disabled"
-        try:
-            self.watch_chk.configure(state=state)
-            self.explain_chk.configure(state=state)
-            self.analyze_btn.configure(text="直连分析" if active else "分析并复制")
-        except Exception:
-            pass
-
-    def change_mode(self) -> None:
-        mode = self._mode_by_label.get(self.mode_var.get(), "local")
-        data = self.app.set_assist(mode=mode)
-        self.mode_var.set(ai.assist_mode_label(str(data.get("mode") or mode)))
-        self.watch_var.set(bool(data.get("enabled")))
-        self.explain_var.set(bool(data.get("auto_explain")))
-        self._sync_mode_widgets()
-        note = {"passive": "只读：只识别窗口/记录事件，不提醒、不调用模型。",
-                "local": "本地提醒：0 token；有休息提醒和本地事件提醒。",
-                "active": "主动 AI：允许直连当前 AI，会花 token（仍受预算限制）。"}[mode]
-        self.append(f"[模式] {note}")
-        try:
-            self.set_header(self.app._ai_header_text())
-        except Exception:
-            pass
-
-    def toggle_break(self) -> None:
-        data = self.app.set_assist(break_enabled=bool(self.break_var.get()))
-        self.append(f"[时间提醒] {'开' if data.get('break_enabled') else '关'}"
-                    "（按 24 小时制时段：深夜/早上/中午/傍晚）")
-
-    def use_key(self) -> None:
-        """把用户粘进来的 key 放进**本进程**的对应环境变量（不写任何文件）。"""
-        key = (self.key_var.get() or "").strip()
-        if not key:
-            self.append("[设置] key 为空，没有改动。")
-            return
-        os.environ[self._key_env or "WINMON_AI_API_KEY"] = key
-        self.key_var.set("")
-        try:
-            self.key_row.pack_forget()
-        except Exception:
-            pass
-        self.append(f"[设置] 已在本进程设置 {self._key_env}"
-                    "（不写盘；重启后需重设或改用环境变量）。")
-        try:
-            self.set_header(self.app._ai_header_text())
-        except Exception:
-            pass
-
+    # ---- 动作 -------------------------------------------------------
     def analyze(self) -> None:
         self.app.ai_assistant_request("")
 
@@ -3031,6 +2952,26 @@ class _AiAssistantWindow:
         if self.app.ai_assistant_request(question, force_handoff=True):
             self.question.set("")
 
+    def change_mode(self) -> None:
+        mode = self._mode_by_label.get(self.mode_var.get(), "local")
+        data = self.app.set_assist(mode=mode)
+        self.mode_var.set(ai.assist_mode_label(str(data.get("mode") or mode),
+                                              i18n.get_language()))
+        if i18n.get_language() == "en":
+            note = {"passive": "Read-only: no reminders, no model calls.",
+                    "local": "Local: 0 token; the connected AI may speak a reminder.",
+                    "active": "Active AI: direct calls are allowed and cost tokens."}[mode]
+        else:
+            note = {"passive": "只读：不提醒、不调用模型。",
+                    "local": "本地：0 token；休息提醒由接入的 AI 在对话里说。",
+                    "active": "主动 AI：允许直连当前 AI，会花 token。"}[mode]
+        self.append("[模式] " + note if i18n.get_language() != "en" else "[mode] " + note)
+        try:
+            self.set_header(self.app._ai_header_text())
+            self.set_time(self.app._ai_time_status())
+        except Exception:
+            pass
+
     def save_reply(self) -> None:
         """从剪贴板读取用户复制的 AI 回复，存进本地记录。"""
         try:
@@ -3038,25 +2979,326 @@ class _AiAssistantWindow:
         except Exception:
             text = ""
         if not (text or "").strip():
-            self.append("[保存] 剪贴板为空：先在 AI 那边复制它的回答，再点一次。")
+            self.append(i18n.pick("[保存] 剪贴板为空：先在 AI 那边复制它的回答，再点一次。",
+                                  "[save] Clipboard is empty: copy the AI reply first."))
             return
         self.app.ai_save_reply(text)
 
-    def toggle_watch(self) -> None:
-        data = self.app.set_assist(enabled=bool(self.watch_var.get()))
-        self.append(f"[设置] 值守：{'开' if data.get('enabled') else '关'}"
-                    f"（每 {max(1, int(data.get('interval_seconds', 300)) // 60)} 分钟，"
-                    "前台变化时才调用）")
+    def open_connect(self) -> None:
+        opener = getattr(self.app, "action_ai_connect", None)
+        if callable(opener):
+            opener()
 
-    def toggle_explain(self) -> None:
-        data = self.app.set_assist(auto_explain=bool(self.explain_var.get()))
-        self.append(f"[设置] 出问题时自动解释：{'开' if data.get('auto_explain') else '关'}")
+    def show_history(self) -> None:
+        _AiChatWindow(self.top)
+
+    def retranslate(self) -> None:
+        """语言切换后**重建**窗口：静态文案 + 模式标签 + 提示一次换干净。"""
+        opener = getattr(self.app, "action_ai_assistant", None)
+        self.close()
+        if callable(opener):
+            opener()
 
     def close(self) -> None:
         try:
             self.top.destroy()
         finally:
             self.app._ai_assistant_window = None
+
+
+class _AiChatWindow:
+    """独立的「AI 对话记录」窗口：主助手窗口不再一次铺开全部历史。"""
+
+    def __init__(self, parent: tk.Misc) -> None:
+        self.top = tk.Toplevel(parent)
+        self.top.title(i18n.t("chat.title"))
+        self.top.geometry("760x540")
+        wrap = ttk.Frame(self.top, padding=10)
+        wrap.pack(fill="both", expand=True)
+        holder = ttk.Frame(wrap)
+        holder.pack(fill="both", expand=True)
+        self.body = tk.Text(holder, wrap="word", font=MONO_FONT,
+                            relief="solid", borderwidth=1)
+        scroll = ttk.Scrollbar(holder, orient="vertical", command=self.body.yview)
+        self.body.configure(yscrollcommand=scroll.set)
+        self.body.pack(side="left", fill="both", expand=True)
+        scroll.pack(side="left", fill="y")
+        rows = ai.load_chat(limit=50)
+        if rows:
+            self.body.insert("end", "\n\n".join(ai.format_chat_record(r) for r in rows))
+        else:
+            self.body.insert("end", i18n.t("chat.empty"))
+        self.body.configure(state="disabled")
+        btns = ttk.Frame(wrap)
+        btns.pack(fill="x", pady=(8, 0))
+        ttk.Button(btns, text=i18n.t("chat.copy"), command=self.copy_all).pack(side="left")
+        ttk.Button(btns, text=i18n.t("chat.close"), command=self.top.destroy).pack(
+            side="right")
+        try:
+            i18n.translate_widgets(self.top)
+        except Exception:
+            pass
+
+    def copy_all(self) -> None:
+        try:
+            self.top.clipboard_clear()
+            self.top.clipboard_append(self.body.get("1.0", "end").strip())
+        except Exception:
+            pass
+
+
+class _AiConnectWindow:
+    """
+    「接入 AI」独立窗口：MCP 配置 / API key 建议 / 独立工作区 / AI 行为。
+
+    用户 2026-10-19 的意见：AI 助手窗口文字太多、太杂；接入建议应当单独一个窗口。
+    这个窗口只做“怎么接、key 放哪、工作区怎么分”，不掺日常问答。
+    """
+
+    def __init__(self, parent: tk.Misc, app) -> None:
+        self.app = app
+        self.top = tk.Toplevel(parent)
+        self.top.title(i18n.t("connect.title"))
+        scale = float(getattr(app, "dpi_scale", 1.0) or 1.0)
+        sw, sh = parent.winfo_screenwidth(), parent.winfo_screenheight()
+        w = min(int(820 * scale), int(sw * 0.92))
+        h = min(int(720 * scale), int(sh * 0.88))
+        self.top.geometry(f"{w}x{h}")
+        self.top.minsize(int(700 * scale), int(560 * scale))
+        self.top.protocol("WM_DELETE_WINDOW", self.close)
+        wrap = ttk.Frame(self.top, padding=(12, 10))
+        wrap.pack(fill="both", expand=True)
+
+        tk.Label(wrap, text=i18n.t("connect.head"),
+                 font=("Microsoft YaHei UI", 11, "bold")).pack(anchor="w")
+        self.status_text = tk.StringVar(value="")
+        ttk.Label(wrap, textvariable=self.status_text, font=UI_FONT,
+                  foreground="#2a4a66", justify="left",
+                  wraplength=int(760 * scale)).pack(fill="x", pady=(4, 8))
+
+        # ---- 1) MCP ----
+        mcp_box = ttk.LabelFrame(wrap, text=i18n.t("connect.mcp"), padding=8)
+        mcp_box.pack(fill="x", pady=(0, 8))
+        ttk.Label(mcp_box, text=i18n.t("connect.mcp_hint"), font=UI_FONT,
+                  foreground="#555", wraplength=740, justify="left").pack(fill="x")
+        snippet = self._config_snippet()
+        self.config_text = tk.Text(mcp_box, height=6, wrap="none", font=MONO_FONT,
+                                   relief="solid", borderwidth=1)
+        self.config_text.pack(fill="x", pady=(4, 4))
+        self.config_text.insert("1.0", snippet)
+        self.config_text.configure(state="disabled")
+        row = ttk.Frame(mcp_box)
+        row.pack(fill="x")
+        ttk.Button(row, text=i18n.t("connect.copy_config"),
+                   command=lambda: self._copy(snippet, i18n.t("connect.copied"))
+                   ).pack(side="left")
+        ttk.Button(row, text=i18n.t("connect.open_doc"),
+                   command=self.open_doc).pack(side="left", padx=6)
+
+        # ---- 2) API key ----
+        key_box = ttk.LabelFrame(wrap, text=i18n.t("connect.key"), padding=8)
+        key_box.pack(fill="x", pady=(0, 8))
+        ttk.Label(key_box, text=i18n.t("connect.key_hint"), font=UI_FONT,
+                  foreground="#555", wraplength=740, justify="left").pack(fill="x")
+        ttk.Label(key_box, text=i18n.t("connect.key_envs"),
+                  font=("Microsoft YaHei UI", 8), foreground="#777").pack(fill="x")
+        self.key_env = self._key_env()
+        key_row = ttk.Frame(key_box)
+        key_row.pack(fill="x", pady=(4, 0))
+        ttk.Label(key_row, text=f"{self.key_env}"
+                  + (": " if i18n.get_language() == "en" else "："),
+                  font=UI_FONT).pack(side="left")
+        self.key_var = tk.StringVar(value="")
+        ttk.Entry(key_row, textvariable=self.key_var, show="*", width=42).pack(
+            side="left", padx=4)
+        ttk.Button(key_row, text=i18n.t("connect.key_use"), width=12,
+                   command=self.use_key).pack(side="left")
+        ttk.Label(key_row, text=i18n.t("connect.key_temp"), font=UI_FONT,
+                  foreground="#777").pack(side="left", padx=6)
+
+        # ---- 3) workspace ----
+        ws_box = ttk.LabelFrame(wrap, text=i18n.t("connect.workspace"), padding=8)
+        ws_box.pack(fill="x", pady=(0, 8))
+        ttk.Label(ws_box, text=i18n.t("connect.workspace_hint"), font=UI_FONT,
+                  foreground="#555", wraplength=740, justify="left").pack(fill="x")
+        self.workspace_text = tk.StringVar(value="")
+        ws_row = ttk.Frame(ws_box)
+        ws_row.pack(fill="x", pady=(4, 0))
+        ttk.Label(ws_row, textvariable=self.workspace_text, font=UI_FONT,
+                  foreground="#2a4a66").pack(side="left", fill="x", expand=True)
+        ttk.Button(ws_row, text=i18n.t("connect.workspace_pick"),
+                   command=self.pick_workspace).pack(side="left", padx=4)
+        ttk.Button(ws_row, text=i18n.t("connect.workspace_open"),
+                   command=self.open_workspace).pack(side="left", padx=2)
+        ttk.Button(ws_row, text=i18n.t("connect.workspace_copy"),
+                   command=self.copy_advice).pack(side="left", padx=2)
+
+        # ---- 4) behaviour ----
+        beh = ttk.LabelFrame(wrap, text=i18n.t("connect.behavior"), padding=8)
+        beh.pack(fill="x")
+        assist = getattr(app, "_ai_assist", {}) or {}
+        self.break_var = tk.BooleanVar(value=bool(assist.get("break_enabled", True)))
+        ttk.Checkbutton(beh, text=i18n.t("connect.break"), variable=self.break_var,
+                        command=self.toggle_break).pack(anchor="w")
+        self.watch_var = tk.BooleanVar(value=bool(assist.get("enabled")))
+        self.watch_chk = ttk.Checkbutton(beh, text=i18n.t("connect.watch"),
+                                         variable=self.watch_var,
+                                         command=self.toggle_watch)
+        self.watch_chk.pack(anchor="w", pady=(4, 0))
+        self.explain_var = tk.BooleanVar(value=bool(assist.get("auto_explain")))
+        self.explain_chk = ttk.Checkbutton(beh, text=i18n.t("connect.explain"),
+                                           variable=self.explain_var,
+                                           command=self.toggle_explain)
+        self.explain_chk.pack(anchor="w")
+        self._sync_behavior()
+
+        btns = ttk.Frame(wrap)
+        btns.pack(fill="x", pady=(10, 0))
+        ttk.Button(btns, text=i18n.t("connect.close"),
+                   command=self.close).pack(side="right")
+
+        self._refresh()
+        try:
+            i18n.translate_widgets(self.top)
+        except Exception:
+            pass
+
+    # ---- 数据 -------------------------------------------------------
+    def _config_snippet(self) -> str:
+        script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "winmon.py")
+        return json.dumps(
+            {"mcpServers": {"winmon": {"command": "python",
+                                       "args": [script, "--mcp-stdio"]}}},
+            ensure_ascii=False, indent=1)
+
+    def _key_env(self) -> str:
+        try:
+            info = self.app._ai_provider_snapshot()
+            return str(info.get("api_key_env") or "WINMON_AI_API_KEY")
+        except Exception:
+            return "WINMON_AI_API_KEY"
+
+    def _refresh(self) -> None:
+        try:
+            conn = self.app._ai_connection_snapshot()
+        except Exception:
+            conn = {}
+        kind = str(conn.get("kind") or "")
+        if kind == "mcp":
+            text = i18n.pick(f"已接入 MCP：{conn.get('client')}",
+                             f"MCP connected: {conn.get('client')}")
+        elif kind == "direct":
+            text = i18n.pick(f"直连就绪：{conn.get('ai')} → {conn.get('model')}",
+                             f"Direct ready: {conn.get('ai')} → {conn.get('model')}")
+        else:
+            text = i18n.pick("还没接上：先按第 1 步配置 MCP，或按第 2 步放 key",
+                             "Not connected yet: do step 1 (MCP) or step 2 (key)")
+        self.status_text.set(i18n.t("connect.status")
+                             + (": " if i18n.get_language() == "en" else "：") + text)
+        ws = str((getattr(self.app, "_ai_assist", {}) or {}).get("workspace_dir") or "")
+        self.workspace_text.set(ws or i18n.t("connect.workspace_none"))
+        try:
+            mode = str((getattr(self.app, "_ai_assist", {}) or {}).get("mode") or "local")
+        except Exception:
+            mode = "local"
+        state = "normal" if mode == "active" else "disabled"
+        for chk in (getattr(self, "watch_chk", None), getattr(self, "explain_chk", None)):
+            if chk is not None:
+                try:
+                    chk.configure(state=state)
+                except Exception:
+                    pass
+
+    def _sync_behavior(self) -> None:
+        mode = str((getattr(self.app, "_ai_assist", {}) or {}).get("mode") or "local")
+        state = "normal" if mode == "active" else "disabled"
+        try:
+            self.watch_chk.configure(state=state)
+            self.explain_chk.configure(state=state)
+        except Exception:
+            pass
+
+    def _copy(self, text: str, note: str = "") -> None:
+        try:
+            self.top.clipboard_clear()
+            self.top.clipboard_append(text)
+            self.status_text.set(note or i18n.t("connect.copied"))
+        except Exception:
+            pass
+
+    # ---- 动作 -------------------------------------------------------
+    def use_key(self) -> None:
+        key = (self.key_var.get() or "").strip()
+        if not key:
+            self.status_text.set(i18n.t("connect.key_empty"))
+            return
+        os.environ[self.key_env or "WINMON_AI_API_KEY"] = key
+        self.key_var.set("")
+        self.status_text.set(i18n.t("connect.key_saved", env=self.key_env))
+        try:
+            self.app._ai_usage_cache = (0.0, None)
+        except Exception:
+            pass
+
+    def pick_workspace(self) -> None:
+        current = str((getattr(self.app, "_ai_assist", {}) or {}).get("workspace_dir") or "")
+        kw = {"parent": self.top, "title": i18n.t("connect.workspace_pick")}
+        if current:
+            kw["initialdir"] = current
+        try:
+            chosen = filedialog.askdirectory(**kw)
+        except Exception:
+            chosen = ""
+        if not chosen:
+            return
+        self.app.set_assist(workspace_dir=chosen)
+        self._refresh()
+
+    def open_workspace(self) -> None:
+        path = str((getattr(self.app, "_ai_assist", {}) or {}).get("workspace_dir") or "")
+        if not path:
+            self.status_text.set(i18n.t("connect.workspace_none"))
+            return
+        try:
+            os.startfile(path)
+        except Exception as exc:
+            self.status_text.set(f"{type(exc).__name__}: {exc}")
+
+    def copy_advice(self) -> None:
+        path = str((getattr(self.app, "_ai_assist", {}) or {}).get("workspace_dir") or "")
+        self._copy(ai.workspace_advice(path, i18n.get_language()),
+                   i18n.t("connect.copied"))
+
+    def open_doc(self) -> None:
+        path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "MCP.md")
+        try:
+            os.startfile(path)
+        except Exception as exc:
+            self.status_text.set(f"{type(exc).__name__}: {exc}")
+
+    def toggle_break(self) -> None:
+        self.app.set_assist(break_enabled=bool(self.break_var.get()))
+
+    def toggle_watch(self) -> None:
+        data = self.app.set_assist(enabled=bool(self.watch_var.get()))
+        self.watch_var.set(bool(data.get("enabled")))
+        self._sync_behavior()
+
+    def toggle_explain(self) -> None:
+        data = self.app.set_assist(auto_explain=bool(self.explain_var.get()))
+        self.explain_var.set(bool(data.get("auto_explain")))
+
+    def retranslate(self) -> None:
+        opener = getattr(self.app, "action_ai_connect", None)
+        self.close()
+        if callable(opener):
+            opener()
+
+    def close(self) -> None:
+        try:
+            self.top.destroy()
+        finally:
+            self.app._ai_connect_window = None
 
 
 class _IdleDialog:
@@ -3331,7 +3573,12 @@ class WinMonApp:
 
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
-        root.title(APP_TITLE)
+        # 语言要在建界面**之前**读：否则主窗口会先按中文建一遍再切
+        try:
+            i18n.load_from_settings(_settings_path())
+        except Exception:
+            i18n.set_language(i18n.DEFAULT_LANGUAGE)
+        root.title(i18n.t("app.title", ver=APP_VER))
         # 界面尺寸 = 设计稿 × DPI 缩放（理由见 `scaled_window_size`：DPI 感知的进程里
         # 字体是 1.5 倍，窗口不跟着放大就真有按钮被挤到看不见）。
         self.dpi_scale = self._dpi_scale()
@@ -3431,6 +3678,7 @@ class WinMonApp:
         self._ai_sessions = None
         self._ai_usage_window = None
         self._ai_assistant_window = None
+        self._ai_connect_window = None
         # AI 用量的界面缓存（2 秒一拍，不必每拍都扫账本）
         self._ai_budget = ai.Budget()
         self._ai_usage_cache = (0.0, None)
@@ -3448,8 +3696,6 @@ class WinMonApp:
         self._ai_session_tokens = 0
         #: 工作节律（本地计时，0 token；只用于"当前工作"显示，不用于提醒）
         self._work_since = time.time()
-        #: 按 24 小时制的时间段提醒：记录已提醒过的时段 key（每天每段一次）
-        self._last_time_slot = str(self._ai_assist.get("last_time_slot") or "")
         # 测试里把 WINMON_AI_NOTIFY 设为 0，避免弹系统通知打扰
         self._ai_notify_enabled = os.environ.get("WINMON_AI_NOTIFY", "1") not in (
             "", "0", "false", "False")
@@ -3460,6 +3706,12 @@ class WinMonApp:
         self._build_ui()
         self._bind_events()
         self.load_settings()
+        # 英文启动：控件是按中文文案建的，读完设置后统一重译一次
+        if i18n.get_language() != "zh":
+            try:
+                self.retranslate()
+            except Exception:
+                pass
         # 读完设置再刷一次媒体应用清单：这样"上次选的那个应用"也在下拉框的值里
         # （否则界面上显示的是一个不在清单里的项，点确定会被重置成"自动"）。
         self._reload_media_app_list()
@@ -3545,6 +3797,8 @@ class WinMonApp:
         #: 操作历史日志保留天数（**默认 30 天**，另有 7 / 90 天）——
         #: 启动时按这个把过期记录从日志里删掉，见 `core.prune_history_log()`
         self.history_days = tk.IntVar(value=HISTORY_DAYS_DEFAULT)
+        #: 界面语言：zh / en（默认中文；切换后主界面与 AI 窗口立即重译）
+        self.language = tk.StringVar(value=i18n.get_language())
         #: 实时总览的**排列顺序**（B.3）：存**窗口标题**而不是 hwnd（hwnd 重启就变）
         self.gallery_order_saved: list[str] = []
         #: 托盘图标 / 托盘消息窗口 / 是否正在轮询托盘消息 / 托盘是否真的可用
@@ -3941,6 +4195,8 @@ class WinMonApp:
                    command=self.action_ai_assistant).pack(side="right", padx=(2, 0))
         ttk.Button(bar, text="AI 用量…", width=9,
                    command=self.action_ai_usage).pack(side="right", padx=2)
+        ttk.Button(bar, text="接入…", width=6,
+                   command=self.action_ai_connect).pack(side="right", padx=2)
 
 
     def _app_has_session(self, app_key: str) -> bool:
@@ -4464,9 +4720,14 @@ class WinMonApp:
                 pass
         # 状态行顺手报一下"历史有多少条、日志在哪"，让用户知道去哪儿看
         try:
-            self.history_hint.set(
-                f"操作历史：本次 {len(self.history)} 条 · 日志 {self.history.log_path}"
-                + (f"　⚠ {self.history.log_error}" if self.history.log_error else ""))
+            if i18n.get_language() == "en":
+                self.history_hint.set(
+                    f"Action history: {len(self.history)} this run · log {self.history.log_path}"
+                    + (f"　⚠ {self.history.log_error}" if self.history.log_error else ""))
+            else:
+                self.history_hint.set(
+                    f"操作历史：本次 {len(self.history)} 条 · 日志 {self.history.log_path}"
+                    + (f"　⚠ {self.history.log_error}" if self.history.log_error else ""))
         except Exception:
             pass
 
@@ -4588,6 +4849,9 @@ class WinMonApp:
             # 落痕走操作历史，用户能看见自己的设置被动过（不悄悄改）。
             data, changes = core.migrate_settings(data)
             self._settings_migration = changes
+            # 语言：启动时已按同一文件读过；这里同步到设置变量，保证保存时不丢
+            lang = i18n.set_language(data.get("language", i18n.get_language()))
+            self.language.set(lang)
             for var, key in ((self.show_hidden, "show_hidden"),
                              (self.show_no_window, "show_no_window"),
                              (self.only_windowed, "only_windowed"),
@@ -4697,6 +4961,8 @@ class WinMonApp:
                 # 与"启动时直接收进托盘"
                 "close_mode": self.close_mode.get(),
                 "start_minimized": bool(self.start_minimized.get()),
+                # 界面语言：zh / en（默认中文）
+                "language": self.language.get(),
                 # 工作区快照 + 应用时的附加选项
                 "workspaces": self.workspaces,
                 "ws_minimize_others": bool(self.ws_minimize_others.get()),
@@ -4969,13 +5235,18 @@ class WinMonApp:
 
         label = wi.real_name
         if wi.is_frame_host:
-            label = f"{label}（应用外壳）"
+            label = f"{label}" + (" (frame host)" if i18n.get_language() == "en"
+                                  else "（应用外壳）")
+        state = wi.state
+        if i18n.get_language() == "en":
+            state = {"运行中": "Run", "已最小化": "Min",
+                     "无响应": "Hung"}.get(state, state)
         item = self.tree.insert(
             parent, "end", text="", tags=tuple(tags),
             image=self.icons.photo(wi) or "",
             values=(act_text(wi, is_fg), label, wi.title, wi.pid,
                     core._fmt_mem_pair(wi.mem_kb, wi.mem_private_kb),
-                    f"{wi.cpu:.1f}%", wi.state))
+                    f"{wi.cpu:.1f}%", state))
         self.row_of_hwnd[wi.hwnd] = item
         self.row_info[item] = ("window", wi.pid, wi.hwnd)
 
@@ -4983,6 +5254,13 @@ class WinMonApp:
         shown = [wi for wi in self.windows if not wi.is_hidden_surface]
         n_hidden = len(self.windows) - len(shown)
         n_app = len({wi.display_name for wi in shown})
+        if i18n.get_language() == "en":
+            extra = f" · hidden {n_hidden}" if n_hidden else ""
+            self.overview_text.set(
+                f"Programs {n_app} · Windows {len(shown)}{extra} · "
+                f"Processes {len(self.proc_map)} · Overview {len(self.gallery_keys)} · "
+                f"FPS {self._current_fps():.1f}")
+            return
         extra = f" · 隐藏 {n_hidden}" if n_hidden else ""
         self.overview_text.set(
             f"程序 {n_app} · 窗口 {len(shown)}{extra} · 进程 {len(self.proc_map)} · "
@@ -5046,7 +5324,6 @@ class WinMonApp:
             for inc in fresh:
                 self._ai_notify(inc)
             self._ai_assistant_tick(res, fresh)
-            self._ai_wellness_tick()
         except Exception:
             # 这一层坏了不能影响主界面：静默跳过，下一拍再试
             pass
@@ -5155,52 +5432,42 @@ class WinMonApp:
         try:
             return ai.describe_work(getattr(self, "windows", []) or [],
                                     getattr(self, "_fg_hwnd", 0),
-                                    self._ai_work_minutes())
+                                    self._ai_work_minutes(),
+                                    lang=i18n.get_language())
         except Exception:
-            return "当前工作：（读取失败；WinMon 不会因此调用模型）"
+            return i18n.pick("当前工作：（读取失败；WinMon 不会因此调用模型）",
+                             "Current work: (read failed; WinMon will not call a model)")
 
-    def _ai_wellness_tick(self, now: float | None = None) -> None:
+    def _ai_companion(self, now: float | None = None) -> dict:
         """
-        本地休息提醒：**按当前时间（24 小时制）**，不是按用了多久。
+        “由接入的 AI 转达”的伴侣数据（当前时段 + 提醒 + 工作区建议）。
 
-        时段（每个时段每天只提醒一次）：
-          22:00–05:59 深夜 / 06:00–08:59 早上 / 11:00–13:59 中午 / 17:00–19:59 傍晚。
-        其它时间不提醒；离开电脑超过 5 分钟时不打扰（回来后仍会补这一次）。
+        **WinMon 自己不弹提醒**：这里只把数据交给 MCP / 剪贴板 / 直连提示词，
+        由用户正在用的那个 AI 决定要不要在对话里说。
         """
         assist = getattr(self, "_ai_assist", {}) or {}
-        if assist.get("mode") not in ("local", "active"):
-            return
-        if not assist.get("break_enabled", True):
-            return
-        now = time.time() if now is None else float(now)
-        try:
-            if core.seconds_since_last_input() >= 300:
-                return
-        except Exception:
-            pass
-        slot = ai.time_slot(now)
-        if not slot:
-            return
-        if slot.get("key") == getattr(self, "_last_time_slot", ""):
-            return
-        self._last_time_slot = str(slot.get("key") or "")
-        try:
-            self._ai_assist = ai.save_assist(
-                {**self._ai_assist, "last_time_slot": self._last_time_slot})
-        except Exception:
-            pass
-        text = str(slot.get("message") or "")
-        self._ai_notify_text(f"休息提醒（{slot.get('label')}）", text, "info")
-        self._ai_log(f"[时间提醒 {slot.get('clock')}] {text}")
+        return ai.companion_payload(
+            now=now,
+            break_enabled=bool(assist.get("break_enabled", True)),
+            mode=str(assist.get("mode") or "local"),
+            workspace=str(assist.get("workspace_dir") or ""),
+            lang=i18n.get_language())
 
     def _ai_time_status(self) -> str:
-        """界面上的"现在几点 / 当前时段"，24 小时制。"""
-        now = time.time()
-        slot = ai.time_slot(now)
-        clock = time.strftime("%H:%M", time.localtime(now))
+        """界面上的"现在几点 / 当前时段"，24 小时制（提醒归 AI 说）。"""
+        comp = self._ai_companion()
+        clock = str(comp.get("clock") or time.strftime("%H:%M"))
+        slot = str(comp.get("slot_label") or "")
+        if i18n.get_language() == "en":
+            if not slot:
+                return f"Now {clock} · outside reminder slots"
+            return (f"Now {clock} · {slot} ｜ the connected AI speaks the reminder")
         if not slot:
             return f"现在 {clock} · 不在提醒时段"
-        return f"现在 {clock} · {slot.get('label')}"
+        return f"现在 {clock} · {slot} ｜ 提醒由接入的 AI 在对话里说"
+
+    def _ai_workspace(self) -> str:
+        return str((getattr(self, "_ai_assist", {}) or {}).get("workspace_dir") or "")
 
     def _ai_log(self, text: str) -> None:
         """AI 助手的运行记录：窗口开着就追加，没开也留在内存里（最多 200 条）。"""
@@ -5368,33 +5635,48 @@ class WinMonApp:
         self._ai_pump_jobs()
 
     def _ai_header_text(self) -> str:
-        """助手窗口顶部：**先写接入状态**，再写模式和本次花费。"""
+        """助手窗口顶部：**先写接入状态**，再写模式、花费与“提醒归 AI”。"""
         conn = self._ai_connection_snapshot()
         kind = str(conn.get("kind") or "")
         mode = str((getattr(self, "_ai_assist", {}) or {}).get("mode") or "local")
-        mode_label = ai.assist_mode_label(mode).split("（")[0]
-        session = (f"本次 {self._ai_session_calls} 次 / "
-                   f"{self._ai_session_tokens:,} token")
+        mode_label = ai.assist_mode_label(mode, i18n.get_language()).split("（")[0].split(" (")[0]
+        en = i18n.get_language() == "en"
+        session = (f"this session {self._ai_session_calls} calls / "
+                   f"{self._ai_session_tokens:,} token" if en else
+                   f"本次 {self._ai_session_calls} 次 / {self._ai_session_tokens:,} token")
         status = self._ai_status_snapshot()
         today = int(status.get("provider_tokens", 0) or 0)
         if kind == "mcp":
             stamp = str(conn.get("ts") or "")[11:16]
-            line1 = (f"接入：已通过 MCP 接入 {conn.get('client')}"
-                     + (f"（最近 {stamp}，今日 {conn.get('calls', 0)} 次）" if stamp else ""))
+            line1 = (f"Connected via MCP: {conn.get('client')}" if en else
+                     f"接入：已通过 MCP 接入 {conn.get('client')}")
+            if stamp:
+                line1 += (f" (last {stamp}, today {conn.get('calls', 0)} calls)" if en
+                          else f"（最近 {stamp}，今日 {conn.get('calls', 0)} 次）")
         elif kind == "direct":
-            line1 = f"接入：直连就绪 {conn.get('ai')} → {conn.get('model')}"
+            line1 = (f"Direct ready: {conn.get('ai')} → {conn.get('model')}" if en else
+                     f"接入：直连就绪 {conn.get('ai')} → {conn.get('model')}")
         else:
             ai_name = str(conn.get("ai") or "")
-            line1 = ("接入：还没接上"
-                     + (f"；可复制现场给 {ai_name}" if ai_name else "；先打开一个 AI 窗口"))
-        line2 = f"模式：{mode_label} ｜ {session} ｜ 今日真实 {today:,} token"
+            if en:
+                line1 = "Not connected yet" + (
+                    f"; you can copy the context to {ai_name}" if ai_name
+                    else "; open an AI window first")
+            else:
+                line1 = ("接入：还没接上"
+                         + (f"；可复制现场给 {ai_name}" if ai_name else "；先打开一个 AI 窗口"))
+        line2 = (f"Mode: {mode_label} ｜ reminders: spoken by the connected AI ｜ "
+                 f"{session} ｜ today provider {today:,} token" if en else
+                 f"模式：{mode_label} ｜ 提醒：由接入的 AI 说 ｜ "
+                 f"{session} ｜ 今日真实 {today:,} token")
         return line1 + "\n" + line2
 
     def set_assist(self, enabled: bool | None = None,
                    auto_explain: bool | None = None,
                    mode: str | None = None,
-                   break_enabled: bool | None = None) -> dict:
-        """改助手模式/值守/时间提醒（界面调用；只写本地设置文件）。"""
+                   break_enabled: bool | None = None,
+                   workspace_dir: str | None = None) -> dict:
+        """改助手模式/值守/提醒/工作区（界面调用；只写本地设置文件）。"""
         data = dict(getattr(self, "_ai_assist", {}) or {})
         old_mode = str(data.get("mode") or "local")
         if mode is not None:
@@ -5410,6 +5692,8 @@ class WinMonApp:
             data["auto_explain"] = bool(auto_explain)
         if break_enabled is not None:
             data["break_enabled"] = bool(break_enabled)
+        if workspace_dir is not None:
+            data["workspace_dir"] = str(workspace_dir or "")[:260]
         self._ai_assist = ai.save_assist(data)
         return self._ai_assist
 
@@ -5430,7 +5714,9 @@ class WinMonApp:
         via_mcp = (str(primary.get("source") or "") == "mcp_parent"
                    or bool(self._ai_recent_mcp_client()))
         prompt = provider.handoff_prompt(self._ai_context(), question,
-                                         ai_name=ai_name, via_mcp=via_mcp)
+                                         ai_name=ai_name, via_mcp=via_mcp,
+                                         companion=self._ai_companion(),
+                                         lang=i18n.get_language())
         copied = ai.copy_to_clipboard(prompt)
         record = ai.append_chat({
             "mode": "handoff", "ai": ai_name,
@@ -5471,7 +5757,10 @@ class WinMonApp:
                 if getattr(self, "_ai_busy", False) or self._ai_jobs:
                     self._ai_log("上一条还在处理，等它回来再发（避免并发烧 token）。")
                     return False
-                prompt = provider.assistant_prompt(self._ai_context(), question)
+                prompt = provider.assistant_prompt(
+                    self._ai_context(), question,
+                    companion=self._ai_companion(),
+                    lang=i18n.get_language())
                 self._ai_log(f"已发给 {ai_name} → {cfg.model}…")
                 self._ai_enqueue_job({
                     "kind": "manual", "ai": ai_name, "cfg": cfg,
@@ -5515,10 +5804,30 @@ class WinMonApp:
                 self._ai_assistant_window = None
         try:
             self._ai_assistant_window = _AiAssistantWindow(self.root, self)
-            self._set_status("AI 助手已打开：顶部显示接入状态；"
-                             "本地提醒模式不会自动调用模型")
+            self._set_status(i18n.pick(
+                "AI 助手已打开：顶部显示接入状态；提醒由接入的 AI 在对话里说",
+                "AI assistant opened: connection status on top; the connected AI speaks reminders"))
         except Exception as exc:
             self._set_status(f"打不开「AI 助手」：{type(exc).__name__}: {exc}")
+
+    def action_ai_connect(self) -> None:
+        """打开「接入 AI」独立窗口（MCP / key / 工作区 / 行为）。"""
+        win = getattr(self, "_ai_connect_window", None)
+        if win is not None:
+            try:
+                win.top.deiconify()
+                win.top.lift()
+                win.top.focus_force()
+                win._refresh()
+                return
+            except Exception:
+                self._ai_connect_window = None
+        try:
+            self._ai_connect_window = _AiConnectWindow(self.root, self)
+            self._set_status(i18n.pick("已打开「接入 AI」：按 1→2→3 步接上即可",
+                                       "“Connect an AI” opened: follow steps 1-3"))
+        except Exception as exc:
+            self._set_status(f"打不开「接入 AI」：{type(exc).__name__}: {exc}")
 
     def _ai_notify(self, inc) -> None:
         """本地提醒：优先托盘气泡；托盘不可用就退回状态栏。"""
@@ -6158,7 +6467,9 @@ class WinMonApp:
                 tags.append("critical")
             item = tv.insert(parent_item, "end", text=label, tags=tuple(tags),
                              open=(depth < 1),
-                             values=(pid, "有" if has_win else "—",
+                             values=(pid,
+                                     ("Yes" if i18n.get_language() == "en" else "有")
+                                     if has_win else "—",
                                      core._fmt_mem(info.get("mem_kb", 0)),
                                      core._fmt_mem(info.get("mem_private_kb", 0))
                                      if info.get("mem_private_kb") else "—",
@@ -6179,9 +6490,14 @@ class WinMonApp:
                     except Exception:
                         pass
                     break
-        self.proc_tree.set_info(
-            f"共 {len(self.proc_map)} 个进程，其中 {len(window_pids)} 个有可见窗口；"
-            f"树上显示 {len(keep)} 个相关进程（含父进程链）")
+        if i18n.get_language() == "en":
+            self.proc_tree.set_info(
+                f"{len(self.proc_map)} processes, {len(window_pids)} with visible windows; "
+                f"showing {len(keep)} related (including parent chain)")
+        else:
+            self.proc_tree.set_info(
+                f"共 {len(self.proc_map)} 个进程，其中 {len(window_pids)} 个有可见窗口；"
+                f"树上显示 {len(keep)} 个相关进程（含父进程链）")
 
     def action_kill_tree_selection(self) -> None:
         """结束进程树里选中的进程及其全部子孙（执行前列出影响范围）。"""
@@ -6420,7 +6736,8 @@ class WinMonApp:
             self.gallery.add(hwnd, f"{title} [{pid}]", mem)
             added += 1
         if added:
-            self._set_status(f"已加入 {added} 个程序到实时总览")
+            self._set_status(i18n.pick(f"已加入 {added} 个程序到实时总览",
+                                       f"Added {added} program(s) to the live overview"))
             self._sync_gallery_requests()
             self.notebook.select(1)
 
@@ -7305,24 +7622,58 @@ class WinMonApp:
         self._cancel_pending_after()
         self.root.destroy()
 
+    def retranslate(self) -> None:
+        """
+        语言切换后的即时重译：主界面静态文案 + 标签页 + 菜单 + AI 窗口。
+
+        动态数据（状态栏、窗口标题、计数）不翻译：它们是数据，不是界面文案。
+        """
+        try:
+            i18n.translate_widgets(self.root)
+        except Exception:
+            pass
+        try:
+            i18n.translate_menu(self.menu)
+        except Exception:
+            pass
+        try:
+            self.root.title(i18n.t("app.title", ver=APP_VER))
+        except Exception:
+            pass
+        for attr in ("_ai_assistant_window", "_ai_connect_window",
+                     "_ai_usage_window", "_history_window"):
+            win = getattr(self, attr, None)
+            if win is not None and hasattr(win, "retranslate"):
+                try:
+                    win.retranslate()
+                except Exception:
+                    pass
+        self._update_ai_bar()
+
     def action_settings(self) -> None:
         """
         打开**独立设置界面**。
 
-        目前四项（用户点名要的）：开机自启动 / 点 × 的行为 /
-        启动时直接收进托盘 / 操作历史日志保留天数。
+        目前五项：开机自启动 / 点 × 的行为 / 启动时直接收进托盘 /
+        操作历史日志保留天数 / 界面语言（中文 / English）。
         """
         dlg = _SettingsDialog(self.root, self.close_mode.get(), self._tray_available(),
                               bool(self.start_minimized.get()),
-                              int(self.history_days.get()))
+                              int(self.history_days.get()),
+                              i18n.get_language())
         got = dlg.show()
         if not got:
             self._set_status("设置已取消（未做任何改动）")
             return
+        old_lang = i18n.get_language()
         self.close_mode.set(got["close_mode"])
         self.start_minimized.set(bool(got["start_minimized"]))
         self.history_days.set(int(got["history_days"]))
+        new_lang = i18n.set_language(got.get("language", old_lang))
+        self.language.set(new_lang)
         self._schedule_save_settings()
+        if new_lang != old_lang:
+            self.retranslate()
         tip = ("关闭窗口：隐藏到托盘" if got["close_mode"] == CLOSE_MODE_TRAY
                else "关闭窗口：结束进程")
         boot = "；启动时收进托盘" if got["start_minimized"] else ""
@@ -7820,10 +8171,15 @@ def ai_assist_cli(question: str = "", as_json: bool = False,
         return 2
     context = ai.build_work_context(wins, procs, fg, sessions,
                                     ai.collect_incidents(limit=5))
+    assist = ai.load_assist()
+    companion = ai.companion_payload(
+        break_enabled=bool(assist.get("break_enabled", True)),
+        mode=str(assist.get("mode") or "local"),
+        workspace=str(assist.get("workspace_dir") or ""))
     cfg = provider.resolve_for_ai(name)
     bad = cfg.validate() if cfg is not None else "没有为这个 AI 配置直连"
     if cfg is not None and not bad:
-        prompt = provider.assistant_prompt(context, question)
+        prompt = provider.assistant_prompt(context, question, companion=companion)
         out = provider.call_model(prompt, config=cfg, budget=ai.Budget(),
                                   purpose="assist_cli")
         if out.get("ok"):
@@ -7855,7 +8211,8 @@ def ai_assist_cli(question: str = "", as_json: bool = False,
     # 没有直连：交接给用户正在用的 AI，不调用任何模型
     prompt = provider.handoff_prompt(
         context, question, ai_name=name,
-        via_mcp=str(primary.get("source") or "") == "mcp_parent")
+        via_mcp=str(primary.get("source") or "") == "mcp_parent",
+        companion=companion)
     copied = ai.copy_to_clipboard(prompt) if copy_to_clip else False
     ai.append_chat({"mode": "handoff", "ai": name,
                     "question": question or "现场交接",

@@ -3,7 +3,7 @@
 > 用途：在新的对话里快速恢复上下文。读这一份即可继续开发。
 > **正式发布名 `winmon1.0`**（`APP_VER = "1.0"`，查版本：`py winmon.py --version`）。
 > **先读 §一点五「WinMon 的定位与能力边界」** —— 输入注入已明确不再投入。
-> 代码状态：**864 个测试用例全绿**（约 98 秒）+ 代码复检 0 新增问题（基线为空）、
+> 代码状态：**881 个测试用例全绿**（约 97 秒）+ 代码复检 0 新增问题（基线为空）、
 > 自检 8/8、界面冒烟通过、
 > 桌面快捷方式可用、程序目录端到端可用、
 > 视频联动 = **监视当前窗口 / 停止监视 / 直接关闭视频**（自动识别与「用链接打开」已删掉）、
@@ -20,10 +20,10 @@
 
 | | |
 | --- | --- |
-| 测试 | **864 用例全绿**（`py tests\run_tests.py`，约 98 秒；含 7 条按环境 skip） |
+| 测试 | **881 用例全绿**（`py tests\run_tests.py`，约 97 秒；含 7 条按环境 skip） |
 | 代码复检 | `py tests\lint_check.py` → **新增问题 0**（基线已清空，见 §四） |
 | 自检 / 冒烟 | `py winmon.py --selftest` 8/8 通过；`--smoke` 通过 |
-| 规模 | `winmon_core.py` ~6700 行 / `winmon.py` ~7000 行 / 测试 34 个文件（21 个测试模块） |
+| 规模 | `winmon_core.py` ~6700 行 / `winmon.py` ~8770 行 / 测试 44 个 .py（31 个测试模块） |
 | 运行方式 | `py winmon.py`（GUI）或双击「WinMon 程序监控」快捷方式；**单实例**：第二个实例会把已有窗口带到前台后自己退出 |
 | 窗口尺寸 | 设计稿 **1280×800**，开窗时**按 DPI 缩放**（本机 150% → 1920×1200；见 §9.15 第 14 条） |
 | 数据文件 | `winmon_settings.json`（界面偏好/收藏）、`winmon_history.log`（操作留痕）、`winmon_catalog.json`（程序目录缓存）、`winmon_media.jsonl`（媒体快照缓存，可删） |
@@ -70,7 +70,7 @@
 1. **把媒体那一行做精**：常驻快照已经有了，可以顺手把"播放速率/时间线"接进来
    （当初删掉的进度显示，明确说过"以后再说" —— **动手前先确认**）；
 2. **托盘右键加播放控制**（上一首/播放暂停/下一首）+ 显示当前曲名，不用切回主窗口；
-3. **测试提速**：864 用例 98 秒里，`test_b5`/`test_b6` 的"真开窗+真抓画面"占大头，
+3. **测试提速**：881 用例 97 秒里，`test_b5`/`test_b6` 的"真开窗+真抓画面"占大头，
    可给它们打标记 + `run_tests.py --fast`；
 4. **GUI 拆分**：`winmon.py` 已 7000 行，可按标签页拆包（注意 §§布局不变量与 lint 的 200 行阈值）。
 
@@ -104,7 +104,7 @@
 | `winmon_mcp.py` | ~800 | **MCP 服务器**：双时代 stdio + 本地 HTTP + 四个只读工具 |
 | `winmon_ai_provider.py` | ~250 | **可选**直连模型 API（默认关；精确 usage；key 只从环境变量读） |
 | `media_session.ps1` | ~230 | 系统媒体会话（GSMTC）桥接脚本（PowerShell + Windows 自带 WinRT 投影；**必须纯 ASCII 无 BOM**） |
-| `tests/` | 43 个 .py | **可重复运行的测试**（864 用例，纯 unittest） + 开发辅助工具 + `lint_check.py` / `lint_baseline.txt` |
+| `tests/` | 44 个 .py | **可重复运行的测试**（881 用例，纯 unittest） + 开发辅助工具 + `lint_check.py` / `lint_baseline.txt` |
 | `启动WinMon.bat` | — | 菜单式启动器（纯 ASCII，避免批处理编码问题） |
 | `scan_windows.py` | — | 命令行窗口清单 |
 | `close_others.py` | — | 批量关闭除当前窗口外的窗口 |
@@ -157,7 +157,7 @@ python winmon.py --videos --open 3 --watch --close-window   :: 完整视频链�
 python winmon.py --version          :: 打印版本（winmon1.0）
 python winmon.py --idle             :: 列出"长期开着、没人用"的程序（只看，不关任何东西）
 python winmon.py --idle --idle-minutes 5   :: 换个闲置阈值（分钟）
-py tests\run_tests.py               :: 全部测试（864 用例，约 98 秒）
+py tests\run_tests.py               :: 全部测试（881 用例，约 97 秒）
 ```
 
 ---
@@ -1917,6 +1917,51 @@ cloudflared / ngrok；不 tunnel 就用 `--ai-context --copy`。
   全量 **864 用例，失败 0 / 错误 0 / 跳过 9**（98.6 秒；多出的 2 个 skip 是便携模式
   下的默认数据目录检查），`--ai-assist --json` 返回 `mode=handoff / tokens=0`。
 
+### 9.27 阶段 8：提醒归 AI / 接入独立窗口 / 中英双语（**2026-10-19 第九轮**）
+
+用户纠正（原话）：“不管是休息提醒还是引导用户的一些指导建议是建立在用户接入了 AI 之后，
+而不是 WinMon 本身就根据时间提醒，是让 AI 接入后读取了该部分代码记忆里清楚自身需要扮演的角色。”
+另有两条 UI 意见：接入建议（尤其“新项目单独建工作区”）要有独立入口；
+AI 助手窗口太杂，API key 建议应单独一个窗口；设置里要加语言（中英文）。
+
+> 这一轮**推翻** 9.26 的“WinMon 自己按时间弹提醒”。9.26 的时段判断保留，
+> 但只作为**数据**交给 AI；WinMon 不再弹窗、不再保存 `last_time_slot`。
+
+#### 一、落地内容
+
+| 用户意见 | 实现 |
+| --- | --- |
+| 提醒必须由接入的 AI 说 | 删除 `_ai_wellness_tick()` 与 `_ai_tick` 里的调用；删除 `last_time_slot`；新增 `ai.companion_payload()`，只产出 `{role, delivery:"ai_chat", clock, slot, reminder, once_key, workspace, workspace_advice, role_text, note}` |
+| AI 要知道自己扮演什么角色 | `winmon_mcp.INSTRUCTIONS` 写入 `COMPANION_ROLE_ZH` + “每次对话开始先调一次 `winmon_ai_sessions`；有 `companion.reminder` 才转达；按 `once_key` 每天一次；用户写代码/做项目时不要主动打断” |
+| MCP 要能拿到当前时段 | `winmon_ai_sessions` 的 `structuredContent.companion` 带完整数据；text 追加“伴侣提示（由你在回答中转达…）”；预算按整段结果照常记账 |
+| 网页 AI 也要能按角色说话 | `handoff_prompt` / `assistant_prompt` 新增 `companion` 参数，把角色、提醒、`once_key`、工作区建议写进提示词；`--ai-assist` 也带 |
+| 接入建议要独立 | 新增 `_AiConnectWindow`（主界面 AI 状态条「接入…」/ 助手「接入与建议…」）：MCP 配置、API key 只放环境变量的说明、临时 key（仅本进程）、**独立工作区选择/打开/复制建议**、AI 行为开关 |
+| 助手窗口太杂 | `_AiAssistantWindow` 重写：只留 2 行状态 + 1 行时段 + 输出区 + 输入框 + 模式/接入/记录/保存/用量；聊天记录移到 `_AiChatWindow`；key/值守/接入说明移出 |
+| 语言选择 | 新增 `winmon_i18n.py`（`zh`/`en`，默认中文）；设置第 5 项「语言 / Language」，存 `winmon_settings.json:language`；主界面静态文案 + 标签页 + 菜单 + AI 窗口即时重译，切换语言时助手/接入窗口重建；AI 的时段消息、模式标签、角色说明、提示词也跟随 |
+| 工作区建议 | `winmon_ai_assist.json` 新增 `workspace_dir`（只存路径）；`ai.workspace_advice()` 说明“新项目单独建工作区/新对话，避免旧上下文串味”；WinMon 不自动建/移文件 |
+
+#### 二、行为边界
+
+- `mode=passive`：`reminder` 为空，AI 不提醒；
+- `mode=local`（默认）：0 token；只有 AI 调 `winmon_ai_sessions` 或用户点「交给 AI」时才带上提醒数据；
+- `mode=active`：直连提示词里同样带角色/提醒，仍受预算限制；
+- `break_enabled=false`：`reminder` 为空，`note` 写“用户关闭了休息提醒”；
+- 非时段（如 15:00）：`reminder` 为空，`note` 写“当前不在提醒时段”；
+- 深夜跨午夜用开始日期做 `once_key`（23:59 与 00:01 同一段）；
+- **WinMon 没有任何时间提醒弹窗**；`_ai_tick` 只保留本地事件气泡与 `active` 值守。
+
+#### 三、验收
+
+- `test_b29` 改为验证精简窗口；`test_b30` 的 `TestWellnessTick` 改为
+  `TestCompanionPayload`（数据、去重键、无弹窗）；新增 `test_b31`（14）：
+  双语往返、设置语言、提示词带角色、MCP instructions/companion、独立接入窗口、
+  key 只进进程环境变量；
+- 全量 **881 用例，失败 0 / 错误 0 / 跳过 7**（`D:\winmon`，96.8 秒）；
+- `--mcp-selftest` 13/13；`--smoke` 中英文启动均通过；`lint_check` 0 新增问题；
+- `D:\test` 便携数据目录（`WINMON_DATA_DIR=D:\test\winmon-data`）全量
+  **881 用例，失败 0 / 错误 0 / 跳过 9**（96.3 秒；多出的 2 个 skip 是便携模式
+  下的默认数据目录检查）。
+
 ## 三、踩过的坑（**最重要，别重复踩**）
 
 ### 编码类（最容易毁掉成果）
@@ -2469,7 +2514,7 @@ cloudflared / ngrok；不 tunnel 就用 `--ai-context --copy`。
 ## 四、测试体系（**改代码后先跑这个**）
 
 ```bat
-py tests\run_tests.py            :: 864 用例，约 98 秒
+py tests\run_tests.py            :: 881 用例，约 97 秒
 py tests\run_tests.py -v         :: 逐个看
 py tests\run_tests.py -k capture :: 只跑关心的
 py tests\lint_check.py           :: 代码复检（退出码 1 = 有新增问题）
@@ -2627,7 +2672,7 @@ py tests\lint_check.py           :: 代码复检（退出码 1 = 有新增问题
    把 `WinMonApp` 瘦成协调者。拆分时注意那些布局不变量（见坑 21~24），
    以及 `lint_check.py` 的"函数过长"（>200 行）阈值 —— `_build_ui` 已经贴着线走了，
    当时就是靠把视频联动那三行拆成 `_build_video_bars()` 才压下去的。
-5. **测试提速**：~~244 用例 17 秒~~ → 现在 **864 用例约 98 秒**。
+5. **测试提速**：~~244 用例 17 秒~~ → 现在 **881 用例约 97 秒**。
    变慢的是 `test_b5`/`test_b6` 里"真开窗、真抓画面、真关窗"的端到端用例
    （每次要采 2 秒画面，这是必要的 —— 播放判定本来就靠画面变化）。
    想快可以给它们打 `slow` 标记，`run_tests.py` 加 `--fast` 跳过
@@ -3150,7 +3195,7 @@ C 盘那份**保持原样、一字未改**（用户 2026-10-11 确认：暂不�
 
 > 继续开发 **WinMon 1.0（`winmon1.0`）** —— Windows 程序监控与终止工具，纯标准库，在 `项目根目录\`。
 > 请先读 `HANDOFF.md` 和 `README.md`，然后跑 `py tests\run_tests.py`
-> 确认基线是 **864 用例全绿**（需要哔哩哔哩/UIA 页面的用例会按需 skip）、
+> 确认基线是 **881 用例全绿**（需要哔哩哔哩/UIA 页面的用例会按需 skip）、
 > `py tests\lint_check.py` 退出码 0（无新增问题）。
 > **版式要另眼验收**：测试进程没有开 DPI 感知，布局检查看不到"真实 DPI 下控件被挤没"，
 > 所以改动界面后还要跑一次 `py winmon.py --smoke` 看截图（见 §9.15 第 14 条）。
