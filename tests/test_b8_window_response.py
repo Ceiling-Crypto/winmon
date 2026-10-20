@@ -41,6 +41,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import _helpers as h                                          # noqa: E402
+import _marks as marks                                        # noqa: E402
 import winmon_core as core                                    # noqa: E402
 import winmon                                                 # noqa: E402
 
@@ -864,6 +865,7 @@ class TestBadHandleSafety(unittest.TestCase):
 
 
 @h.needs_tk
+@marks.slow("真开窗口并回读系统状态")
 class TestWindowStateReal(unittest.TestCase):
     """真开一个别的进程的窗口，真的最小化 / 还原，并回读系统状态核对。"""
 
@@ -948,6 +950,7 @@ class TestWindowStateReal(unittest.TestCase):
 
 
 @h.needs_tk
+@marks.slow("真窗口来回最小化/还原 10 轮")
 class TestWindowStateStability(unittest.TestCase):
     """
     稳定性：把"最小化 → 唤醒还原"连做 `STABILITY_ROUNDS` 个来回。
@@ -1006,6 +1009,7 @@ class TestWindowStateStability(unittest.TestCase):
 
 
 @h.needs_tk
+@marks.slow("真开 WinMonApp + 真鼠标事件 + 真窗口")
 class TestListClickEndToEnd(unittest.TestCase):
     """
     **真·端到端**：真的开一个 `WinMonApp`（含真 Treeview 与真事件循环），
@@ -1235,6 +1239,7 @@ class TestListClickEndToEnd(unittest.TestCase):
         print("\n  端到端：" + " · ".join(f"{n} ✓" for n, _ok, _d in self.results))
 
 
+@marks.slow("模拟 2 秒重建周期")
 class TestTreeKeepsUserExpansion(unittest.TestCase):
     """
     列表 / 进程树重建时**不能把用户展开的节点收回去**。

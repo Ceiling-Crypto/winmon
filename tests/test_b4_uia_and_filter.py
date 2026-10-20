@@ -23,6 +23,7 @@ from unittest import mock
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import _helpers as h                     # noqa: E402
+import _marks as marks                   # noqa: E402
 import winmon_core as core               # noqa: E402
 import winmon                            # noqa: E402
 
@@ -1889,6 +1890,7 @@ class TestRoundTwoFeatures(unittest.TestCase):
         params = inspect.signature(core.launch_item).parameters
         self.assertIn("extra_args", params)
 
+    @marks.slow("真起一次 explorer 子进程")
     def test_explorer_fallback_refuses_to_drop_arguments(self):
         """
         explorer 兜底**送不进参数**（2026-10-13 实测：
@@ -1982,6 +1984,7 @@ class TestRoundTwoFeatures(unittest.TestCase):
         self.assertTrue(changes)
 
 
+@marks.slow("每条都真起一次命令行进程")
 class TestCliEntryPoints(unittest.TestCase):
     """
     命令行入口的边界（当时实测抓到的真 bug）：

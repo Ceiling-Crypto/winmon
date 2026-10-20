@@ -32,6 +32,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import _helpers as h                                          # noqa: E402
+import _marks as marks                                        # noqa: E402
 import winmon_core as core                                    # noqa: E402
 import winmon                                                 # noqa: E402
 
@@ -331,6 +332,7 @@ class TestGetWindowRect(unittest.TestCase):
 
 
 @h.needs_tk
+@marks.slow("真窗口 + 真移动/最小化")
 class TestWorkspaceOnRealWindows(unittest.TestCase):
     """真窗口：真挪、真最小化、真还原。"""
 
@@ -614,6 +616,7 @@ class TestWorkspacePane(unittest.TestCase):
 
 
 @h.needs_tk
+@marks.slow("真启动 WinMonApp 并移动窗口")
 class TestWorkspaceOnRealApp(unittest.TestCase):
     """
     真 `WinMonApp` 的端到端：拍当前布局 → 存成工作区 → 写进设置文件 → 重启后还在 →

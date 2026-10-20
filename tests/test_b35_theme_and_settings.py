@@ -47,7 +47,7 @@ class TestThemeSelection(unittest.TestCase):
         self.assertNotEqual(winmon.UI_SURFACE_ALT, winmon.UI_BG)
         self.assertEqual(winmon.THEME_PREFERENCE, "dark")
         self.assertEqual(winmon.UI_MEDIA_BTN_BG, "#0f6b5c",
-                         "媒体按键在浅绿卡片上仍要用深绿底白字")
+                         "媒体按键在浅绿/深青卡片上仍要用深绿底白字")
 
     def test_system_mode_reads_windows_setting(self):
         import winmon

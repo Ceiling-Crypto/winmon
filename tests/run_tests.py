@@ -5,6 +5,7 @@ WinMon 测试总入口 —— 只依赖 Python 标准库。
 用法（在 winmon 目录下、任意 Python 3.9+）
 ------------------------------------------
     py tests\\run_tests.py              :: 跑全部用例
+    py tests\\run_tests.py --fast       :: 跳过真窗口/抓屏等慢用例（日常改动用）
     py tests\\run_tests.py -v           :: 详细输出
     py tests\\run_tests.py -k capture   :: 只跑名字里含 capture 的用例
     py tests\\run_tests.py --list       :: 只列出会跑哪些用例，不执行
@@ -24,6 +25,8 @@ import unittest
 HERE = os.path.dirname(os.path.abspath(__file__))
 if HERE not in sys.path:
     sys.path.insert(0, HERE)
+
+import _marks                              # noqa: E402
 
 
 def _force_utf8_output() -> None:
@@ -63,6 +66,23 @@ def _iter_suite(suite):
             yield item
 
 
+def select_cases(suite, keyword: str = "") -> list:
+    """把发现到的 suite 摊平成用例列表，并按关键词过滤（便于单测）。"""
+    cases = list(_iter_suite(suite))
+    if keyword:
+        needle = keyword.lower()
+        cases = [case for case in cases if needle in case.id().lower()]
+    return cases
+
+
+def partition_slow(cases) -> tuple[list, list]:
+    """拆成（快用例，慢用例）；--fast 只跑前者，提交前仍应跑全量。"""
+    fast, slow = [], []
+    for case in cases:
+        (slow if _marks.is_slow(case) else fast).append(case)
+    return fast, slow
+
+
 def _say(text: str = "") -> None:
     """
     打印一行并**立刻 flush**。
@@ -78,6 +98,8 @@ def _say(text: str = "") -> None:
 def main(argv: list[str]) -> int:
     verbose = "-v" in argv or "--verbose" in argv
     argv = [a for a in argv if a not in ("-v", "--verbose")]
+    fast = "--fast" in argv
+    argv = [a for a in argv if a != "--fast"]
 
     keyword = ""
     if "-k" in argv:
@@ -90,33 +112,33 @@ def main(argv: list[str]) -> int:
 
     loader = unittest.TestLoader()
     suite = loader.discover(HERE, pattern="test_*.py", top_level_dir=HERE)
-
-    if keyword:
-        keep = unittest.TestSuite()
-        for case in _iter_suite(suite):
-            if keyword.lower() in case.id().lower():
-                keep.addTest(case)
-        suite = keep
+    all_cases = select_cases(suite, keyword)
 
     if "--list" in argv:
-        cases = list(_iter_suite(suite))
-        _say(f"共 {len(cases)} 个用例：")
-        for case in cases:
-            print("  ", case.id())
+        _say(f"共 {len(all_cases)} 个用例：")
+        for case in all_cases:
+            mark = f"  [slow: {_marks.slow_reason(case)}]" if _marks.is_slow(case) else ""
+            print("  ", case.id() + mark)
         return 0
 
-    cases = list(_iter_suite(suite))
-    _say(f"发现 {len(cases)} 个用例（Python {sys.version.split()[0]}）")
+    fast_cases, slow_cases = partition_slow(all_cases)
+    cases = fast_cases if fast else all_cases
+    _say(f"发现 {len(all_cases)} 个用例（Python {sys.version.split()[0]}）")
     if keyword:
         _say(f"（筛选关键词 -k {keyword}：只跑名字里含它的用例）")
+    if fast:
+        _say(f"快速模式：跳过 {len(slow_cases)} 个慢用例（真窗口 / 抓屏）；"
+             f"实际跑 {len(cases)} 个。提交前请跑一次不带 --fast 的全量。")
     if not cases:
         _say("没有匹配的用例 —— 关键词写错了吗？可用 --list 看不筛时有哪些用例。")
         return 2
     _say("=" * 72)
-    _say(f"开始跑……（约 {max(1, len(cases) * 145 // 1000)} 秒，"
+    #: --fast 里没有真窗口等待，单条平均约 45ms；全量约 95ms。
+    estimate = len(cases) * (45 if fast else 95) // 1000
+    _say(f"开始跑……（约 {max(1, estimate)} 秒，"
          f"结束时会有「结果：」那一行）")
     runner = unittest.TextTestRunner(verbosity=2 if verbose else 1, stream=sys.stdout)
-    result = runner.run(suite)
+    result = runner.run(unittest.TestSuite(cases))
     _say("=" * 72)
     skipped = len(result.skipped)
     _say(f"结果：{result.testsRun} 个用例，失败 {len(result.failures)}，"

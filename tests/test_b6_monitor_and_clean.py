@@ -29,6 +29,7 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import _helpers as h                       # noqa: E402
+import _marks as marks                     # noqa: E402
 import winmon_core as core                 # noqa: E402
 from test_b5_video_link import ANIMATED_WINDOW_SCRIPT   # noqa: E402
 
@@ -52,30 +53,41 @@ class FakeWi:
 # 1. 两个筛选选项（纯逻辑：不碰窗口就返回）
 # ===========================================================================
 class TestProbeFilters(unittest.TestCase):
+    #: 这些用例只验证**过滤分支**；真正往下走时不必真采 2 秒画面。
+    #: 不传这个参数会让 5 条纯逻辑用例白等约 10 秒（2026-10-20 实测）。
+    QUICK = 0.05
+
     def test_only_app_filter_rejects_other_processes(self):
-        probe = core.probe_window_as_video(FakeWi("notepad.exe"), require_video_app=False,
-                                           only_app="msedge.exe")
+        probe = core.probe_window_as_video(
+            FakeWi("notepad.exe"), probe_seconds=self.QUICK,
+            require_video_app=False, only_app="msedge.exe")
         self.assertFalse(probe["is_video"])
         self.assertIn("指定的 App", probe["reason"])
         self.assertIn("msedge.exe", probe["reason"])
 
     def test_only_app_filter_accepts_the_named_process(self):
         """指定 msedge.exe 时，msedge 自己的窗口不会被这一条挡掉。"""
-        probe = core.probe_window_as_video(FakeWi("msedge.exe", hwnd=0), only_app="msedge.exe")
+        probe = core.probe_window_as_video(
+            FakeWi("msedge.exe", hwnd=0), probe_seconds=self.QUICK,
+            only_app="msedge.exe")
         self.assertNotIn("指定的 App", probe["reason"])   # 会继续往下走（后面因无窗口而失败）
 
     def test_require_video_app_rejects_unknown_programs(self):
-        probe = core.probe_window_as_video(FakeWi("notepad.exe"), require_video_app=True)
+        probe = core.probe_window_as_video(
+            FakeWi("notepad.exe"), probe_seconds=self.QUICK,
+            require_video_app=True)
         self.assertFalse(probe["is_video"])
         self.assertIn("仅视频类 App", probe["reason"])
 
     def test_require_video_app_lets_known_apps_through(self):
         for proc in ("msedge.exe", "哔哩哔哩.exe", "vlc.exe"):
-            probe = core.probe_window_as_video(FakeWi(proc), require_video_app=True)
+            probe = core.probe_window_as_video(
+                FakeWi(proc), probe_seconds=self.QUICK, require_video_app=True)
             self.assertNotIn("仅视频类 App", probe["reason"], proc)
 
     def test_no_filters_means_any_window_is_considered(self):
-        probe = core.probe_window_as_video(FakeWi("notepad.exe"))
+        probe = core.probe_window_as_video(
+            FakeWi("notepad.exe"), probe_seconds=self.QUICK)
         self.assertNotIn("仅视频类 App", probe["reason"])
         self.assertNotIn("指定的 App", probe["reason"])
 
@@ -84,6 +96,7 @@ class TestProbeFilters(unittest.TestCase):
 # 2. 真窗口：能判成视频；勾上"仅视频类 App"后立刻不响应
 # ===========================================================================
 @h.needs_tk
+@marks.slow("真开窗口并采 2 秒画面")
 class TestProbeRealWindow(unittest.TestCase):
     """真开一个"画面在动"的窗口 —— 它不属任何视频类 App，正好检验两个选项。"""
 
@@ -130,6 +143,7 @@ class TestProbeRealWindow(unittest.TestCase):
 # 3. 唤起最小化的窗口
 # ===========================================================================
 @h.needs_tk
+@marks.slow("真开窗口并等待最小化/还原")
 class TestRestoreWindow(unittest.TestCase):
     def test_restore_minimized_window(self):
         tmp = tempfile.TemporaryDirectory()

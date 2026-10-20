@@ -48,6 +48,7 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import _helpers as h                     # noqa: E402
+import _marks as marks                   # noqa: E402
 import winmon_core as core               # noqa: E402
 
 #: 子进程用的靶子脚本。刻意写成字符串常量 + 落盘执行，
@@ -194,6 +195,7 @@ def _progress_has(path: str, marker: str) -> bool:
         return False
 
 
+@marks.slow("真起子进程 + 跨进程前台输入")
 class TestMessageInputAcrossProcesses(unittest.TestCase):
     """`WindowKeySender.type_message()` 必须能到达**另一个进程**的编辑框。"""
 

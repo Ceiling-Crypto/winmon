@@ -133,8 +133,8 @@ MONO_FONT = ("Consolas", max(9, UI_FONT_SIZE))
 #
 # 颜色不是"写死一套再局部补丁"，而是**一套语义色板**：所有界面只引用
 # UI_BG / UI_INK / UI_LINE 这类名字，切换颜色时由 `apply_theme()` 整组替换。
-# 高亮卡片（媒体 / AI / 接入）保留各自的彩色底，不跟着页面一起反转 —— 这是
-# 用户明确要求保留的视觉锚点。
+# 高亮卡片（媒体 / AI / 接入）保留各自的色相，但在深色下换成同色系的深底亮字；
+# 既不丢视觉锚点，也不在纯黑页面里留下刺眼的浅色大块。
 THEME_LIGHT = "light"
 THEME_DARK = "dark"
 THEME_SYSTEM = "system"
@@ -164,10 +164,35 @@ _THEME_PALETTES = {
         "UI_PURPLE": "#7b3fa0",
         "UI_HEADING": "#40566b",
         "UI_PLACEHOLDER": "#5f6b7a",
-        #: 媒体行右侧的 3 个按键：深绿底 + 白字，在浅绿卡片上高对比。
+        #: 媒体行右侧的 3 个按键：深绿底 + 白字，在浅绿/深青卡片上都有对比。
         "UI_MEDIA_BTN_BG": "#0f6b5c",
         "UI_MEDIA_BTN_FG": "#ffffff",
         "UI_MEDIA_BTN_ACTIVE": "#0b584b",
+        #: 高亮卡片不是写死的浅色块：深色主题换成同色系的深底亮字，
+        #: 否则纯黑页面里会突然出现几大块刺眼的浅色补丁。
+        "UI_CARDS": {
+            "media": {"bg": "#eef8f4", "fg": "#103b36", "muted": "#5a6b7b",
+                      "border": "#a9d8ce", "tag_bg": "#0f6b5c", "tag_fg": "#ffffff"},
+            "ai": {"bg": "#edf5fb", "fg": "#12354d", "muted": "#5b7285",
+                   "border": "#b9d6ee", "tag_bg": "#1f5f8b", "tag_fg": "#ffffff",
+                   "state_ok_bg": "#e7f6ec", "state_ok_fg": "#17663f",
+                   "state_warn_bg": "#fff4d6", "state_warn_fg": "#7a5a00"},
+            "connect": {"ok_bg": "#e7f6ec", "ok_fg": "#17663f", "ok_border": "#8fc9a4",
+                        "warn_bg": "#fff4df", "warn_fg": "#7a5a00",
+                        "warn_border": "#e2bd7a"},
+            "mcp": {"bg": "#eef7fd", "fg": "#274b63", "muted": "#4a6070",
+                    "border": "#1f6f9e", "accent": "#1f6f9e",
+                    "code_bg": "#ffffff", "code_fg": "#1f3340"},
+            "key": {"bg": "#fff8ea", "fg": "#6b4a12", "muted": "#7a6240",
+                    "border": "#a86b00", "accent": "#a86b00", "warn": "#a33b1f",
+                    "state": "#8a5a00"},
+            "workspace": {"bg": "#f3f6f8", "fg": "#2a4a66", "muted": "#4a5a68",
+                          "border": "#5b6b7a", "accent": "#5b6b7a"},
+            "behavior": {"bg": "#f1f8f4", "fg": "#2a4a66", "muted": "#5c6f66",
+                         "border": "#3b6f5a", "accent": "#3b6f5a"},
+            "proactive": {"bg": "#f6f2fc", "fg": "#655a78", "muted": "#655a78",
+                          "border": "#6b4fa8", "accent": "#6b4fa8"},
+        },
     },
     THEME_DARK: {
         "UI_BG": "#000000",
@@ -190,10 +215,33 @@ _THEME_PALETTES = {
         "UI_PURPLE": "#c4b5fd",
         "UI_HEADING": "#c3d4e3",
         "UI_PLACEHOLDER": "#9aa9b6",
-        #: 媒体卡片本身仍是浅绿（高亮色），按键继续用深绿，避免在卡片上消失。
+        #: 媒体按键放在深青卡片上仍用同一深绿，白字对比度足够。
         "UI_MEDIA_BTN_BG": "#0f6b5c",
         "UI_MEDIA_BTN_FG": "#ffffff",
         "UI_MEDIA_BTN_ACTIVE": "#0b584b",
+        "UI_CARDS": {
+            "media": {"bg": "#0b2b26", "fg": "#d9fff5", "muted": "#9cc9bc",
+                      "border": "#2c7a68", "tag_bg": "#1f8a75", "tag_fg": "#02110d"},
+            "ai": {"bg": "#0b2031", "fg": "#e3f6ff", "muted": "#9ec7df",
+                   "border": "#2d6386", "tag_bg": "#2f86bd", "tag_fg": "#031018",
+                   "state_ok_bg": "#0d3321", "state_ok_fg": "#83f0b0",
+                   "state_warn_bg": "#3a2a05", "state_warn_fg": "#ffd66b"},
+            "connect": {"ok_bg": "#0d3321", "ok_fg": "#83f0b0", "ok_border": "#256b43",
+                        "warn_bg": "#3a2a08", "warn_fg": "#ffd98a",
+                        "warn_border": "#7a5a16"},
+            "mcp": {"bg": "#0b2233", "fg": "#d6efff", "muted": "#8fb8cf",
+                    "border": "#2d7196", "accent": "#6cc4f2",
+                    "code_bg": "#071721", "code_fg": "#d6efff"},
+            "key": {"bg": "#2f240b", "fg": "#ffe6b0", "muted": "#c8ab78",
+                    "border": "#8a671d", "accent": "#f0b64a", "warn": "#ff9b7a",
+                    "state": "#ffd071"},
+            "workspace": {"bg": "#171b20", "fg": "#dbe7f2", "muted": "#a6b6c4",
+                          "border": "#4b5c6b", "accent": "#a9c3d6"},
+            "behavior": {"bg": "#10291f", "fg": "#d5f5e3", "muted": "#9bc6ae",
+                         "border": "#346c55", "accent": "#73d6a7"},
+            "proactive": {"bg": "#24182f", "fg": "#eadcff", "muted": "#c3addd",
+                          "border": "#67468f", "accent": "#c4a6ff"},
+        },
     },
 }
 
@@ -282,23 +330,45 @@ def set_dark_title_bar(widget, dark: bool | None = None) -> None:
 
     不做这一步时，深色页面上面会顶着一条纯白标题栏，截图和实际使用都很割裂。
     DWM 属性号在旧版是 19、新版是 20；两个都试，失败就静默保持系统默认。
+
+    **映射时再设一次**：Toplevel 刚创建、还没映射时，DWM 可能忽略这个属性
+    （实测接入窗口的标题栏仍是白的）。用 `<Map>` 而不是 `after` 重试，
+    窗口销毁时 Tk 会一起回收这个绑定，不会留下 “invalid command name …_later”
+    的收尾噪音。
     """
     want = (THEME_RESOLVED == THEME_DARK) if dark is None else bool(dark)
     try:
         hwnd = core.user32.GetAncestor(
             core.w.HWND(widget.winfo_id()), core.GA_ROOT)
-        if not hwnd:
-            return
-        dwm = ctypes.windll.dwmapi
-        value = ctypes.c_int(1 if want else 0)
-        for attr in (20, 19):
-            try:
-                if dwm.DwmSetWindowAttribute(
-                        core.w.HWND(hwnd), attr, ctypes.byref(value),
-                        ctypes.sizeof(value)) == 0:
-                    return
-            except Exception:
-                continue
+        if hwnd:
+            dwm = ctypes.windll.dwmapi
+            value = ctypes.c_int(1 if want else 0)
+            for attr in (20, 19):
+                try:
+                    if dwm.DwmSetWindowAttribute(
+                            core.w.HWND(hwnd), attr, ctypes.byref(value),
+                            ctypes.sizeof(value)) == 0:
+                        break
+                except Exception:
+                    continue
+    except Exception:
+        pass
+    #: 每个窗口只绑一次：映射之后再设，覆盖“创建时还没映射”的情况。
+    #: want 存在控件上而不是 lambda 闭包里 —— 换主题后这里会更新，
+    #: 否则以后每次 deiconify 都会把标题栏按旧主题重设回去。
+    try:
+        widget._winmon_dark_want = want
+    except Exception:
+        pass
+    if getattr(widget, "_winmon_dark_map_bound", False):
+        return
+    try:
+        widget._winmon_dark_map_bound = True
+        widget.bind(
+            "<Map>",
+            lambda _e: set_dark_title_bar(
+                widget, getattr(widget, "_winmon_dark_want", want)),
+            add="+")
     except Exception:
         pass
 
@@ -1743,14 +1813,16 @@ class AiWorkspacePane:
             fill="x", pady=(2, 10))
 
         # 状态卡：复用主界面 AI 条的三个 StringVar，数据只更新一处。
-        card = tk.Frame(wrap, bg="#edf5fb", highlightbackground="#b9d6ee",
+        card_colors = UI_CARDS["ai"]
+        card = tk.Frame(wrap, bg=card_colors["bg"],
+                        highlightbackground=card_colors["border"],
                         highlightthickness=1, padx=12, pady=9)
         card.pack(fill="x", pady=(0, 10))
-        tk.Label(card, text="AI", font=SMALL_BOLD_FONT, bg="#1f5f8b",
-                 fg="white", padx=8, pady=2).pack(side="left", anchor="n",
-                                                  padx=(0, 10))
+        tk.Label(card, text="AI", font=SMALL_BOLD_FONT,
+                 bg=card_colors["tag_bg"], fg=card_colors["tag_fg"],
+                 padx=8, pady=2).pack(side="left", anchor="n", padx=(0, 10))
 
-        status = tk.Frame(card, bg="#edf5fb")
+        status = tk.Frame(card, bg=card_colors["bg"])
         status.pack(side="left", fill="x", expand=True)
         identity = getattr(app, "ai_identity_text", None) or tk.StringVar(
             value="正在识别当前 AI…")
@@ -1758,12 +1830,15 @@ class AiWorkspacePane:
             value="正在识别接入状态…")
         usage = getattr(app, "ai_usage_text", None) or tk.StringVar(value="")
         tk.Label(status, textvariable=identity, font=BOLD_FONT,
-                 bg="#edf5fb", fg="#12354d", anchor="w").pack(fill="x")
-        tk.Label(status, textvariable=state, font=SMALL_FONT,
-                 bg="#fff4d6", fg="#7a5a00", anchor="w", padx=5).pack(
-            anchor="w", pady=(3, 2))
+                 bg=card_colors["bg"], fg=card_colors["fg"], anchor="w").pack(fill="x")
+        self._state_label = tk.Label(
+            status, textvariable=state, font=SMALL_FONT,
+            bg=card_colors["state_warn_bg"], fg=card_colors["state_warn_fg"],
+            anchor="w", padx=5)
+        self._state_label.pack(anchor="w", pady=(3, 2))
         tk.Label(status, textvariable=usage, font=SMALL_FONT,
-                 bg="#edf5fb", fg="#5b7285", anchor="w").pack(fill="x")
+                 bg=card_colors["bg"], fg=card_colors["muted"],
+                 anchor="w").pack(fill="x")
 
         def entry(title: str, desc: str, button: str, command) -> None:
             box = tk.Frame(wrap, bg=UI_BG, highlightbackground=UI_LINE,
@@ -1790,6 +1865,16 @@ class AiWorkspacePane:
             "MCP is the recommended setup; a direct key also needs an explicit target."),
             font=SMALL_FONT, bg=UI_BG, fg=UI_MUTED, anchor="w",
             justify="left").pack(fill="x", pady=(2, 0))
+
+    def sync_state(self, connected: bool) -> None:
+        """状态文字来自共享 StringVar；底色也要跟着“接没接上”一起变。"""
+        card = UI_CARDS["ai"]
+        key = "state_ok" if connected else "state_warn"
+        try:
+            self._state_label.configure(bg=card[f"{key}_bg"],
+                                        fg=card[f"{key}_fg"])
+        except Exception:
+            pass
 
     def refresh(self) -> None:
         """状态文字来自共享 StringVar，这里不需要额外刷新。"""
@@ -3817,7 +3902,7 @@ class _Disclosure:
         self.holder = tk.Frame(parent, bg=bg)
         self.button = tk.Button(
             self.holder, text="", font=UI_FONT,
-            fg=fg, bg=bg, activeforeground="#0b4f80", activebackground=bg,
+            fg=fg, bg=bg, activeforeground=fg, activebackground=bg,
             relief="flat", borderwidth=0, highlightthickness=0,
             cursor="hand2", anchor="w", padx=0, pady=1, takefocus=False,
             command=self.toggle)
@@ -4130,7 +4215,7 @@ _GUIDE_CONTENT = {
             ("p", "「设置…」里同时有常规、AI 用量和使用说明；主界面不再单独放"
                   "「AI 用量」和「说明」。"),
             ("p", "颜色可选普通（白底）、深色（黑底）或跟随系统；保存后立即生效。"
-                  "深色模式下媒体行、AI 卡等彩色高亮仍然保留。"),
+                  "深色模式下媒体行、AI 卡会换成同色系的深色高亮，不会刺眼。"),
             ("h", "媒体这一行"),
             ("p", "WinMon 先读 Windows 的媒体会话，显示“应用：曲名 · 状态”。"),
             ("p", "有些播放器（例如网易云音乐）不向系统发布会话，WinMon 会退一步"
@@ -4376,15 +4461,18 @@ class _AiConnectWindow:
                    command=self.open_guide).pack(side="right")
 
         # 接入状态做成整块色条：这是整个窗口最该先看到的信息。
-        self.status_frame = tk.Frame(wrap, bg="#fff4df", highlightbackground="#e2bd7a",
-                                     highlightthickness=1, padx=10, pady=6)
+        status_colors = UI_CARDS["connect"]
+        self.status_frame = tk.Frame(
+            wrap, bg=status_colors["warn_bg"],
+            highlightbackground=status_colors["warn_border"],
+            highlightthickness=1, padx=10, pady=6)
         self.status_frame.pack(fill="x", pady=(6, 10))
         self.status_text = tk.StringVar(value="")
         self.status_label = tk.Label(
             self.status_frame, textvariable=self.status_text,
             font=SMALL_BOLD_FONT,
-            bg="#fff4df", fg="#7a5a00", justify="left", anchor="w",
-            wraplength=int(740 * scale))
+            bg=status_colors["warn_bg"], fg=status_colors["warn_fg"],
+            justify="left", anchor="w", wraplength=int(740 * scale))
         self.status_label.pack(fill="x")
 
         tk.Label(wrap, text=i18n.pick(
@@ -4404,7 +4492,7 @@ class _AiConnectWindow:
         self.key_advanced = _Disclosure(
             wrap, i18n.pick("高级：直连 API key（可选）",
                             "Advanced: direct API key (optional)"),
-            bg=UI_BG, fg="#a86b00")
+            bg=UI_BG, fg=UI_CARDS["key"]["accent"])
         self.key_advanced.pack(fill="x", pady=(0, 6))
         self._build_key_card(self.key_advanced.body)
 
@@ -4436,35 +4524,39 @@ class _AiConnectWindow:
             self.top.update_idletasks()
             need = wrap.winfo_reqheight() + 26
             self.top.geometry(f"{w}x{min(h, max(int(480 * scale), need))}")
+            # 映射之后再设一次：只靠构造时那一次，DWM 有时会忽略（实测标题栏仍白）。
+            set_dark_title_bar(self.top)
         except Exception:
             pass
 
-    def _card(self, parent, title: str, accent: str, bg: str):
-        """带色条标题的小卡片：标题高亮，正文只放动作和一两行短句。"""
-        outer = tk.Frame(parent, bg=bg, highlightbackground=accent,
+    def _card(self, parent, title: str, kind: str):
+        """带色条标题的小卡片：颜色取自当前主题的高亮卡片色板。"""
+        colors = UI_CARDS[kind]
+        outer = tk.Frame(parent, bg=colors["bg"],
+                         highlightbackground=colors["border"],
                          highlightthickness=1)
         outer.pack(fill="x", pady=(0, 8))
         tk.Label(outer, text=title, font=BOLD_FONT,
-                 bg=bg, fg=accent, anchor="w").pack(fill="x", padx=10, pady=(7, 2))
-        body = tk.Frame(outer, bg=bg)
+                 bg=colors["bg"], fg=colors.get("accent", colors["fg"]),
+                 anchor="w").pack(fill="x", padx=10, pady=(7, 2))
+        body = tk.Frame(outer, bg=colors["bg"])
         body.pack(fill="x", padx=10, pady=(0, 8))
-        return outer, body
+        return outer, body, colors
 
     def _build_mcp_card(self, wrap) -> None:
         """MCP 卡片：蓝色、默认折叠配置，只留状态 + 复制按钮。"""
-        _box, body = self._card(
-            wrap, i18n.t("connect.mcp"), "#1f6f9e", "#eef7fd")
+        _box, body, colors = self._card(wrap, i18n.t("connect.mcp"), "mcp")
         self.mcp_state_text = tk.StringVar(value="")
         self.mcp_state_label = tk.Label(
             body, textvariable=self.mcp_state_text,
-            font=SMALL_BOLD_FONT, bg="#eef7fd", fg="#5b7285",
+            font=SMALL_BOLD_FONT, bg=colors["bg"], fg=colors["muted"],
             anchor="w")
         self.mcp_state_label.pack(fill="x")
         tk.Label(body, text=i18n.t("connect.mcp_short"), font=UI_FONT,
-                 bg="#eef7fd", fg="#274b63", anchor="w", justify="left",
+                 bg=colors["bg"], fg=colors["fg"], anchor="w", justify="left",
                  wraplength=720).pack(fill="x", pady=(2, 5))
         snippet = self._config_snippet()
-        row = tk.Frame(body, bg="#eef7fd")
+        row = tk.Frame(body, bg=colors["bg"])
         row.pack(fill="x")
         ttk.Button(row, text=i18n.t("connect.copy_config"),
                    command=lambda: self._copy(snippet, i18n.t("connect.copied"))
@@ -4472,33 +4564,37 @@ class _AiConnectWindow:
         ttk.Button(row, text=i18n.t("connect.open_doc"),
                    command=self.open_doc).pack(side="left", padx=6)
         self.mcp_disclosure = _Disclosure(
-            body, i18n.t("connect.show_steps"), bg="#eef7fd", fg="#1f6f9e")
+            body, i18n.t("connect.show_steps"), bg=colors["bg"],
+            fg=colors["accent"])
         self.mcp_disclosure.pack(fill="x", pady=(4, 0))
         tk.Label(self.mcp_disclosure.body, text=i18n.t("connect.mcp_hint"),
-                 font=UI_FONT, bg="#eef7fd", fg="#4a6070", anchor="w",
+                 font=UI_FONT, bg=colors["bg"], fg=colors["muted"], anchor="w",
                  justify="left", wraplength=700).pack(fill="x")
         #: 配置片段要让人真能读全：`wrap="word"` + 9 行，长路径会折行，
         #: 不用再塞一个横向滚动条（那个更像技术工具）。
-        self.config_text = tk.Text(self.mcp_disclosure.body, height=9, wrap="word",
-                                   font=MONO_FONT, relief="solid", borderwidth=1)
+        self.config_text = tk.Text(
+            self.mcp_disclosure.body, height=9, wrap="word",
+            font=MONO_FONT, relief="solid", borderwidth=1,
+            bg=colors["code_bg"], fg=colors["code_fg"],
+            insertbackground=colors["code_fg"],
+            highlightbackground=colors["border"])
         self.config_text.pack(fill="x", pady=(4, 4))
         self.config_text.insert("1.0", snippet)
         self.config_text.configure(state="disabled")
 
     def _build_key_card(self, wrap) -> None:
         """API key 卡片：琥珀色；先选直连对象，再填 key，长解释折叠。"""
-        _box, body = self._card(
-            wrap, i18n.t("connect.key"), "#a86b00", "#fff8ea")
+        _box, body, colors = self._card(wrap, i18n.t("connect.key"), "key")
         self.key_state_text = tk.StringVar(value="")
         tk.Label(body, textvariable=self.key_state_text,
-                 font=SMALL_BOLD_FONT, bg="#fff8ea",
-                 fg="#8a5a00", anchor="w").pack(fill="x")
+                 font=SMALL_BOLD_FONT, bg=colors["bg"],
+                 fg=colors["state"], anchor="w").pack(fill="x")
         tk.Label(body, text=i18n.t("connect.key_short"), font=UI_FONT,
-                 bg="#fff8ea", fg="#6b4a12", anchor="w", justify="left",
+                 bg=colors["bg"], fg=colors["fg"], anchor="w", justify="left",
                  wraplength=720).pack(fill="x", pady=(2, 3))
         tk.Label(body, text=i18n.t("connect.key_warning"),
-                 font=SMALL_BOLD_FONT, bg="#fff8ea",
-                 fg="#a33b1f", anchor="w", justify="left",
+                 font=SMALL_BOLD_FONT, bg=colors["bg"],
+                 fg=colors["warn"], anchor="w", justify="left",
                  wraplength=720).pack(fill="x", pady=(0, 5))
         #: 直连对象必须由用户选：**默认是占位项**，不预先绑定某个厂商的 key。
         #: 选「跟随当前 AI」后才按当前识别结果取环境变量；选具体项则手动指定。
@@ -4518,10 +4614,10 @@ class _AiConnectWindow:
                           if key == manual), self._key_target_placeholder)
                     if manual else self._key_target_placeholder)
         self.key_provider_var = tk.StringVar(value=selected)
-        target_row = tk.Frame(body, bg="#fff8ea")
+        target_row = tk.Frame(body, bg=colors["bg"])
         target_row.pack(fill="x", pady=(0, 4))
         tk.Label(target_row, text=i18n.t("connect.key_target"), font=UI_FONT,
-                 bg="#fff8ea", fg="#6b4a12").pack(side="left")
+                 bg=colors["bg"], fg=colors["fg"]).pack(side="left")
         self.key_provider_combo = ttk.Combobox(
             target_row, textvariable=self.key_provider_var, state="readonly",
             width=18, font=UI_FONT, values=list(self._key_provider_by_label.keys()))
@@ -4536,8 +4632,8 @@ class _AiConnectWindow:
                    if self.key_env else i18n.pick("先选择直连对象",
                                                   "Choose a target first")))
         tk.Label(body, textvariable=self.key_env_text, font=UI_FONT,
-                 bg="#fff8ea", fg="#6b4a12", anchor="w").pack(fill="x")
-        key_row = tk.Frame(body, bg="#fff8ea")
+                 bg=colors["bg"], fg=colors["fg"], anchor="w").pack(fill="x")
+        key_row = tk.Frame(body, bg=colors["bg"])
         key_row.pack(fill="x", pady=(2, 0))
         self.key_var = tk.StringVar(value="")
         self.key_entry = ttk.Entry(key_row, textvariable=self.key_var, show="*")
@@ -4547,24 +4643,25 @@ class _AiConnectWindow:
         self.key_use_btn.pack(side="right")
         self._sync_key_controls()
         self.key_disclosure = _Disclosure(
-            body, i18n.t("connect.show_key_help"), bg="#fff8ea", fg="#a86b00")
+            body, i18n.t("connect.show_key_help"), bg=colors["bg"],
+            fg=colors["accent"])
         self.key_disclosure.pack(fill="x", pady=(4, 0))
         tk.Label(self.key_disclosure.body, text=i18n.t("connect.key_hint"),
-                 font=UI_FONT, bg="#fff8ea", fg="#5f4b28", anchor="w",
+                 font=UI_FONT, bg=colors["bg"], fg=colors["fg"], anchor="w",
                  justify="left", wraplength=700).pack(fill="x")
         tk.Label(self.key_disclosure.body, text=i18n.t("connect.key_envs"),
-                 font=SMALL_FONT, bg="#fff8ea", fg="#7a6240",
+                 font=SMALL_FONT, bg=colors["bg"], fg=colors["muted"],
                  anchor="w", justify="left", wraplength=700).pack(fill="x", pady=(2, 0))
 
     def _build_workspace_card(self, wrap) -> None:
         """工作区卡片：路径与三个动作常驻，长解释默认折叠。"""
-        _box, body = self._card(
-            wrap, i18n.t("connect.workspace"), "#5b6b7a", "#f3f6f8")
+        _box, body, colors = self._card(
+            wrap, i18n.t("connect.workspace"), "workspace")
         self.workspace_text = tk.StringVar(value="")
-        ws_row = tk.Frame(body, bg="#f3f6f8")
+        ws_row = tk.Frame(body, bg=colors["bg"])
         ws_row.pack(fill="x")
         tk.Label(ws_row, textvariable=self.workspace_text, font=UI_FONT,
-                 bg="#f3f6f8", fg="#2a4a66", anchor="w").pack(
+                 bg=colors["bg"], fg=colors["fg"], anchor="w").pack(
             side="left", fill="x", expand=True)
         ttk.Button(ws_row, text=i18n.t("connect.workspace_pick"),
                    command=self.pick_workspace).pack(side="left", padx=4)
@@ -4573,20 +4670,21 @@ class _AiConnectWindow:
         ttk.Button(ws_row, text=i18n.t("connect.workspace_copy"),
                    command=self.copy_advice).pack(side="left", padx=2)
         self.ws_disclosure = _Disclosure(
-            body, i18n.t("connect.show_workspace"), bg="#f3f6f8", fg="#5b6b7a")
+            body, i18n.t("connect.show_workspace"), bg=colors["bg"],
+            fg=colors["accent"])
         self.ws_disclosure.pack(fill="x", pady=(3, 0))
         tk.Label(self.ws_disclosure.body, text=i18n.t("connect.workspace_hint"),
-                 font=UI_FONT, bg="#f3f6f8", fg="#4a5a68", anchor="w",
+                 font=UI_FONT, bg=colors["bg"], fg=colors["muted"], anchor="w",
                  justify="left", wraplength=700).pack(fill="x")
 
     def _build_behavior_card(self, wrap, assist) -> None:
         """AI 行为卡片：人设、读取开关常驻；进阶动作折叠。"""
-        _box, body = self._card(
-            wrap, i18n.t("connect.behavior"), "#3b6f5a", "#f1f8f4")
-        persona_row = tk.Frame(body, bg="#f1f8f4")
+        _box, body, colors = self._card(
+            wrap, i18n.t("connect.behavior"), "behavior")
+        persona_row = tk.Frame(body, bg=colors["bg"])
         persona_row.pack(fill="x")
         tk.Label(persona_row, text=i18n.t("connect.persona"),
-                 font=UI_FONT, bg="#f1f8f4", fg="#2a4a66").pack(side="left")
+                 font=UI_FONT, bg=colors["bg"], fg=colors["fg"]).pack(side="left")
         self._persona_by_label: dict[str, str] = {}
         self._persona_id_by_label: dict[str, str] = {}
         self._persona_name_by_label: dict[str, str] = {}
@@ -4605,26 +4703,27 @@ class _AiConnectWindow:
         self.persona_import_btn.pack(side="left", padx=6)
         self.persona_status = tk.StringVar(value="")
         tk.Label(body, textvariable=self.persona_status,
-                 font=SMALL_FONT, bg="#f1f8f4", fg="#2a4a66",
+                 font=SMALL_FONT, bg=colors["bg"], fg=colors["fg"],
                  anchor="w", justify="left", wraplength=720).pack(fill="x", pady=(2, 0))
         tk.Label(body, text=i18n.t("connect.persona_short"),
-                 font=SMALL_FONT, bg="#f1f8f4", fg="#60756c",
+                 font=SMALL_FONT, bg=colors["bg"], fg=colors["muted"],
                  anchor="w", justify="left", wraplength=720).pack(fill="x", pady=(1, 3))
         self._refresh_persona_choices()
         self.persona_disclosure = _Disclosure(
-            body, i18n.t("connect.show_persona"), bg="#f1f8f4", fg="#3b6f5a")
+            body, i18n.t("connect.show_persona"), bg=colors["bg"],
+            fg=colors["accent"])
         self.persona_disclosure.pack(fill="x")
         tk.Label(self.persona_disclosure.body, text=i18n.t("connect.persona_hint"),
-                 font=SMALL_FONT, bg="#f1f8f4", fg="#5c6f66",
+                 font=SMALL_FONT, bg=colors["bg"], fg=colors["muted"],
                  anchor="w", justify="left", wraplength=700).pack(fill="x")
         tk.Label(self.persona_disclosure.body, text=i18n.t("connect.persona_support"),
-                 font=SMALL_FONT, bg="#f1f8f4", fg="#5c6f66",
+                 font=SMALL_FONT, bg=colors["bg"], fg=colors["muted"],
                  anchor="w", justify="left", wraplength=700).pack(fill="x")
         tk.Label(self.persona_disclosure.body, text=i18n.t("connect.persona_more_hint"),
-                 font=SMALL_FONT, bg="#f1f8f4", fg="#5c6f66",
+                 font=SMALL_FONT, bg=colors["bg"], fg=colors["muted"],
                  anchor="w", justify="left", wraplength=700).pack(fill="x")
 
-        facts_row = tk.Frame(body, bg="#f1f8f4")
+        facts_row = tk.Frame(body, bg=colors["bg"])
         facts_row.pack(fill="x", pady=(4, 0))
         self.read_media_var = tk.BooleanVar(value=bool(assist.get("read_media", True)))
         ttk.Checkbutton(facts_row, text=i18n.t("connect.read_media"),
@@ -4642,17 +4741,19 @@ class _AiConnectWindow:
                         style="GreenCard.TCheckbutton",
                         command=self.toggle_facts).pack(side="left")
         self.facts_disclosure = _Disclosure(
-            body, i18n.t("connect.show_facts"), bg="#f1f8f4", fg="#3b6f5a")
+            body, i18n.t("connect.show_facts"), bg=colors["bg"],
+            fg=colors["accent"])
         self.facts_disclosure.pack(fill="x", pady=(2, 0))
         tk.Label(self.facts_disclosure.body, text=i18n.t("connect.facts_hint"),
-                 font=SMALL_FONT, bg="#f1f8f4", fg="#5c6f66",
+                 font=SMALL_FONT, bg=colors["bg"], fg=colors["muted"],
                  anchor="w", justify="left", wraplength=700).pack(fill="x")
         self.break_var = tk.BooleanVar(value=bool(assist.get("break_enabled", True)))
         ttk.Checkbutton(body, text=i18n.t("connect.break"),
                         variable=self.break_var, style="GreenCard.TCheckbutton",
                         command=self.toggle_break).pack(anchor="w", pady=(4, 0))
         self.advanced_disclosure = _Disclosure(
-            body, i18n.t("connect.show_advanced"), bg="#f1f8f4", fg="#3b6f5a")
+            body, i18n.t("connect.show_advanced"), bg=colors["bg"],
+            fg=colors["accent"])
         self.advanced_disclosure.pack(fill="x", pady=(2, 0))
         self.watch_var = tk.BooleanVar(value=bool(assist.get("enabled")))
         self.watch_chk = ttk.Checkbutton(
@@ -4670,20 +4771,21 @@ class _AiConnectWindow:
 
     def _build_proactive_section(self, wrap, assist) -> None:
         # ---- 5) C：主动搭子（默认关，用户显式开启）----
-        pro, pro_body = self._card(
-            wrap, i18n.t("connect.proactive"), "#6b4fa8", "#f6f2fc")
+        pro, pro_body, colors = self._card(
+            wrap, i18n.t("connect.proactive"), "proactive")
         self.proactive_var = tk.BooleanVar(value=bool(assist.get("proactive_enabled", False)))
         self.proactive_chk = ttk.Checkbutton(
             pro_body, text=i18n.t("connect.proactive_enable"), variable=self.proactive_var,
             style="PurpleCard.TCheckbutton", command=self.toggle_proactive)
         self.proactive_chk.pack(anchor="w")
         tk.Label(pro_body, text=i18n.t("connect.proactive_short"),
-                 font=SMALL_FONT, bg="#f6f2fc", fg="#655a78",
+                 font=SMALL_FONT, bg=colors["bg"], fg=colors["muted"],
                  anchor="w", justify="left", wraplength=720).pack(fill="x", pady=(2, 3))
         self.proactive_disclosure = _Disclosure(
-            pro_body, i18n.t("connect.show_proactive"), bg="#f6f2fc", fg="#6b4fa8")
+            pro_body, i18n.t("connect.show_proactive"), bg=colors["bg"],
+            fg=colors["accent"])
         self.proactive_disclosure.pack(fill="x")
-        gates = tk.Frame(self.proactive_disclosure.body, bg="#f6f2fc")
+        gates = tk.Frame(self.proactive_disclosure.body, bg=colors["bg"])
         gates.pack(fill="x", pady=(2, 0))
         self.allow_focus_var = tk.BooleanVar(value=bool(assist.get("allow_focus", False)))
         self.allow_meeting_var = tk.BooleanVar(value=bool(assist.get("allow_meeting", False)))
@@ -4700,10 +4802,10 @@ class _AiConnectWindow:
             gates, text=i18n.t("connect.proactive_night"), variable=self.allow_night_var,
             style="PurpleCard.TCheckbutton", command=self.toggle_proactive_gates)
         self.allow_night_chk.pack(side="left")
-        limits = tk.Frame(self.proactive_disclosure.body, bg="#f6f2fc")
+        limits = tk.Frame(self.proactive_disclosure.body, bg=colors["bg"])
         limits.pack(fill="x", pady=(4, 0))
         tk.Label(limits, text=i18n.t("connect.proactive_max"), font=UI_FONT,
-                 bg="#f6f2fc", fg="#655a78").pack(side="left")
+                 bg=colors["bg"], fg=colors["muted"]).pack(side="left")
         self.proactive_max_var = tk.StringVar(
             value=str(int(assist.get("proactive_max_per_day", 3) or 3)))
         self.proactive_max_combo = ttk.Combobox(
@@ -4713,10 +4815,10 @@ class _AiConnectWindow:
         self.proactive_max_combo.bind("<<ComboboxSelected>>",
                                       lambda _e: self.change_proactive_limits())
         tk.Label(limits, text=i18n.t("connect.unit_per_day"), font=UI_FONT,
-                 bg="#f6f2fc", fg="#655a78").pack(
+                 bg=colors["bg"], fg=colors["muted"]).pack(
             side="left", padx=(0, 10))
         tk.Label(limits, text=i18n.t("connect.proactive_interval"), font=UI_FONT,
-                 bg="#f6f2fc", fg="#655a78").pack(side="left")
+                 bg=colors["bg"], fg=colors["muted"]).pack(side="left")
         try:
             _interval_min = max(5, int(assist.get("proactive_min_interval", 1800) or 1800) // 60)
         except (TypeError, ValueError):
@@ -4729,10 +4831,10 @@ class _AiConnectWindow:
         self.proactive_interval_combo.bind("<<ComboboxSelected>>",
                                            lambda _e: self.change_proactive_limits())
         tk.Label(limits, text=i18n.t("connect.unit_min"), font=UI_FONT,
-                 bg="#f6f2fc", fg="#655a78").pack(side="left")
+                 bg=colors["bg"], fg=colors["muted"]).pack(side="left")
         tk.Label(self.proactive_disclosure.body,
                  text=i18n.t("connect.proactive_hint"),
-                 font=SMALL_FONT, bg="#f6f2fc", fg="#655a78",
+                 font=SMALL_FONT, bg=colors["bg"], fg=colors["muted"],
                  anchor="w", justify="left", wraplength=700).pack(fill="x", pady=(3, 0))
         self._sync_proactive()
 
@@ -4833,23 +4935,31 @@ class _AiConnectWindow:
         self.status_text.set(i18n.t("connect.status")
                              + (": " if i18n.get_language() == "en" else "：") + text)
         #: 状态色条：绿色=真接上了，蓝色=直连就绪，琥珀=还没接上。
+        status_colors = UI_CARDS["connect"]
+        mcp = UI_CARDS["mcp"]
         if kind in ("mcp", "direct"):
-            self.status_frame.configure(bg="#e7f6ec", highlightbackground="#8fc9a4")
-            self.status_label.configure(bg="#e7f6ec", fg="#17663f")
+            self.status_frame.configure(
+                bg=status_colors["ok_bg"],
+                highlightbackground=status_colors["ok_border"])
+            self.status_label.configure(
+                bg=status_colors["ok_bg"], fg=status_colors["ok_fg"])
         else:
-            self.status_frame.configure(bg="#fff4df", highlightbackground="#e2bd7a")
-            self.status_label.configure(bg="#fff4df", fg="#7a5a00")
+            self.status_frame.configure(
+                bg=status_colors["warn_bg"],
+                highlightbackground=status_colors["warn_border"])
+            self.status_label.configure(
+                bg=status_colors["warn_bg"], fg=status_colors["warn_fg"])
         if hasattr(self, "mcp_state_text"):
             if kind == "mcp":
                 self.mcp_state_text.set(i18n.pick(
                     f"● 已接入：{conn.get('client')}",
                     f"● Connected: {conn.get('client')}"))
-                self.mcp_state_label.configure(fg="#17663f")
+                self.mcp_state_label.configure(fg=status_colors["ok_fg"])
             else:
                 self.mcp_state_text.set(i18n.pick(
                     "○ 还没接入：点「复制配置」粘到 AI 客户端即可",
                     "○ Not connected: click “Copy config” and paste it into your AI client"))
-                self.mcp_state_label.configure(fg="#5b7285")
+                self.mcp_state_label.configure(fg=mcp["muted"])
         if hasattr(self, "key_state_text"):
             env_name = getattr(self, "key_env", "")
             if not env_name:
@@ -5777,7 +5887,7 @@ class WinMonApp:
         self.ws_minimize_others = tk.BooleanVar(value=False)
 
     def _configure_style(self) -> None:
-        """按当前色板配置 ttk；AI、媒体、接入卡片仍保留各自的彩色高亮。"""
+        """按当前色板配置 ttk；AI、媒体、接入卡片保留色相，深浅主题各一套底色。"""
         base_bg = UI_BG
         panel_bg = UI_SURFACE_ALT
         ink = UI_INK
@@ -5814,7 +5924,7 @@ class WinMonApp:
                   background=[("active", UI_HOVER_BG), ("pressed", UI_ACCENT_DARK)],
                   foreground=[("disabled", UI_MUTED)])
         # 媒体行右侧的 3 个按键（播放/暂停、上一首、下一首）单独一套高对比样式：
-        # 它们仍在**浅绿高亮卡片**上，不能用深色页面的默认按钮色，否则会糊成一块。
+        # 它们仍在**彩色高亮卡片**上，不能用深色页面的默认按钮色，否则会糊成一块。
         style.configure("Media.TButton", font=UI_FONT, background=UI_MEDIA_BTN_BG,
                         foreground=UI_MEDIA_BTN_FG, bordercolor=UI_MEDIA_BTN_ACTIVE,
                         relief="flat", padding=(6, 2))
@@ -5828,16 +5938,17 @@ class WinMonApp:
         style.map("TCheckbutton",
                   background=[("active", base_bg)],
                   foreground=[("disabled", UI_MUTED)])
-        # 浅色高亮卡片里的勾选框：背景跟卡片走，否则会在卡片上挖出一块白底。
-        for style_name, card_bg, card_fg in (
-                ("GreenCard", "#f1f8f4", "#2a4a66"),
-                ("PurpleCard", "#f6f2fc", "#655a78"),
-                ("MediaCard", "#eef8f4", "#103b36")):
-            style.configure(f"{style_name}.TCheckbutton", background=card_bg,
-                            foreground=card_fg, padding=(2, 2))
+        # 高亮卡片里的勾选框：背景跟卡片走，否则会在卡片上挖出一块异色底。
+        # 深色主题下卡片本身也换成了深色高亮，这里直接取当前色板。
+        for style_name, card_key in (("GreenCard", "behavior"),
+                                     ("PurpleCard", "proactive"),
+                                     ("MediaCard", "media")):
+            card = UI_CARDS[card_key]
+            style.configure(f"{style_name}.TCheckbutton", background=card["bg"],
+                            foreground=card["fg"], padding=(2, 2))
             style.map(f"{style_name}.TCheckbutton",
-                      background=[("active", card_bg), ("pressed", card_bg)],
-                      foreground=[("disabled", "#8a9b93")])
+                      background=[("active", card["bg"]), ("pressed", card["bg"])],
+                      foreground=[("disabled", card["muted"])])
         style.configure("TRadiobutton", background=base_bg, foreground=ink)
         style.map("TRadiobutton", background=[("active", base_bg)])
         style.configure("TEntry", fieldbackground=UI_BG, foreground=ink,
@@ -6335,11 +6446,13 @@ class WinMonApp:
         #
         # 来源说明（“从窗口标题读的”）不再挤在这一行：用户 2026-10-19 指出，
         # 这类技术细节应当收进说明窗口。主界面只留应用名 + 曲名 + 状态。
-        mbar = tk.Frame(self.root, bg="#eef8f4", highlightbackground="#a9d8ce",
+        media = UI_CARDS["media"]
+        mbar = tk.Frame(self.root, bg=media["bg"], highlightbackground=media["border"],
                         highlightthickness=1, padx=8, pady=3)
         mbar.pack(fill="x", padx=8, pady=(0, 4))
         tk.Label(mbar, text="媒体", font=SMALL_BOLD_FONT,
-                 bg="#0f6b5c", fg="white", padx=7, pady=1).pack(side="left", padx=(0, 8))
+                 bg=media["tag_bg"], fg=media["tag_fg"], padx=7, pady=1).pack(
+            side="left", padx=(0, 8))
         #: 当前在放什么（曲名 · 歌手 · 状态）。**没有进度** —— 用户已放弃识别进度。
         self.media_text = tk.StringVar(value="（还没读取）")
         #: 这一行的宽度（**字符**单位）。装不下的部分由 `fit_media_text()` 用 `…` 收尾，
@@ -6349,11 +6462,11 @@ class WinMonApp:
         self.media_label = tk.Label(
             mbar, textvariable=self.media_text,
             font=("Microsoft YaHei UI", UI_FONT_SIZE, "bold"), anchor="w",
-            fg="#103b36", bg="#eef8f4", width=self.MEDIA_TEXT_WIDTH)
+            fg=media["fg"], bg=media["bg"], width=self.MEDIA_TEXT_WIDTH)
         self.media_label.pack(side="left", padx=(0, 8))
         # 右边的控件按"从左到右"的视觉顺序 pack（都是 side="left"，不会互相挤）
         tk.Label(mbar, text="播放器：", font=SMALL_FONT,
-                 bg="#eef8f4", fg="#5a6b7b").pack(side="left")
+                 bg=media["bg"], fg=media["muted"]).pack(side="left")
         self.media_app_combo = ttk.Combobox(mbar, textvariable=self.media_app_pin,
                                            state="readonly",
                                            width=self._media_combo_width(), font=UI_FONT,
@@ -6375,7 +6488,7 @@ class WinMonApp:
         self.media_play_btn.pack(side="left", padx=(0, 2))
         #: 「◀◀ / ▶▶」= 上一首 / 下一首，走的是同一条"唤醒→按应用→退回媒体键"的路。
         #: 三个键统一用 Media.TButton（深绿底白字）：深色模式下页面变黑，
-        #: 但它们仍坐在浅绿高亮卡片上，默认 ttk 按钮会糊成一块看不见的深灰。
+        #: 但它们仍坐在彩色高亮卡片上，默认 ttk 按钮会糊成一块看不见的深灰。
         self.media_prev_btn = ttk.Button(
             mbar, text="◀◀", width=4, style="Media.TButton",
             command=lambda: self.media_prev_next("previous"))
@@ -6401,12 +6514,13 @@ class WinMonApp:
 
         文案由 `ai.format_ai_summary()` 生成（纯函数，可单测）；这里只负责布局。
         """
-        bg = "#edf5fb"
-        bar = tk.Frame(self.root, bg=bg, highlightbackground="#b9d6ee",
+        card = UI_CARDS["ai"]
+        bg = card["bg"]
+        bar = tk.Frame(self.root, bg=bg, highlightbackground=card["border"],
                        highlightthickness=1, padx=8, pady=4)
         bar.pack(fill="x", padx=8, pady=(0, 4))
         tk.Label(bar, text="AI", font=SMALL_BOLD_FONT,
-                 bg="#1f5f8b", fg="white", padx=8, pady=2).pack(
+                 bg=card["tag_bg"], fg=card["tag_fg"], padx=8, pady=2).pack(
             side="left", padx=(0, 8), anchor="n")
         body = tk.Frame(bar, bg=bg)
         body.pack(side="left", fill="x", expand=True)
@@ -6415,18 +6529,18 @@ class WinMonApp:
         self.ai_identity_text = tk.StringVar(value="正在识别当前 AI…")
         self.ai_identity_label = tk.Label(
             body, textvariable=self.ai_identity_text,
-            font=BOLD_FONT, bg=bg, fg="#12354d",
+            font=BOLD_FONT, bg=bg, fg=card["fg"],
             anchor="w", justify="left")
         self.ai_identity_label.grid(row=0, column=0, sticky="ew")
         self.ai_state_text = tk.StringVar(value="正在识别接入状态…")
         self.ai_state_label = tk.Label(
             body, textvariable=self.ai_state_text,
-            font=SMALL_FONT, bg="#fff4d6", fg="#7a5a00",
+            font=SMALL_FONT, bg=card["state_warn_bg"], fg=card["state_warn_fg"],
             anchor="w", justify="left", padx=6, pady=0)
         self.ai_state_label.grid(row=1, column=0, sticky="w", pady=(2, 0))
         self.ai_usage_text = tk.StringVar(value="")
         tk.Label(body, textvariable=self.ai_usage_text,
-                 font=SMALL_FONT, bg=bg, fg="#5b7285",
+                 font=SMALL_FONT, bg=bg, fg=card["muted"],
                  anchor="w").grid(row=2, column=0, sticky="ew", pady=(2, 0))
         #: 动作按钮在左侧竖栏，AI 卡只负责“是谁 / 接没接上 / 用了多少”。
 
@@ -7814,10 +7928,17 @@ class WinMonApp:
             self.ai_state_text.set(state or i18n.pick(
                 "未接入（可复制）", "not connected (clipboard)"))
             self.ai_usage_text.set(parts["usage"])
-            if parts["status_kind"] in ("mcp", "direct"):
-                self.ai_state_label.configure(bg="#e2f5e9", fg="#17663f")
+            card = UI_CARDS["ai"]
+            connected = parts["status_kind"] in ("mcp", "direct")
+            if connected:
+                self.ai_state_label.configure(
+                    bg=card["state_ok_bg"], fg=card["state_ok_fg"])
             else:
-                self.ai_state_label.configure(bg="#fff4d6", fg="#7a5a00")
+                self.ai_state_label.configure(
+                    bg=card["state_warn_bg"], fg=card["state_warn_fg"])
+            workspace = getattr(self, "ai_workspace", None)
+            if workspace is not None:
+                workspace.sync_state(connected)
         except Exception:
             pass
 

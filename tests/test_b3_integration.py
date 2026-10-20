@@ -25,6 +25,7 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import _helpers as h                     # noqa: E402
+import _marks as marks                   # noqa: E402
 import winmon_core as core               # noqa: E402
 
 PROJECT_DIR = h.PROJECT_DIR
@@ -123,6 +124,7 @@ class TestCatalogCliAgainstTempSettings(unittest.TestCase):
 
 
 @h.needs_tk
+@marks.slow("完整 WinMonApp 启动（含后台线程）")
 class TestFullAppStartup(unittest.TestCase):
     """真的启动一次 `WinMonApp`（含后台线程与定时器），验证初始化路径没有写错。"""
 

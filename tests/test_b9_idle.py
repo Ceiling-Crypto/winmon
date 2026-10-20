@@ -33,6 +33,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import _helpers as h                                          # noqa: E402
+import _marks as marks                                        # noqa: E402
 import winmon_core as core                                    # noqa: E402
 import winmon                                                 # noqa: E402
 
@@ -318,6 +319,7 @@ class TestIdleSamples(unittest.TestCase):
 
 
 @h.needs_tk
+@marks.slow("真开窗口并等待优雅关闭")
 class TestGracefulClose(unittest.TestCase):
     """优雅关闭：真开一个别的进程的窗口，真的关掉它，并核对窗口消失。"""
 

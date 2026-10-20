@@ -23,6 +23,7 @@ import unittest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import _helpers as h                       # noqa: E402
+import _marks as marks                     # noqa: E402
 import winmon_core as core                 # noqa: E402
 
 
@@ -241,6 +242,7 @@ class TestCloseModeDefaults(unittest.TestCase):
 
 
 @h.needs_tk
+@marks.slow("真开窗口 + 等升级/关闭结果")
 class TestCloseWindowEndToEnd(unittest.TestCase):
     """
     **真实端到端**：真开一个别的进程的窗口 → `stop_video_in_window(mode="window")`

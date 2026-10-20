@@ -180,7 +180,10 @@ class TestMainUiHierarchy(unittest.TestCase):
         self.assertIn("Claude Desktop", self.app.ai_identity_text.get())
         self.assertIn("已接入 MCP", self.app.ai_state_text.get())
         self.assertIn("真实 10", self.app.ai_usage_text.get())
-        self.assertEqual(str(self.app.ai_state_label.cget("bg")), "#e2f5e9")
+        self.assertEqual(str(self.app.ai_state_label.cget("bg")),
+                         self.winmon.UI_CARDS["ai"]["state_ok_bg"])
+        self.assertEqual(str(self.app.ai_workspace._state_label.cget("bg")),
+                         self.winmon.UI_CARDS["ai"]["state_ok_bg"])
 
     def _settings_window(self):
         with mock.patch.object(self.winmon.core, "get_autostart", return_value=False):
