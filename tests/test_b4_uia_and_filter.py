@@ -557,6 +557,51 @@ class TestMediaSessionLogic(unittest.TestCase):
         self.assertEqual(sent, ["play_pause"], "没有会话时应当退回全局媒体键")
         self.assertIn("媒体键", app.status_text.get())
 
+    def test_rejected_session_command_also_falls_back_to_media_keys(self):
+        """
+        2026-10-20 用户报告：有媒体会话时点「播放」不动，上一首/下一首却能用。
+        根因之一是会话命令被拒后，播放/暂停**没有**退回全局媒体键（上一首/
+        下一首走 smart_media_command，本来就会退）。这里钉住“有会话但命令被拒”
+        也必须回退，并把实际原因写进状态栏。
+        """
+        import tkinter as tk
+        root = tk.Tk()
+        root.withdraw()
+        self.addCleanup(root.destroy)
+        app = winmon.WinMonApp.__new__(winmon.WinMonApp)
+        app.root = root
+        app._init_video_vars()
+        app._media_busy = False
+        app._media_found = True
+        app._media_playing = False
+        app._media_last_pick = {"app": "MSEdge"}
+        app.status_text = tk.StringVar()
+        app._set_status = lambda t: app.status_text.set(t)
+        app.log_action = lambda *a, **k: None
+        app.media_text = tk.StringVar()
+        app._refresh_media = lambda: None
+        fake = core.MediaApp("Microsoft Edge", "msedge.exe", False)
+        app._picked_media_app = lambda: fake
+        app._media_apps = {fake.title: fake}
+        app.media_app_pin.set(fake.title)
+        app.media_auto_wake.set(False)
+        app._media_app_is_running = lambda _app: True
+        app._app_has_session = lambda _key: True
+        app._ui_msg = queue.Queue()
+        sent = []
+        with mock.patch.object(core, "snapshot_processes",
+                               return_value={1: {"name": "msedge.exe"}}), \
+                mock.patch.object(core, "media_command",
+                                  return_value=(False, "command rejected")), \
+                mock.patch.object(core, "send_media_key",
+                                  side_effect=lambda k: (sent.append(k), (True, "已发送"))[1]):
+            app.media_command("play")
+            self.assertTrue(pump_media(app, root, lambda: bool(sent)),
+                            f"回退媒体键没有发生；状态栏={app.status_text.get()!r}")
+        self.assertEqual(sent, ["play_pause"], "有会话但被拒时也要退回媒体键")
+        self.assertIn("媒体键", app.status_text.get())
+        self.assertIn("没有接受", app.status_text.get())
+
     # ---- 用户第 2 条："明确哪个程序它是啥、运行了啥" ----
 
     def test_workspace_log_lists_the_actual_programs(self):
@@ -678,10 +723,12 @@ class TestMediaSessionLogic(unittest.TestCase):
         app._apply_media_result({"ok": True, "sessions": []})
         self.assertIn("网易云音乐", app.media_text.get())
 
-    def test_failed_media_command_is_not_logged(self):
+    def test_failed_media_command_without_app_still_sends_media_key(self):
         """
-        用户第 3 条：什么都**没发生**的时候不要写操作历史
-        （否则日志会被"其实什么也没做"的记录塞满）。
+        没选应用、会话命令也失败时（网易云不发布会话）仍要按一次媒体键，
+        否则就是用户报告的“上一首能切、播放不动”。
+
+        但**不写操作历史**：没有指定应用、按键也无法核对，不算一次可留痕的动作。
         """
         app = self._media_app_for_display()
         logged = []
@@ -694,12 +741,18 @@ class TestMediaSessionLogic(unittest.TestCase):
         app._refresh_media = lambda: None
         app._ui_msg = queue.Queue()              # `_ui_call` 的队列
         app._media_busy = False
+        sent = []
         with mock.patch.object(core, "media_command",
-                              return_value=(False, "没人在放东西")):
+                               return_value=(False, "没人在放东西")), \
+                mock.patch.object(core, "send_media_key",
+                                  side_effect=lambda k: (
+                                      sent.append(k), (True, "已发送"))[1]):
             app.media_command("play")
             pump_media(app, app.root, lambda: bool(app.status_text.get()))
-        self.assertEqual(logged, [], f"什么都没做却写了日志：{logged}")
+        self.assertEqual(logged, [], f"什么都没确认却写了日志：{logged}")
+        self.assertEqual(sent, ["play_pause"], "没有会话时也要按一次媒体键")
         self.assertIn("没人在放东西", app.status_text.get())
+        self.assertIn("媒体键", app.status_text.get())
 
     def test_app_has_session_matches_family_ids(self):
         """会话里的 app 常是**家族名**（Edge 报 MSEdge），匹配要认这个。"""
@@ -2484,6 +2537,50 @@ class TestMediaAppPin(unittest.TestCase):
         app = winmon.WinMonApp.__new__(winmon.WinMonApp)
         app._media_pin_dropped = []
         self.assertNotIn("没找到", app._startup_status())
+
+
+@h.needs_tk
+class TestMediaAppPicker(unittest.TestCase):
+    """媒体应用下拉：点一次只能出现一个多选面板，不能再叠原生单选列表。"""
+
+    def test_click_opens_only_the_multi_select_panel(self):
+        import tkinter as tk
+        root = tk.Tk()
+        root.geometry("560x260+50+50")
+        root.update()
+        self.addCleanup(root.destroy)
+        app = winmon.WinMonApp.__new__(winmon.WinMonApp)
+        app.root = root
+        app._init_video_vars()
+        app._set_status = lambda _text: None
+        app._save_settings_soon = lambda: None
+        app.log_action = lambda *a, **k: None
+        app.media_text = tk.StringVar()
+        with mock.patch.object(winmon.WinMonApp, "_reload_media_app_list",
+                               lambda _self: None):
+            app._build_video_bars()
+        app.media_app_combo.configure(
+            values=[winmon.MEDIA_APP_ANY, "Microsoft Edge（浏览器）（运行中）"])
+        app._media_apps = {
+            "Microsoft Edge（浏览器）（运行中）":
+                core.MediaApp("Microsoft Edge", "msedge.exe", True)}
+        root.update()
+
+        app.media_app_combo.event_generate("<Button-1>")
+        root.update()
+        pop = getattr(app, "_media_picker_pop", None)
+        self.assertIsNotNone(pop, "点击后没有出现多选面板")
+        self.assertTrue(pop.winfo_exists())
+        native = root.tk.call("ttk::combobox::PopdownWindow",
+                              str(app.media_app_combo))
+        self.assertEqual(root.tk.call("winfo", "ismapped", native), 0,
+                         "原生单选下拉也弹出来了（一大一小两个列表）")
+        mapped_tops = [w for w in root.winfo_children()
+                       if isinstance(w, tk.Toplevel)
+                       and w.winfo_ismapped()]
+        self.assertEqual(len(mapped_tops), 1,
+                         f"应当只有多选面板，实际有 {len(mapped_tops)} 个弹窗")
+        pop.destroy()
 
 
 if __name__ == "__main__":

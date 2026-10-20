@@ -6678,7 +6678,8 @@ class WinMonApp:
         点下去的顺序是：
           1. 目标应用没在跑 → 先唤醒它（仅当勾了「自动唤醒」）；
           2. 把命令**按应用**发给它；
-          3. 它没有媒体会话（比如网易云：进程在跑但不发布会话）→ **退回全局媒体键**。
+          3. 它没有媒体会话，或会话拒绝了这条命令（浏览器/网易云都可能）→
+             **退回全局媒体键**。
         所以不需要再摆一排"全局媒体键"和一个单独的"启动/唤醒"—— 一条路走到底，
         状态栏会说明这一步实际用了哪一种。上一首/下一首用「◀◀ / ▶▶」（同样按上面的顺序）。
         """
@@ -6724,11 +6725,13 @@ class WinMonApp:
                                            width=self._media_combo_width(), font=UI_FONT,
                                            values=[MEDIA_APP_ANY])
         self.media_app_combo.pack(side="left", padx=(0, 4))
-        # 点下拉框 = 出**多选**面板（tkinter 的 Combobox 只能单选，见 `_edit_media_app_multi`）
-        try:
-            self.media_app_combo.configure(postcommand=self._edit_media_app_multi)
-        except tk.TclError:
-            pass
+        # 点下拉框 = 出**多选**面板（tkinter 的 Combobox 只能单选，见
+        # `_edit_media_app_multi`）。这里必须由实例绑定返回 "break"：
+        # 只用 postcommand 的话，原生单选下拉仍会跟着弹出，用户会看到
+        # 一大一小两个列表（2026-10-20 复现）。
+        for sequence in ("<Button-1>", "<Down>", "<Alt-Down>", "<F4>",
+                         "<space>", "<Return>"):
+            self.media_app_combo.bind(sequence, self._open_media_app_picker)
         ttk.Checkbutton(mbar, text="自动启动", variable=self.media_auto_wake,
                         style="MediaCard.TCheckbutton").pack(
             side="left", padx=(0, 4))
@@ -6818,21 +6821,35 @@ class WinMonApp:
         """播放/暂停（按应用）：按上一次读到的状态决定发 play 还是 pause。"""
         self.media_command("pause" if self._media_playing else "play")
 
+    def _open_media_app_picker(self, _event=None) -> str:
+        """点击/键盘打开多选面板，并阻断 ttk.Combobox 自己的下拉。"""
+        self._edit_media_app_multi()
+        return "break"
+
     def _edit_media_app_multi(self) -> None:
         """
         「媒体应用」的**多选**编辑（A.2）。
 
         为什么不用 `ttk.Combobox` 自带的下拉：tkinter 的 Combobox 只支持单选。
-        实测（2026-10-12）可以给它挂 `postcommand`，在弹出时显示我们自己的
-        勾选列表 —— 所以点下拉框 = 出多选面板，选完把标签用「、」拼起来存进
-        `media_app_pin`。执行时 `_app_key_for_media()` 会拼成 `exe1,exe2`，
-        读会话那一行就能同时看多个播放器（"还有 N 个在放"）。
+        点下拉框/按 Down/F4/Space 时由 `_open_media_app_picker()` 返回 "break"，
+        保证只出现这一个多选面板；以前挂在 postcommand 上，原生下拉会同时弹出，
+        出现过"一大一小两个栏目"。
+
+        选完把标签用「、」拼起来存进 `media_app_pin`。执行时
+        `_app_key_for_media()` 会拼成 `exe1,exe2`，读会话那一行就能同时看多个
+        播放器（"还有 N 个在放"）。
         """
+        existing = getattr(self, "_media_picker_pop", None)
+        if existing is not None and existing.winfo_exists():
+            existing.lift()
+            existing.focus_force()
+            return
         labels = [v for v in self.media_app_combo.cget("values")
                   if v != MEDIA_APP_ANY]
         current_labels = list(self._picked_media_labels())
 
         pop = tk.Toplevel(self.root)
+        self._media_picker_pop = pop
         pop.overrideredirect(True)
         pop.attributes("-topmost", True)
         pop.configure(bg=UI_BG)
@@ -6849,18 +6866,29 @@ class WinMonApp:
         row = ttk.Frame(outer)
         row.pack(fill="x", pady=(6, 0))
 
+        def close() -> None:
+            self._media_picker_pop = None
+            try:
+                pop.destroy()
+            except tk.TclError:
+                pass
+            try:
+                self.media_app_combo.focus_set()
+            except tk.TclError:
+                pass
+
         def apply() -> None:
             picked = [lbl for lbl, v in vars_.items()
                       if v.get() and lbl != MEDIA_APP_ANY]
             self.media_app_pin.set("、".join(picked) if picked else MEDIA_APP_ANY)
             self._save_settings_soon()
             self._set_status(f"媒体应用已选：{self.media_app_pin.get()}")
-            pop.destroy()
+            close()
 
         ttk.Button(row, text="确定", width=8, command=apply).pack(side="right")
-        ttk.Button(row, text="取消", width=8, command=pop.destroy).pack(
+        ttk.Button(row, text="取消", width=8, command=close).pack(
             side="right", padx=(0, 6))
-        pop.bind("<Escape>", lambda _e: pop.destroy())
+        pop.bind("<Escape>", lambda _e: close())
         # 弹在下拉框正下方（跟系统下拉的位置一致）
         self.root.update_idletasks()
         pop.update_idletasks()
@@ -7251,21 +7279,36 @@ class WinMonApp:
             self._set_status(f"{msg}（{who}）")
             self.log_action("媒体命令", who,
                             f"{core.MEDIA_COMMAND_LABEL.get(slug, slug)}：{msg}")
-        elif app_label and not self._app_has_session(app_key):
-            # 退回全局媒体键（keybd_event 是内存级调用，留在主线程没问题）
+        elif not app_label:
+            # 没选应用、命令又失败：**仍要发一次全局媒体键**。网易云就是这种：
+            # 进程在跑、标题里有歌名，但不发布媒体会话；以前这时直接报失败，
+            # 而上一首/下一首走 smart_media_command 会按键，所以出现
+            # “切歌能用、播放不动”（用户 2026-10-20 的现象）。
+            # 没有指定应用、按键也无法核对，所以**不写操作历史**。
             key = self.MEDIA_KEY_FOR.get(slug, "play_pause")
             kok, kmsg = core.send_media_key(key)
             if kok:
-                self._set_status(f"{app_label} 没有媒体会话，已改用系统媒体键：{kmsg}")
-                self.log_action("媒体键（回退）", core.MEDIA_KEY_LABEL.get(key, key),
-                                f"{app_label} 无会话，改发系统媒体键：{kmsg}")
+                self._set_status(
+                    f"{msg}；已改发系统媒体键：{kmsg}（没有可核对的会话）")
             else:
                 self._set_status(f"{msg}；改发媒体键也失败：{kmsg}")
         else:
-            # 什么都不做就不写日志，只在状态栏说一句（免得日志全是"其实没发生"）
-            self._set_status(
-                f"{msg}　（{app_label}有会话但没接受这条命令）" if app_label
-                else f"{msg}　（当前没有程序在放东西，可以先用系统媒体键）")
+            # 选了应用、会话命令失败时**一律**退回全局媒体键：播放/暂停以前
+            # 只在“没有会话”时回退，于是“有会话但 TryPlay 被拒”就什么都不做，
+            # 而上一首/下一首因为走 smart_media_command 仍能靠媒体键工作
+            # （用户 2026-10-20 报告的正是这个差异）。
+            key = self.MEDIA_KEY_FOR.get(slug, "play_pause")
+            kok, kmsg = core.send_media_key(key)
+            if kok:
+                if not self._app_has_session(app_key):
+                    why = f"{app_label} 没有媒体会话"
+                else:
+                    why = f"{app_label} 的会话没有接受这条命令"
+                self._set_status(f"{why}，已改用系统媒体键：{kmsg}")
+                self.log_action("媒体键（回退）", core.MEDIA_KEY_LABEL.get(key, key),
+                                f"{why}；改发系统媒体键：{kmsg}")
+            else:
+                self._set_status(f"{msg}；改发媒体键也失败：{kmsg}")
         # 先清 busy 再刷新：顺序反了这一拍刷新会被自己挡掉
         self._media_busy = False
         self._refresh_media()

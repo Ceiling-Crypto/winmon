@@ -3,7 +3,7 @@
 > 用途：在新的对话里快速恢复上下文。读这一份即可继续开发。
 > **正式发布名 `winmon1.0`**（`APP_VER = "1.0"`，查版本：`py winmon.py --version`）。
 > **先读 §一点五「WinMon 的定位与能力边界」** —— 输入注入已明确不再投入。
-> 代码状态：**965 个测试用例全绿**（约 99 秒；`--fast` 908 条约 36 秒）+
+> 代码状态：**968 个测试用例全绿**（约 99 秒；`--fast` 911 条约 37 秒）+
 > 代码复检 0 新增问题（基线为空）、
 > 自检 8/8、界面冒烟通过、
 > 桌面快捷方式可用、程序目录端到端可用、
@@ -21,7 +21,7 @@
 
 | | |
 | --- | --- |
-| 测试 | **965 用例全绿**（`py tests\run_tests.py`，约 99 秒；含 7 条按环境 skip）；`--fast` 908 条约 36 秒 |
+| 测试 | **968 用例全绿**（`py tests\run_tests.py`，约 99 秒；含 7 条按环境 skip）；`--fast` 911 条约 37 秒 |
 | 代码复检 | `py tests\lint_check.py` → **新增问题 0**（基线已清空，见 §四） |
 | 自检 / 冒烟 | `py winmon.py --selftest` 8/8 通过；`--smoke` 通过 |
 | 规模 | `winmon_core.py` ~6800 行 / `winmon.py` ~12060 行 / 测试 51 个 .py（37 个测试模块） |
@@ -73,7 +73,7 @@
 1. **把媒体那一行做精**：常驻快照已经有了，可以顺手把"播放速率/时间线"接进来
    （当初删掉的进度显示，明确说过"以后再说" —— **动手前先确认**）；
 2. **托盘右键加播放控制**（上一首/播放暂停/下一首）+ 显示当前曲名，不用切回主窗口；
-3. ~~**测试提速**~~ **已做（阶段 8.9）**：`--fast` 908 条约 36 秒，全量 965 条约 99 秒；
+3. ~~**测试提速**~~ **已做（阶段 8.9）**：`--fast` 911 条约 37 秒，全量 968 条约 99 秒；
 4. **GUI 拆分**：`winmon.py` 已近 12060 行，可按标签页拆包（注意 §§布局不变量与 lint 的 200 行阈值）。
 
 > **关于"两份副本"**：这个项目早期在两处工作区各有一份拷贝。2026-10-11 用 SHA256
@@ -106,7 +106,7 @@
 | `winmon_mcp.py` | ~800 | **MCP 服务器**：双时代 stdio + 本地 HTTP + 四个只读工具 |
 | `winmon_ai_provider.py` | ~250 | **可选**直连模型 API（默认关；精确 usage；key 只从环境变量读） |
 | `media_session.ps1` | ~230 | 系统媒体会话（GSMTC）桥接脚本（PowerShell + Windows 自带 WinRT 投影；**必须纯 ASCII 无 BOM**） |
-| `tests/` | 51 个 .py | **可重复运行的测试**（965 用例，纯 unittest） + `_marks.py` 慢用例标记 + 开发辅助工具 + `lint_check.py` / `lint_baseline.txt` |
+| `tests/` | 51 个 .py | **可重复运行的测试**（968 用例，纯 unittest） + `_marks.py` 慢用例标记 + 开发辅助工具 + `lint_check.py` / `lint_baseline.txt` |
 | `启动WinMon.bat` | — | 菜单式启动器（纯 ASCII，避免批处理编码问题） |
 | `scan_windows.py` | — | 命令行窗口清单 |
 | `close_others.py` | — | 批量关闭除当前窗口外的窗口 |
@@ -159,8 +159,8 @@ python winmon.py --videos --open 3 --watch --close-window   :: 完整视频链�
 python winmon.py --version          :: 打印版本（winmon1.0）
 python winmon.py --idle             :: 列出"长期开着、没人用"的程序（只看，不关任何东西）
 python winmon.py --idle --idle-minutes 5   :: 换个闲置阈值（分钟）
-py tests\run_tests.py               :: 全部测试（965 用例，约 99 秒）
-py tests\run_tests.py --fast        :: 快跑（908 用例，约 36 秒；跳过真窗口/抓屏慢用例）
+py tests\run_tests.py               :: 全部测试（968 用例，约 99 秒）
+py tests\run_tests.py --fast        :: 快跑（911 用例，约 37 秒；跳过真窗口/抓屏慢用例）
 ```
 
 ---
@@ -2507,6 +2507,79 @@ AI 深蓝卡可见；深色接入窗展开后目视无浅色卡残留。
   并用 `System.Drawing.Icon` + Tk `iconbitmap` 双重确认可解码（DIB 帧不花屏）；
   主窗口标题栏与任务栏图标已换。
 
+### 9.22 阶段 8.12：媒体下拉双列表 + 点播放不生效（2026-10-20）
+
+用户 2026-10-20 报了两个媒体 bug：
+
+1. 「播放器处的读取媒体的点击下拉后会出现一大一小的栏目」；
+2. 「在我已经打开了媒体情况下点击播放也并没有播放 上下切换键反而能运行」。
+
+#### 一、下拉后一大一小：多选面板与原生下拉同时弹出
+
+- 根因：多选面板挂在 `ttk.Combobox` 的 `postcommand` 上。`postcommand` 只是
+  **原生下拉即将弹出**时被调用，不能阻止原生下拉本身；于是用户看到
+  自定义多选面板（大）+ 原生单选列表（小）两个框。
+- 修复：去掉 `postcommand`，改为实例绑定
+  `<Button-1>/<Down>/<Alt-Down>/<F4>/<space>/<Return>`，处理函数
+  `_open_media_app_picker()` 返回 `"break"`，阻断 class binding 的原生下拉。
+- 重复点击只抬起已存在的面板（`_media_picker_pop` 判活），关闭时清引用并
+  把焦点还给下拉框；`Esc` / 取消 / 确定都能关。
+- 新增 `TestMediaAppPicker`：真 Tk 组合框上 `event_generate("<Button-1>")`，
+  断言自定义面板存在、原生 `ttk::combobox::PopdownWindow` **未映射**、
+  屏幕上只有一个弹窗。
+
+#### 二、点播放不生效：命令循环拿到的是数据行，不是 WinRT 会话对象
+
+- 真根因（README/旧测试都没抓到）：
+  `media_session.ps1` 的 `Read-Sessions` 把每个会话整理成
+  `[pscustomobject]` 放进了 `$sessions`，命令模式却直接对 `$sessions` 里的
+  **数据行**调用 `TryPlayAsync()/TryPauseAsync()/TrySkipNextAsync()`。
+  PowerShell 报 “`[System.Management.Automation.PSCustomObject]` 找不到
+  `TryPauseAsync` 方法”，所有会话命令其实一直没发出去。
+- 为什么“上一首/下一首反而能运行”：`media_prev_next()` 走
+  `smart_media_command()`，命令失败后会**退回全局媒体键**；而
+  `播放/暂停` 只在“选中应用没有会话”时才回退，有会话但命令被拒时只报一句
+  “有会话但没接受”。另外用户这台机器上开着**网易云**（有窗口标题、不发布
+  媒体会话），默认又是“自动”——这条路径以前完全没有回退，所以播放不动、
+  切歌能动。两条原因一起修。
+- 修复（`media_session.ps1`）：
+  - `Read-Sessions` 额外返回 `$res.objects`，保存**真 WinRT session 对象**；
+    `$res.sessions` 仍只放 JSON 安全的数据，快照模式输出不变。
+  - 命令循环改为遍历 `$objects`，`Try*Async()` 这次真的调在 session 对象上。
+  - 未指定 `-App` 时优先选**正在播放**的会话（没有才取第一个），避免
+    “第一个是暂停的、第二个在放，却把 pause 发给第一个”。
+  - `-App` 支持 `msedge.exe,cloudmusic.exe` 这类多选键（逗号/竖线拆分），
+    与界面多选一致。
+- 修复（`winmon.py`）：
+  - 选中应用的会话命令被拒时，也退回全局媒体键，并写明
+    “没有媒体会话 / 会话没有接受”哪一种。
+  - **没选应用、命令也失败**（网易云这种：有窗口标题、没有会话）时，仍按一次
+    全局 `play_pause` 媒体键——这正是“上一首/下一首能切、播放不动”的缺口；
+    因为没有指定应用、按键也无法核对，所以只写状态栏，不写操作历史。
+- 新增/更新测试：
+  - `test_command_uses_real_winrt_session_objects`：脚本必须保留
+    `$res.objects`、命令循环用 `$objects`、无 App 优先正在播放、多选键拆分。
+  - `test_rejected_session_command_also_falls_back_to_media_keys`：有会话但
+    命令被拒时也必须发 `play_pause` 媒体键，并写清原因。
+  - `test_failed_media_command_without_app_still_sends_media_key`：没选应用、
+    没会话时也要按键，且**不写**“无法核对”的操作历史。
+- 真实端到端（本机 Edge + 本地音频页造会话）：
+  - 修复前：`media_command("pause", "MSEdge")` 返回
+    “命令未生效：RuntimeException: … PSCustomObject … 找不到 TryPauseAsync”；
+  - 修复后：`pause` → 状态 5（已暂停），`play` → 状态 4（正在播放）；
+  - 再走 WinMon 的界面路径（`_apply_media_result` → `media_toggle_play`）：
+    状态栏出现“应用接受了「play」命令”，4 秒后媒体行回到“正在播放”；
+  - 多选键 `msedge.exe,notepad.exe` 的 pause/play 同样生效；
+  - 截图确认媒体下拉只出现一个多选面板。
+
+#### 三、验证
+
+- 新增/更新：`test_b4` 169 条（下拉只弹一个面板、会话被拒/无会话都回退），
+  `test_b11` 43 条（含 WinRT 对象/播放会话优先/多选键）；全量 **968 用例**，
+  `--fast` 实际跑 **911 条**。
+- 未改媒体读取频率、4 秒刷新、预算/关闭/主题等边界；真实会话测试完成后
+  已关闭临时 Edge 进程、清理临时音频页与 profile，系统回到无媒体会话状态。
+
 ## 三、踩过的坑（**最重要，别重复踩**）
 
 ### 编码类（最容易毁掉成果）
@@ -3059,7 +3132,7 @@ AI 深蓝卡可见；深色接入窗展开后目视无浅色卡残留。
 ## 四、测试体系（**改代码后先跑这个**）
 
 ```bat
-py tests\run_tests.py            :: 965 用例，约 99 秒（--fast 908 条约 36 秒）
+py tests\run_tests.py            :: 968 用例，约 99 秒（--fast 911 条约 37 秒）
 py tests\run_tests.py -v         :: 逐个看
 py tests\run_tests.py -k capture :: 只跑关心的
 py tests\lint_check.py           :: 代码复检（退出码 1 = 有新增问题）
@@ -3218,8 +3291,8 @@ py tests\lint_check.py           :: 代码复检（退出码 1 = 有新增问题
    以及 `lint_check.py` 的"函数过长"（>200 行）阈值 —— `_build_ui` 已经贴着线走了，
    当时就是靠把视频联动那三行拆成 `_build_video_bars()` 才压下去的。
 5. ~~**测试提速**~~ **已做（2026-10-20，阶段 8.9）**：
-   `tests/_marks.py` 的 `@slow` + `run_tests.py --fast`。**965 用例约 99 秒**，
-   `--fast` 跳过 57 条真窗口/抓屏/跨进程输入/真 CLI 用例，跑 **908 条约 36 秒**；
+   `tests/_marks.py` 的 `@slow` + `run_tests.py --fast`。**968 用例约 99 秒**，
+   `--fast` 跳过 57 条真窗口/抓屏/跨进程输入/真 CLI 用例，跑 **911 条约 37 秒**；
    提交前仍跑全量。B6 里 5 条只验过滤分支的用例改成 `probe_seconds=0.05`，
    全量因此又少了约 12 秒；真窗口用例仍保留 2 秒采画面。
    另一个大头 `test_a7` 已经从 8.9s 降到 1.2s（现在也在 `--fast` 的跳过列表里）。
@@ -3743,8 +3816,8 @@ C 盘那份**保持原样、一字未改**（用户 2026-10-11 确认：暂不�
 
 > 继续开发 **winmon1.0** —— Windows 程序监控与终止工具，纯标准库，在 `项目根目录\`。
 > 请先读 `HANDOFF.md` 和 `README.md`，然后跑 `py tests\run_tests.py`
-> 确认基线是 **965 用例全绿**（需要哔哩哔哩/UIA 页面的用例会按需 skip；
-> 日常改动用 `--fast` 跑 908 条，提交前跑全量）、
+> 确认基线是 **968 用例全绿**（需要哔哩哔哩/UIA 页面的用例会按需 skip；
+> 日常改动用 `--fast` 跑 911 条，提交前跑全量）、
 > `py tests\lint_check.py` 退出码 0（无新增问题）。
 > **版式要另眼验收**：测试进程没有开 DPI 感知，布局检查看不到"真实 DPI 下控件被挤没"，
 > 所以改动界面后还要跑一次 `py winmon.py --smoke` 看截图（见 §9.15 第 14 条）。

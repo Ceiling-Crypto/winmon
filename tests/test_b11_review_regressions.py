@@ -514,6 +514,24 @@ class TestP14MediaHelperV2(unittest.TestCase):
         self.assertIn(core._MEDIA_HELPER_MARKER, self.text,
                       "脚本里没有版本标记，--selftest 会把它当成旧版")
 
+    def test_command_uses_real_winrt_session_objects(self):
+        """
+        命令模式必须拿**真的 WinRT session 对象**去调 TryPlayAsync 等方法。
+
+        2026-10-20 实测：`Read-Sessions` 只把 `[pscustomobject]` 数据行放进
+        `$sessions`，命令循环却对数据行调 `TryPauseAsync()`，PowerShell 直接报
+        “PSCustomObject 找不到方法”。表现就是：上一首/下一首还能靠媒体键兜底，
+        但播放/暂停在有会话时也不生效。`$res.objects` 专门保存 COM 对象，
+        绝不能混进要序列化的 `sessions`。
+        """
+        self.assertIn("$res.objects += $s", self.text)
+        self.assertIn("foreach ($s in $objects)", self.text)
+        self.assertNotIn("foreach ($s in $sessions)", self.text)
+        self.assertIn("[int]$sessions[$i].status -eq 4", self.text,
+                      "没有指定应用时应优先选正在播放的会话")
+        self.assertIn("split '[,|]'", self.text,
+                      "多选的应用键（逗号/竖线）要拆开逐个匹配")
+
     def test_snapshot_writes_are_atomic(self):
         """
         v2 的核心改动：先写 `$path.tmp` 再用 `File.Replace` 顶过去。

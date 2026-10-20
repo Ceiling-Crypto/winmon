@@ -88,8 +88,10 @@ function Wait-WinRT($operation, $type) {
 }
 
 function Read-Sessions {
-    # Returns @{ sessions = ...; error = '...' } -- never throws.
-    $res = @{ sessions = @(); error = '' }
+    # Returns @{ sessions = ...; error = '...'; objects = ... } -- never throws.
+    # `objects` keeps the real WinRT session objects (needed by TryPlayAsync etc.);
+    # `sessions` is the JSON-safe snapshot data and must never contain COM objects.
+    $res = @{ sessions = @(); error = ''; objects = @() }
     try {
         $mgrType = [Windows.Media.Control.GlobalSystemMediaTransportControlsSessionManager, Windows.Media, ContentType = WindowsRuntime]
         $mgr = Wait-WinRT ($mgrType::RequestAsync()) $mgrType
@@ -97,6 +99,8 @@ function Read-Sessions {
         $propsType = [Windows.Media.Control.GlobalSystemMediaTransportControlsSessionMediaProperties, Windows.Media, ContentType = WindowsRuntime]
         $list = @()
         foreach ($s in @($mgr.GetSessions())) {
+            if ($null -eq $s) { continue }
+            $res.objects += $s
             $item = [ordered]@{
                 app      = [string]$s.SourceAppUserModelId
                 title    = ''
@@ -175,9 +179,10 @@ try {
     }
     $out.ok = $true
     $sessions = $r.sessions
+    $objects = $r.objects
 
     # Optional: send one control command to one session
-    # (0=play 1=pause 2=next 3=previous; the Try* methods return a bool)
+    # (1=play 2=pause 3=next 4=previous; the Try* methods return a bool)
     if ($Command -ne '') {
         $slot = @{ 'play' = 1; 'pause' = 2; 'next' = 3; 'previous' = 4 }[$Command]
         if ($null -eq $slot) {
@@ -187,16 +192,38 @@ try {
             # Match loosely: the session's SourceAppUserModelId is often a FAMILY
             # name without ".exe" (measured: Edge reports "MSEdge"), while callers
             # naturally pass the executable name ("msedge.exe"). Compare the stems
-            # so both spellings work.
-            $want = $App.ToLower() -replace '\.exe$', ''
+            # so both spellings work. `-App` may contain multiple comma/pipe
+            # separated ids (the UI's multi-select); accept a match on any of them.
+            $wants = @($App.ToLower() -split '[,|]' |
+                ForEach-Object { $_ -replace '\.exe$', '' } |
+                Where-Object { $_ -ne '' })
             $target = $null
-            foreach ($s in $sessions) {
-                $id = ([string]$s.SourceAppUserModelId).ToLower()
-                $idStem = $id -replace '\.exe$', ''
-                if ($App -eq '' -or $id.Contains($want) -or $want.Contains($idStem) -or
-                    $idStem.Contains($want)) {
-                    $target = $s
-                    break
+            if ($wants.Count -eq 0) {
+                # No app specified: prefer the session that is actually playing,
+                # otherwise the first one. This mirrors the UI's selection and
+                # avoids sending "pause" to a paused first session while a second
+                # session is the one making sound.
+                for ($i = 0; $i -lt $sessions.Count; $i++) {
+                    if ([int]$sessions[$i].status -eq 4) {
+                        $target = $objects[$i]
+                        break
+                    }
+                }
+                if ($null -eq $target -and $objects.Count -gt 0) {
+                    $target = $objects[0]
+                }
+            } else {
+                foreach ($s in $objects) {
+                    $id = ([string]$s.SourceAppUserModelId).ToLower()
+                    $idStem = $id -replace '\.exe$', ''
+                    foreach ($want in $wants) {
+                        if ($id.Contains($want) -or $want.Contains($idStem) -or
+                            $idStem.Contains($want)) {
+                            $target = $s
+                            break
+                        }
+                    }
+                    if ($null -ne $target) { break }
                 }
             }
             if ($null -eq $target) {

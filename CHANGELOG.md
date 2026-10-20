@@ -215,11 +215,32 @@
     `winmon1.0`，否则“排除自己”会失效。
   - 测试：`test_b35` 增至 16 条（图标容器 / 主动搭子标题），全量
     **965 用例**；`--fast` 实际跑 **908 条**（仍跳过 57 条慢用例）。
+- **阶段 8.12（2026-10-20）**：修「媒体应用下拉一大一小」和「点播放不生效」。
+  - **下拉双列表**：原来把多选面板挂在 `ttk.Combobox` 的 `postcommand` 上，
+    面板弹出的同时原生单选下拉也会弹出，视觉上就是一大一小两个列表。
+    改为实例绑定 `<Button-1>/<Down>/<Alt-Down>/<F4>/<space>/<Return>`，
+    处理函数返回 `"break"` 阻断原生下拉；重复点击只抬起已存在的面板。
+  - **播放不生效（真根因）**：`media_session.ps1` 的 `Read-Sessions` 只把
+    `[pscustomobject]` 数据行放进 `$sessions`，命令模式却对数据行调用
+    `TryPlayAsync()/TryPauseAsync()`，PowerShell 报
+    “PSCustomObject 找不到方法”。现在另存 `$res.objects`（真 WinRT session
+    对象）专门给命令用，`sessions` 仍保持 JSON 安全、快照模式不受影响。
+  - 顺带：未指定应用时优先选**正在播放**的会话；`-App` 支持
+    `msedge.exe,cloudmusic.exe` 这类多选键；播放/暂停在选中应用的会话被拒时
+    退回全局媒体键；**没选应用、也没有会话**（网易云这种）时同样按键，但只写
+    状态栏、不写无法核对的“操作历史”。
+  - 测试：`test_b4` 增至 169 条（下拉只弹一个面板、会话被拒/无会话都回退），
+    `test_b11` 增至 43 条（WinRT 对象 / 优先播放会话 / 多选键拆分）；
+    全量 **968 用例**，`--fast` 实际跑 **911 条**。
+  - 真实端到端：用本机 Edge 打开本地音频页造出 `MSEdge` 会话，
+    修复前 `pause` 报 PSCustomObject 无方法、状态不变；修复后
+    `pause` → 状态 5、`play` → 状态 4，WinMon 界面「播放」按钮同样生效；
+    多选键 `msedge.exe,notepad.exe` 也能命中。
 - 测试：`test_b22`（23）、`test_b23`（15）、`test_b24`（22）、`test_b25`（15）、
   `test_b26`（12）、`test_b27`（9）、`test_b28`（2）、`test_b29`（18）、
   `test_b30`（22）、`test_b31`（14）、`test_b32`（14）、`test_b33`（18）、
   `test_b34`（20）、`test_b35`（16）、`test_b36`（6）、`test_b37`（9）；
-  全量 **965 用例**。
+  全量 **968 用例**。
 
 ### 修复
 
@@ -245,8 +266,8 @@
 
 | 项目 | 结果 |
 | --- | --- |
-| `py tests\run_tests.py` | 965 用例，失败 0 / 错误 0 / 跳过 7（96.9 秒，stderr 0 行） |
-| `py tests\run_tests.py --fast` | 908 用例，失败 0 / 错误 0 / 跳过 6（36.8 秒；57 条慢用例按标记跳过） |
+| `py tests\run_tests.py` | 968 用例，失败 0 / 错误 0 / 跳过 7（约 97 秒，stderr 0 行） |
+| `py tests\run_tests.py --fast` | 911 用例，失败 0 / 错误 0 / 跳过 6（约 37 秒；57 条慢用例按标记跳过） |
 | `D:\test` 便携数据目录 | 8.10 时 963 用例通过；本轮未复跑便携副本 |
 | 旧 `system` 设置迁移 | `{"theme":"system"}` 启动成功，设置文件下一次保存为 `"theme": "light"`；下拉只剩两项 |
 | `py winmon.py --mcp-selftest` | 13/13 OK，退出 0 |
