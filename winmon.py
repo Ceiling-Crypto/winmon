@@ -14,7 +14,7 @@ WinMon —— Windows 桌面工具（图形界面 + 命令行）
 7. AI 工作伴侣：识别当前 AI、用量预算、MCP / 剪贴板 / 可选直连
 8. 操作历史：谁在什么时候被关闭/结束了，可复制、可导出
 9. 前台窗口实时高亮、置顶窗口标记、程序图标、隐藏窗口过滤
-10. 颜色可选普通（白底）/ 深色（黑底）/ 跟随系统；字号 9–12
+10. 颜色可选普通（白底）/ 深色（黑底）；字号 9–12
 
 命令行
 ------
@@ -129,7 +129,7 @@ TITLE_FONT = ("Microsoft YaHei UI", UI_FONT_SIZE + 2, "bold")
 BIG_TITLE_FONT = ("Microsoft YaHei UI", UI_FONT_SIZE + 4, "bold")
 MONO_FONT = ("Consolas", max(9, UI_FONT_SIZE))
 
-# ---- 界面颜色（普通 / 深色 / 跟随系统）----
+# ---- 界面颜色（普通 / 深色）----
 #
 # 颜色不是"写死一套再局部补丁"，而是**一套语义色板**：所有界面只引用
 # UI_BG / UI_INK / UI_LINE 这类名字，切换颜色时由 `apply_theme()` 整组替换。
@@ -137,7 +137,6 @@ MONO_FONT = ("Consolas", max(9, UI_FONT_SIZE))
 # 既不丢视觉锚点，也不在纯黑页面里留下刺眼的浅色大块。
 THEME_LIGHT = "light"
 THEME_DARK = "dark"
-THEME_SYSTEM = "system"
 THEME_DEFAULT = THEME_LIGHT
 THEME_PREFERENCE = THEME_DEFAULT
 THEME_RESOLVED = THEME_DEFAULT
@@ -245,44 +244,31 @@ _THEME_PALETTES = {
     },
 }
 
-#: 设置里显示的顺序；值在保存时写成稳定的 slug（light / dark / system）。
+#: 设置里显示的顺序；值在保存时写成稳定的 slug（light / dark）。
 _THEME_LABELS = {
     "zh": (
         (THEME_LIGHT, "普通（白底）"),
         (THEME_DARK, "深色（黑底）"),
-        (THEME_SYSTEM, "跟随系统"),
     ),
     "en": (
         (THEME_LIGHT, "Light (white)"),
         (THEME_DARK, "Dark (black)"),
-        (THEME_SYSTEM, "Follow system"),
     ),
 }
 
 
 def normalize_theme_mode(mode) -> str:
-    """只认 light / dark / system；旧值或手改值一律回普通。"""
+    """
+    只认 light / dark；旧值、脏值和已删除的 system 一律回普通。
+
+    2026-10-20 用户决定删掉「跟随系统」：旧设置里存的 `system` 不能在启动时
+    变成空白，所以这里显式把它归到 light（用户可再手动选深色）。
+    """
     value = str(mode or "").strip().lower()
-    aliases = {"normal": THEME_LIGHT, "white": THEME_LIGHT, "auto": THEME_SYSTEM}
+    aliases = {"normal": THEME_LIGHT, "white": THEME_LIGHT,
+               "auto": THEME_LIGHT, "system": THEME_LIGHT}
     value = aliases.get(value, value)
-    return value if value in (THEME_LIGHT, THEME_DARK, THEME_SYSTEM) else THEME_DEFAULT
-
-
-def detect_system_theme() -> str:
-    """
-    读 Windows 的"应用使用浅色主题"设置；读不到就回普通（白底）。
-
-    只读 HKCU，不需要管理员权限；AppsUseLightTheme=0 表示系统正在用深色。
-    """
-    try:
-        import winreg
-        with winreg.OpenKey(
-                winreg.HKEY_CURRENT_USER,
-                r"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize") as key:
-            value, _kind = winreg.QueryValueEx(key, "AppsUseLightTheme")
-        return THEME_LIGHT if int(value) else THEME_DARK
-    except Exception:
-        return THEME_LIGHT
+    return value if value in (THEME_LIGHT, THEME_DARK) else THEME_DEFAULT
 
 
 def theme_choices(lang: str = "") -> tuple[tuple[str, str], ...]:
@@ -306,7 +292,7 @@ def apply_theme(mode) -> str:
     """
     global THEME_PREFERENCE, THEME_RESOLVED
     preference = normalize_theme_mode(mode)
-    resolved = detect_system_theme() if preference == THEME_SYSTEM else preference
+    resolved = preference
     THEME_PREFERENCE = preference
     THEME_RESOLVED = resolved
     for name, value in _THEME_PALETTES[resolved].items():
@@ -3025,7 +3011,7 @@ class _SettingsWindow:
                  font=SMALL_FONT, bg=UI_BG, fg=UI_MUTED,
                  anchor="w", justify="left", wraplength=640).pack(anchor="w", fill="x")
 
-        # ---- 5) 界面颜色（普通 / 深色 / 跟随系统）----
+        # ---- 5) 界面颜色（普通 / 深色）----
         tk.Label(wrap, text=i18n.t("settings.theme"), font=UI_FONT, bg=UI_BG,
                  fg=UI_INK, anchor="w").pack(anchor="w", pady=(14, 0))
         self._theme_by_label = {label: slug for slug, label in theme_choices()}
@@ -4214,7 +4200,7 @@ _GUIDE_CONTENT = {
             ("h", "设置与颜色"),
             ("p", "「设置…」里同时有常规、AI 用量和使用说明；主界面不再单独放"
                   "「AI 用量」和「说明」。"),
-            ("p", "颜色可选普通（白底）、深色（黑底）或跟随系统；保存后立即生效。"
+            ("p", "颜色可选普通（白底）或深色（黑底）；保存后立即生效。"
                   "深色模式下媒体行、AI 卡会换成同色系的深色高亮，不会刺眼。"),
             ("h", "媒体这一行"),
             ("p", "WinMon 先读 Windows 的媒体会话，显示“应用：曲名 · 状态”。"),
@@ -4284,7 +4270,7 @@ _GUIDE_CONTENT = {
             ("h", "Settings and color"),
             ("p", "“Settings…” now contains General, AI usage, and the guide. The main "
                   "window no longer has separate AI usage and guide entries."),
-            ("p", "Color can be Light (white), Dark (black), or Follow system. It applies "
+            ("p", "Color can be Light (white) or Dark (black). It applies "
                   "immediately. Colored highlights such as the media and AI cards stay "
                   "visible in dark mode."),
             ("h", "The media line"),
@@ -5825,7 +5811,7 @@ class WinMonApp:
         self.history_days = tk.IntVar(value=HISTORY_DAYS_DEFAULT)
         #: 界面语言：zh / en（默认中文；切换后主界面与 AI 窗口立即重译）
         self.language = tk.StringVar(value=i18n.get_language())
-        #: 界面颜色：普通（白底）/ 深色（黑底）/ 跟随系统。存 slug，显示当前语言标签。
+        #: 界面颜色：普通（白底）/ 深色（黑底）。存 slug，显示当前语言标签。
         self.theme_mode = tk.StringVar(
             value=theme_display(getattr(self, "theme_pref", THEME_DEFAULT)))
         #: 实时总览的**排列顺序**（B.3）：存**窗口标题**而不是 hwnd（hwnd 重启就变）
@@ -7364,7 +7350,7 @@ class WinMonApp:
                 "close_mode": self.close_mode.get(),
                 "start_minimized": bool(self.start_minimized.get()),
                 # 界面语言：zh / en（默认中文）、字号大小（9/10/11/12）
-                # 与颜色偏好（light / dark / system）
+                # 与颜色偏好（light / dark；旧的 system 已在读取时归一化）
                 "language": self.language.get(),
                 "font_size": font_size,
                 "theme": normalize_theme_mode(
@@ -10587,10 +10573,8 @@ class WinMonApp:
         self.font_size.set(str(new_font))
         self.theme_pref = new_theme
         self.theme_mode.set(theme_display(new_theme))
-        resolved_theme = (detect_system_theme() if new_theme == THEME_SYSTEM
-                          else new_theme)
         theme_changed = (new_theme != old_theme
-                         or resolved_theme != THEME_RESOLVED)
+                         or new_theme != THEME_RESOLVED)
         if theme_changed:
             self.theme_resolved = apply_theme(new_theme)
             # 新控件要用新字号创建；不需要再对旧控件做逐字缩放。

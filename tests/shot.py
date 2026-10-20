@@ -97,7 +97,7 @@ def main() -> int:
     ap.add_argument("--height", type=int, default=720)
     ap.add_argument("--font", type=int, default=0,
                     help="字号大小（0 = 用默认 9）")
-    ap.add_argument("--theme", choices=("light", "dark", "system"), default="light",
+    ap.add_argument("--theme", choices=("light", "dark"), default="light",
                     help="界面颜色（默认普通白底）")
     ap.add_argument("--tab", type=int, default=0,
                     help="标签页序号：0 实时预览 / 1 实时总览 / 2 进程树 / 3 程序目录")

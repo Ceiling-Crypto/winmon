@@ -37,8 +37,8 @@ _STRINGS = {
         "settings.language": "语言 / Language",
         "settings.language_hint": "切换后主界面与 AI 窗口立即生效；详细说明在「使用说明」标签页。",
         "settings.theme": "界面颜色",
-        "settings.theme_hint": "普通是白底黑字，深色是黑底白字，跟随系统读取 Windows 的"
-                               "浅色/深色设置。保存后立即生效；彩色高亮卡片保留。",
+        "settings.theme_hint": "普通是白底黑字，深色是黑底白字。保存后立即生效；"
+                               "彩色高亮卡片会换成对应主题的底色。",
         "assistant.title": "WinMon AI 助手",
         "assistant.header_reading": "正在读取当前 AI…",
         "assistant.time_reading": "正在读取时间…",
@@ -165,9 +165,8 @@ _STRINGS = {
         "settings.language_hint": "Applies to the main window and AI windows immediately; "
                                   "details are in the Guide tab.",
         "settings.theme": "Color",
-        "settings.theme_hint": "Light is white with dark text; Dark is black with white text; "
-                               "Follow system reads the Windows light/dark setting. Applies "
-                               "immediately; colored highlight cards stay visible.",
+        "settings.theme_hint": "Light is white with dark text; Dark is black with white text. "
+                               "Applies immediately; colored cards switch with the theme.",
         "assistant.title": "WinMon AI Assistant",
         "assistant.header_reading": "Detecting the AI you are using…",
         "assistant.time_reading": "Reading local time…",

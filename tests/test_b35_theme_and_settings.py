@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 """
-B35 —— 颜色选择（普通 / 深色 / 跟随系统）与「设置」三合一。
+B35 —— 颜色选择（普通 / 深色）与「设置」三合一。
 
 用户 2026-10-20 的要求：
   · AI 用量、设置、说明合并，主界面只保留一个「设置」入口；
@@ -35,9 +35,14 @@ class TestThemeSelection(unittest.TestCase):
         import winmon
         self.assertEqual(winmon.normalize_theme_mode("normal"), "light")
         self.assertEqual(winmon.normalize_theme_mode("white"), "light")
-        self.assertEqual(winmon.normalize_theme_mode("auto"), "system")
+        self.assertEqual(winmon.normalize_theme_mode("auto"), "light")
+        self.assertEqual(winmon.normalize_theme_mode("system"), "light")
         self.assertEqual(winmon.normalize_theme_mode("dark"), "dark")
         self.assertEqual(winmon.normalize_theme_mode("blue"), "light")
+        self.assertFalse(hasattr(winmon, "THEME_SYSTEM"),
+                         "跟随系统选项已删除，常量也不该留着")
+        self.assertFalse(hasattr(winmon, "detect_system_theme"),
+                         "没有跟随系统后，读注册表的函数也应删除")
 
     def test_dark_palette_is_black_with_white_text(self):
         import winmon
@@ -49,13 +54,17 @@ class TestThemeSelection(unittest.TestCase):
         self.assertEqual(winmon.UI_MEDIA_BTN_BG, "#0f6b5c",
                          "媒体按键在浅绿/深青卡片上仍要用深绿底白字")
 
-    def test_system_mode_reads_windows_setting(self):
+    def test_removed_system_value_falls_back_to_light(self):
+        """旧设置里可能还存着 system；选项删了也不能让启动变白屏/报错。"""
         import winmon
-        with mock.patch.object(winmon, "detect_system_theme",
-                               return_value="dark"):
-            self.assertEqual(winmon.apply_theme("system"), "dark")
-        self.assertEqual(winmon.THEME_PREFERENCE, "system")
-        self.assertEqual(winmon.UI_BG, "#000000")
+        with tempfile.TemporaryDirectory(prefix="winmon-b35-legacy-") as tmp:
+            path = os.path.join(tmp, "settings.json")
+            with open(path, "w", encoding="utf-8") as fh:
+                fh.write('{"theme": "system"}')
+            self.assertEqual(winmon.read_theme_mode(path), "light")
+        self.assertEqual(winmon.apply_theme("system"), "light")
+        self.assertEqual(winmon.THEME_PREFERENCE, "light")
+        self.assertEqual(winmon.UI_BG, "#ffffff")
 
     def test_read_theme_mode_from_settings(self):
         import winmon
@@ -72,11 +81,12 @@ class TestThemeSelection(unittest.TestCase):
         import winmon
         i18n.set_language("zh")
         self.assertEqual([slug for slug, _ in winmon.theme_choices()],
-                         ["light", "dark", "system"])
+                         ["light", "dark"])
         self.assertIn("普通", winmon.theme_display("light"))
         i18n.set_language("en")
         self.assertIn("Light", winmon.theme_display("light"))
-        self.assertIn("Follow", winmon.theme_display("system"))
+        self.assertNotIn("Follow", winmon.theme_display("light"))
+        self.assertNotIn("跟随", winmon.theme_display("dark", "zh"))
 
 
 class TestBrandingAndActionMeaning(unittest.TestCase):
@@ -148,6 +158,9 @@ class TestSettingsMergedWindow(unittest.TestCase):
 
     def test_theme_choice_is_saved_and_panels_close(self):
         dlg = self._open()
+        self.assertEqual(list(dlg._theme_by_label),
+                         ["普通（白底）", "深色（黑底）"],
+                         "设置里只剩普通/深色，跟随系统选项必须删掉")
         self.assertEqual(dlg.theme.get(), "普通（白底）")
         dlg.theme.set("深色（黑底）")
         with mock.patch.object(self.winmon.core, "get_autostart",
@@ -212,8 +225,14 @@ class TestDarkMainWindow(unittest.TestCase):
 
     def test_page_is_black_but_media_card_stays_highlighted(self):
         self.assertEqual(str(self.root.cget("background")), "#000000")
-        self.assertNotEqual(str(self.app.media_label.cget("bg")), "#000000")
-        self.assertNotEqual(str(self.app.ai_state_label.cget("bg")), "#000000")
+        media = self.winmon.UI_CARDS["media"]
+        ai = self.winmon.UI_CARDS["ai"]
+        self.assertEqual(str(self.app.media_label.cget("bg")), media["bg"])
+        self.assertEqual(str(self.app.ai_identity_label.cget("bg")), ai["bg"])
+        self.assertEqual(str(self.app.ai_state_label.cget("bg")),
+                         ai["state_warn_bg"])
+        self.assertEqual(str(self.app.ai_workspace._state_label.cget("bg")),
+                         ai["state_warn_bg"])
 
     def test_three_media_buttons_use_high_contrast_style(self):
         from tkinter import ttk
