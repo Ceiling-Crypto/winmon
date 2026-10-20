@@ -148,8 +148,13 @@ class TestMainUiHierarchy(unittest.TestCase):
     def test_actions_live_in_the_left_rail(self):
         labels = [str(w.cget("text")) for w in walk(self.app.action_rail)
                   if w.winfo_class() in ("Button", "TButton")]
-        for label in ("加入总览", "移除总览", "AI 助手…", "接入…", "设置…"):
+        for label in ("加入总览", "移除总览", "操作历史…", "清理程序文件…",
+                      "AI 工作区…", "设置…"):
             self.assertIn(label, labels)
+        self.assertNotIn("AI 助手…", labels,
+                         "AI 助手入口已经收进 AI 工作区")
+        self.assertNotIn("接入…", labels,
+                         "接入入口已经收进 AI 工作区")
         self.assertNotIn("AI 用量…", labels,
                          "AI 用量已经并进设置，左侧不再单独列入")
         self.assertNotIn("说明…", labels,
@@ -262,6 +267,9 @@ class TestConnectWindowHierarchy(unittest.TestCase):
             self.assertEqual(str(mcp.cget("fg")), "#1f6f9e")
             self.assertEqual(str(key.cget("fg")), "#a86b00")
             self.assertFalse(win.mcp_disclosure.open)
+            self.assertFalse(win.key_advanced.open,
+                             "直连 key 默认收在高级里，不该和 MCP 抢注意力")
+            self.assertFalse(win.more_advanced.open)
             self.assertEqual(win.mcp_disclosure.body.winfo_manager(), "")
             self.assertIn("winmon", win.config_text.get("1.0", "end"))
             win.mcp_disclosure.toggle()
@@ -269,12 +277,15 @@ class TestConnectWindowHierarchy(unittest.TestCase):
         finally:
             win.close()
 
-    def test_key_warning_is_visible_without_expanding(self):
+    def test_key_warning_is_visible_after_expanding_advanced(self):
         win = self.winmon._AiConnectWindow(self.root, self.app)
         try:
             self.assertIn("不要写进仓库", i18n.t("connect.key_warning"))
-            labels = [str(w.cget("text")) for w in walk(win.top)
-                      if w.winfo_class() == "Label"]
+            self.assertFalse(win.key_advanced.open)
+            win.key_advanced.toggle()
+            self.root.update()
+            labels = [str(w.cget("text")) for w in walk(win.key_advanced.body)
+                      if w.winfo_class() == "Label" and w.winfo_ismapped()]
             self.assertTrue(any("不要写进仓库" in text for text in labels))
         finally:
             win.close()

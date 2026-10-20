@@ -7,7 +7,7 @@ B34 —— 纯白主题、预览主体/工具栏、字号与社区人设库。
   · 主界面纯白底黑字，但 AI / 媒体高亮卡片保持原色；
   · 勾选框选中时是整格填充，不再是「×」；
   · 实时预览是主体，窗口列表是右侧紧凑侧栏；预览会自动填满画布；
-  · 预览下方只有「关闭窗口 / 结束进程」两个操作，向上弹出、选中项填充；
+  · 预览下方只有「请求关闭 / 强制结束」两个操作，向上弹出、选中项填充；
   · AI 助手不再重复显示「当前工作」；
   · 人设下拉有「更多…」，社区角色卡可读取、命名、保存、删除；
   · MCP 配置使用当前解释器，提示里不写死本机盘符。
@@ -237,7 +237,7 @@ class TestLightThemeAndPreviewFirst(unittest.TestCase):
                          "未选中的操作保持白底")
         pane.choose_action("terminate")
         self.assertEqual(pane.action, "terminate")
-        self.assertIn("结束进程", str(pane.action_button.cget("text")))
+        self.assertIn("强制结束", str(pane.action_button.cget("text")))
         self.assertIsNone(pane._action_popup)
         texts = [str(w.cget("text")) for w in walk(pane.frame)
                  if w.winfo_class() in ("TButton", "Button")]

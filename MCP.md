@@ -1472,10 +1472,14 @@ est_tokens ≈ ceil(ascii_chars / 4 + cjk_chars / 1.6 + 24)
 >   下拉加「更多…」，社区角色卡（Markdown front matter / JSON `data.*`）可读取、
 >   命名、保存、使用、删除；`companion.persona.label` 使用自定义名称。
 >   助手窗口移除「当前工作」重复摘要；MCP 配置片段使用当前解释器。
+> - **8.8（2026-10-20）**：AI 助手 / 接入 / 用量收进「AI 工作区」；
+>   接入窗口默认只展示 MCP，直连 key 收进「高级」；用量页说明
+>   “这是 WinMon 经手的量，不是客户端账单”。MCP 本身协议不变。
 > - 测试：`test_b22`（23）、`test_b23`（15）、`test_b24`（22）、
 >   `test_b25`（15）、`test_b26`（12）、`test_b27`（9）、`test_b28`（2）、
 >   `test_b29`（18）、`test_b30`（22）、`test_b31`（14）、`test_b32`（14）、
->   `test_b33`（18）、`test_b34`（20）、`test_b35`（14）；全量 **948 用例**。
+>   `test_b33`（18）、`test_b34`（20）、`test_b35`（14）、`test_b36`（6）；
+>   全量 **954 用例**。
 > - 每日 token 预算默认 **1000 万**（`winmon_ai.DEFAULT_DAILY_TOKEN_BUDGET`）。
 
 ### 10.10 测试策略（不接真 AI 也能测）

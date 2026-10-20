@@ -153,10 +153,10 @@ class TestFullAppStartup(unittest.TestCase):
         root, app = self._make_app()
         for attr in ("tree", "preview", "gallery", "proc_tree", "catalog",
                      "program_prefs", "worker", "notebook", "workspace",
-                     "workspaces", "idle_watch"):
+                     "ai_workspace", "workspaces", "idle_watch"):
             with self.subTest(attr=attr):
                 self.assertTrue(hasattr(app, attr), f"初始化后缺少 {attr}")
-        self.assertEqual(len(app.notebook.tabs()), 5)
+        self.assertEqual(len(app.notebook.tabs()), 6)
         self.assertGreater(len(app.windows), 0, "初始化应已枚举出窗口")
 
     def test_settings_path_follows_env_override(self):

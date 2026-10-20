@@ -6,7 +6,7 @@ B35 —— 颜色选择（普通 / 深色 / 跟随系统）与「设置」三合
   · AI 用量、设置、说明合并，主界面只保留一个「设置」入口；
   · 深色模式要可用，尤其是媒体行右侧 3 个按键不能糊在卡片里；
   · 窗口标题只叫 WinMon，不再挂“实时监控与终止”的旧后缀；
-  · 关闭窗口与结束进程本质不同，必须在界面上说清楚。
+  · 请求关闭与强制结束本质不同，必须在界面上说清楚。
 
 这里守住可程序化的部分：色板切换、系统跟随、三标签页、媒体按键样式、
 实时重建、标题文案、两个操作的解释。
@@ -93,8 +93,8 @@ class TestBrandingAndActionMeaning(unittest.TestCase):
     def test_close_and_terminate_are_different(self):
         import winmon
         labels = dict(winmon.PREVIEW_ACTIONS)
-        self.assertIn("关闭窗口", labels["close"])
-        self.assertIn("结束进程", labels["terminate"])
+        self.assertIn("请求关闭", labels["close"])
+        self.assertIn("强制结束", labels["terminate"])
         close_detail = winmon.preview_action_detail("close")
         end_detail = winmon.preview_action_detail("terminate")
         self.assertIn("保存", close_detail)

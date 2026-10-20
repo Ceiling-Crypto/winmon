@@ -440,10 +440,10 @@ ICON_SIZE = int(os.environ.get("WINMON_ICON_SIZE") or 28)
 
 # 预览下方的操作选择：只保留两个不可逆动作，顺序固定（弹层从下往上列）。
 # 结束整树仍在右键菜单与进程树页，不再挤进预览工具条。
-PREVIEW_ACTIONS = (("close", "关闭窗口"), ("terminate", "结束进程"))
+PREVIEW_ACTIONS = (("close", "请求关闭"), ("terminate", "强制结束"))
 PREVIEW_ACTION_DEFAULT = "close"
-#: 两个操作**本质不同**，不能合并：关闭是发 WM_CLOSE 请程序自己退（可保存），
-#: 结束是 TerminateProcess 强制终止（未保存内容会丢）。弹层里逐条写清楚。
+#: 两个操作**本质不同**，不能合并：请求关闭是发 WM_CLOSE 请程序自己退（可保存），
+#: 强制结束是 TerminateProcess（未保存内容会丢）。弹层里逐条写清楚。
 PREVIEW_ACTION_DETAILS = {
     "close": ("发送关闭消息，程序可以先保存再退出",
               "Ask the app to close; it can save first"),
@@ -453,7 +453,7 @@ PREVIEW_ACTION_DETAILS = {
 
 
 #: 英文标签；中文标签仍在 PREVIEW_ACTIONS 里（测试与设置文件都以它为准）。
-PREVIEW_ACTION_LABELS_EN = {"close": "Close window", "terminate": "End process"}
+PREVIEW_ACTION_LABELS_EN = {"close": "Request close", "terminate": "Force end"}
 
 
 def preview_action_label(key: str) -> str:
@@ -1696,6 +1696,104 @@ class WorkspacePane:
             self._set_info("请先在列表里选中一个工作区，再点「应用」。")
             return
         self.app.apply_workspace(ws)
+
+
+class AiWorkspacePane:
+    """
+    「AI 工作区」：把 AI 助手、接入 AI、用量/预算三个入口收在一个页面里。
+
+    用户 2026-10-20 的要求：主界面左侧不要同时摆「AI 助手」和「接入」两个动作，
+    先把它们合成一个 AI 心智模型；具体的助手窗口和接入窗口仍可独立打开，
+    但入口只在 AI 工作区。
+    """
+
+    def __init__(self, parent: tk.Widget, app: "WinMonApp") -> None:
+        self.app = app
+        self.frame = ttk.Frame(parent)
+        # 字号 12 + 1080×660 时三张入口卡会超出可视区，必须可滚动；
+        # 否则「AI 用量与预算」会被窗口底边裁掉（实测）。
+        canvas = tk.Canvas(self.frame, bg=UI_BG, highlightthickness=0)
+        scroll = ttk.Scrollbar(self.frame, orient="vertical",
+                               command=canvas.yview)
+        canvas.configure(yscrollcommand=scroll.set)
+        canvas.pack(side="left", fill="both", expand=True)
+        scroll.pack(side="right", fill="y")
+        wrap = tk.Frame(canvas, bg=UI_BG, padx=16, pady=14)
+        win_id = canvas.create_window((0, 0), window=wrap, anchor="nw")
+        wrap.bind("<Configure>",
+                  lambda _e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.bind("<Configure>",
+                    lambda e: canvas.itemconfigure(win_id, width=e.width))
+
+        def _wheel(event):
+            try:
+                canvas.yview_scroll(int(-event.delta / 120), "units")
+            except Exception:
+                pass
+
+        canvas.bind("<Enter>", lambda _e: canvas.bind_all("<MouseWheel>", _wheel))
+        canvas.bind("<Leave>", lambda _e: canvas.unbind_all("<MouseWheel>"))
+
+        tk.Label(wrap, text=i18n.pick("AI 工作区", "AI workspace"),
+                 font=TITLE_FONT, bg=UI_BG, fg=UI_INK, anchor="w").pack(fill="x")
+        tk.Label(wrap, text=i18n.pick(
+            "先在这里看当前 AI；助手、接入和用量都从这里进。",
+            "See the current AI here; open the assistant, setup, and usage from here."),
+            font=SMALL_FONT, bg=UI_BG, fg=UI_MUTED, anchor="w").pack(
+            fill="x", pady=(2, 10))
+
+        # 状态卡：复用主界面 AI 条的三个 StringVar，数据只更新一处。
+        card = tk.Frame(wrap, bg="#edf5fb", highlightbackground="#b9d6ee",
+                        highlightthickness=1, padx=12, pady=9)
+        card.pack(fill="x", pady=(0, 10))
+        tk.Label(card, text="AI", font=SMALL_BOLD_FONT, bg="#1f5f8b",
+                 fg="white", padx=8, pady=2).pack(side="left", anchor="n",
+                                                  padx=(0, 10))
+
+        status = tk.Frame(card, bg="#edf5fb")
+        status.pack(side="left", fill="x", expand=True)
+        identity = getattr(app, "ai_identity_text", None) or tk.StringVar(
+            value="正在识别当前 AI…")
+        state = getattr(app, "ai_state_text", None) or tk.StringVar(
+            value="正在识别接入状态…")
+        usage = getattr(app, "ai_usage_text", None) or tk.StringVar(value="")
+        tk.Label(status, textvariable=identity, font=BOLD_FONT,
+                 bg="#edf5fb", fg="#12354d", anchor="w").pack(fill="x")
+        tk.Label(status, textvariable=state, font=SMALL_FONT,
+                 bg="#fff4d6", fg="#7a5a00", anchor="w", padx=5).pack(
+            anchor="w", pady=(3, 2))
+        tk.Label(status, textvariable=usage, font=SMALL_FONT,
+                 bg="#edf5fb", fg="#5b7285", anchor="w").pack(fill="x")
+
+        def entry(title: str, desc: str, button: str, command) -> None:
+            box = tk.Frame(wrap, bg=UI_BG, highlightbackground=UI_LINE,
+                           highlightthickness=1, padx=12, pady=8)
+            box.pack(fill="x", pady=(0, 8))
+            text = tk.Frame(box, bg=UI_BG)
+            text.pack(side="left", fill="x", expand=True)
+            tk.Label(text, text=title, font=BOLD_FONT, bg=UI_BG, fg=UI_INK,
+                     anchor="w").pack(fill="x")
+            tk.Label(text, text=desc, font=SMALL_FONT, bg=UI_BG, fg=UI_MUTED,
+                     anchor="w", justify="left").pack(fill="x", pady=(2, 0))
+            ttk.Button(box, text=button, width=14, command=command).pack(
+                side="right", padx=(10, 0))
+
+        entry("AI 助手", "看当前 AI、把现场交给它、保存回复",
+              "打开助手…", self.app.action_ai_assistant)
+        entry("接入 AI", "推荐 MCP；直连 key 收在高级里，不配也能用",
+              "打开接入…", self.app.action_ai_connect)
+        entry("AI 用量与预算", "真实 / 精确 / 估算三栏；恢复预算只能在本机",
+              "打开用量…", lambda: self.app.action_settings("ai"))
+
+        tk.Label(wrap, text=i18n.pick(
+            "MCP 是推荐接入；直连 key 也要先选对象，WinMon 不会自动换模型。",
+            "MCP is the recommended setup; a direct key also needs an explicit target."),
+            font=SMALL_FONT, bg=UI_BG, fg=UI_MUTED, anchor="w",
+            justify="left").pack(fill="x", pady=(2, 0))
+
+    def refresh(self) -> None:
+        """状态文字来自共享 StringVar，这里不需要额外刷新。"""
+        return
 
 
 class ProgramCatalogPane:
@@ -3292,6 +3390,10 @@ class _AiUsagePanel:
         self.state_text = tk.StringVar(value="")
         ttk.Label(head, textvariable=self.state_text, font=UI_FONT,
                   foreground=UI_MUTED).pack(side="right")
+        ttk.Label(wrap, text="这里的数字是 WinMon 经手的上下文 + 直连调用，"
+                            "不是你客户端的完整账单。",
+                  font=SMALL_FONT, foreground=UI_MUTED,
+                  anchor="w", justify="left").pack(fill="x", pady=(4, 0))
 
         body_holder = ttk.Frame(wrap)
         body_holder.pack(fill="both", expand=True, pady=(8, 8))
@@ -4021,9 +4123,9 @@ _GUIDE_CONTENT = {
             ("h", "预览和刷新速度"),
             ("p", "预览会自动跟随面板大小，按原分辨率显示，不需要再选“大小”。"
                   "刷新速度只影响预览，不改变被监控的程序；调低会更省电。"),
-            ("p", "预览下方先选「关闭窗口 / 结束进程」，再点「执行」。"
-                  "关闭窗口是发关闭消息，程序可以先保存再退出；结束进程是强制终止，"
-                  "未保存内容会丢。只有关闭无效时才用结束进程。"),
+            ("p", "预览下方先选「请求关闭 / 强制结束」，再点「执行」。"
+                  "请求关闭是发关闭消息，程序可以先保存再退出；强制结束是直接终止，"
+                  "未保存内容会丢。请求关闭超时后，底栏会出现「改为强制结束」。"),
             ("h", "设置与颜色"),
             ("p", "「设置…」里同时有常规、AI 用量和使用说明；主界面不再单独放"
                   "「AI 用量」和「说明」。"),
@@ -4090,10 +4192,10 @@ _GUIDE_CONTENT = {
             ("p", "The preview now follows the pane size and renders at native "
                   "resolution, so there is no size picker. Refresh speed only "
                   "affects the preview, not the monitored program."),
-            ("p", "Below the preview, choose Close window or End process, then press Run. "
-                  "Close sends a close message so the app can save first; End process "
-                  "force-stops it and unsaved work is lost. Use End process only when "
-                  "closing does not work."),
+            ("p", "Below the preview, choose Request close or Force end, then press Run. "
+                  "Request close lets the app save first; Force end stops it immediately "
+                  "and unsaved work is lost. If the close request times out, a "
+                  "“Force end” button appears in the bottom bar."),
             ("h", "Settings and color"),
             ("p", "“Settings…” now contains General, AI usage, and the guide. The main "
                   "window no longer has separate AI usage and guide entries."),
@@ -4248,7 +4350,7 @@ class _AiConnectWindow:
         w = min(int(820 * scale), int(sw * 0.92))
         h = min(int(700 * scale), int(sh * 0.88))
         self.top.geometry(f"{w}x{h}")
-        self.top.minsize(int(700 * scale), int(520 * scale))
+        self.top.minsize(int(700 * scale), int(430 * scale))
         self.top.protocol("WM_DELETE_WINDOW", self.close)
         set_dark_title_bar(self.top)
         # 可滚动：折叠块展开后仍可能超过窗口高度，不能靠“看不见”
@@ -4285,12 +4387,36 @@ class _AiConnectWindow:
             wraplength=int(740 * scale))
         self.status_label.pack(fill="x")
 
+        tk.Label(wrap, text=i18n.pick(
+            "默认只走 MCP（推荐）；直连 key 和工作区/人设/主动搭子收在下面，"
+            "不配也能用剪贴板交接。",
+            "MCP is the default and recommended path. Direct keys and the "
+            "workspace/persona/proactive sections are below; clipboard handoff "
+            "works without any of them."),
+            font=SMALL_FONT, bg=UI_BG, fg=UI_MUTED, anchor="w",
+            justify="left", wraplength=int(740 * scale)).pack(
+            fill="x", pady=(0, 8))
+
         assist = getattr(app, "_ai_assist", {}) or {}
         self._build_mcp_card(wrap)
-        self._build_key_card(wrap)
-        self._build_workspace_card(wrap)
-        self._build_behavior_card(wrap, assist)
-        self._build_proactive_section(wrap, assist)
+
+        #: 直连 key 是高级选项：默认收起，不让它和“推荐 MCP”抢注意力。
+        self.key_advanced = _Disclosure(
+            wrap, i18n.pick("高级：直连 API key（可选）",
+                            "Advanced: direct API key (optional)"),
+            bg=UI_BG, fg="#a86b00")
+        self.key_advanced.pack(fill="x", pady=(0, 6))
+        self._build_key_card(self.key_advanced.body)
+
+        #: 工作区 / 人设 / 主动搭子也收进“更多设置”，默认只留 MCP。
+        self.more_advanced = _Disclosure(
+            wrap, i18n.pick("更多设置：工作区 / 人设 / 主动搭子",
+                            "More: workspace / persona / proactive"),
+            bg=UI_BG, fg=UI_ACCENT)
+        self.more_advanced.pack(fill="x", pady=(0, 6))
+        self._build_workspace_card(self.more_advanced.body)
+        self._build_behavior_card(self.more_advanced.body, assist)
+        self._build_proactive_section(self.more_advanced.body, assist)
 
         btns = ttk.Frame(wrap)
         btns.pack(fill="x", pady=(10, 0))
@@ -4302,6 +4428,14 @@ class _AiConnectWindow:
         self._refresh()
         try:
             i18n.translate_widgets(self.top)
+        except Exception:
+            pass
+        # 默认只展示 MCP 时内容很短，不再固定留 700px 的大片空白；
+        # 展开高级项后内容超出，滚动条接管。
+        try:
+            self.top.update_idletasks()
+            need = wrap.winfo_reqheight() + 26
+            self.top.geometry(f"{w}x{min(h, max(int(480 * scale), need))}")
         except Exception:
             pass
 
@@ -5322,8 +5456,8 @@ class WinMonApp:
         except Exception:
             return 1.0
 
-    def __init__(self, root: tk.Tk) -> None:
-        self.root = root
+    def _load_saved_ui_preferences(self, root: tk.Tk) -> None:
+        """建界面之前读语言 / 字号 / 颜色：控件创建时会把它们复制走。"""
         # 语言要在建界面**之前**读：否则主窗口会先按中文建一遍再切
         try:
             i18n.load_from_settings(_settings_path())
@@ -5348,6 +5482,10 @@ class WinMonApp:
                 root, self.theme_resolved == THEME_DARK))
         except Exception:
             pass
+
+    def __init__(self, root: tk.Tk) -> None:
+        self.root = root
+        self._load_saved_ui_preferences(root)
         # 界面尺寸 = 设计稿 × DPI 缩放（理由见 `scaled_window_size`：DPI 感知的进程里
         # 字体是 1.5 倍，窗口不跟着放大就真有按钮被挤到看不见）。
         self.dpi_scale = self._dpi_scale()
@@ -5428,6 +5566,8 @@ class WinMonApp:
         self._fps_window: list[float] = []
         self._pump_counter = 0
         self._close_watch: list[tuple[int, int, float, bool]] = []
+        #: 关闭超时后的「改为强制结束」目标：(hwnd, pid, name, title)
+        self._escalate_target: tuple[int, int, str, str] | None = None
         self._rebuilding = False
         self._last_preview_req: tuple | None = None
         self._initial_preview_done = False
@@ -5922,11 +6062,14 @@ class WinMonApp:
         self.proc_tree = ProcessTreePane(self.notebook, self)
         self.catalog = ProgramCatalogPane(self.notebook, self)
         self.workspace = WorkspacePane(self.notebook, self)
+        self.ai_workspace = AiWorkspacePane(self.notebook, self)
         self.notebook.add(self.preview.frame, text="实时预览")
         self.notebook.add(self.gallery.frame, text="实时总览")
         self.notebook.add(self.proc_tree.frame, text="进程树")
         self.notebook.add(self.catalog.frame, text="程序目录")
         self.notebook.add(self.workspace.frame, text="工作区")
+        self.notebook.add(self.ai_workspace.frame,
+                          text=i18n.pick("AI 工作区", "AI workspace"))
         self.workspace.refresh()
 
         side = ttk.Frame(body)
@@ -5938,6 +6081,10 @@ class WinMonApp:
         bottom.pack(fill="x")
         ttk.Label(bottom, textvariable=self.status_text, font=UI_FONT, anchor="w").pack(
             side="left", fill="x", expand=True)
+        #: 关闭超时后才出现；平时不占位置（pack_forget）。
+        self.escalate_btn = ttk.Button(
+            bottom, text="改为强制结束", style="Accent.TButton", width=14,
+            command=self.action_escalate_close)
         ttk.Label(bottom, textvariable=self.overview_text, font=MONO_FONT,
                   foreground=UI_MUTED).pack(side="right")
 
@@ -5963,9 +6110,10 @@ class WinMonApp:
         self.menu.add_command(label="还原选中的全部",
                               command=self.action_restore_selected)
         self.menu.add_separator()
-        self.menu.add_command(label="关闭窗口（优雅）", command=self.action_close_window)
-        self.menu.add_command(label="结束进程（强制）", command=self.action_terminate)
-        self.menu.add_command(label="结束进程树（强制）", command=self.action_terminate_tree)
+        self.menu.add_command(label="请求关闭（先保存再退出）",
+                              command=self.action_close_window)
+        self.menu.add_command(label="强制结束（未保存会丢）", command=self.action_terminate)
+        self.menu.add_command(label="强制结束整树", command=self.action_terminate_tree)
         self.menu.add_separator()
         self.menu.add_command(label="打开文件所在位置", command=self.action_reveal)
         self.menu.add_separator()
@@ -6012,15 +6160,20 @@ class WinMonApp:
             btn.pack(fill="x", padx=8, pady=1)
             self._rail_buttons.append(btn)
 
-        group(i18n.pick("总览", "Overview"))
+        group(i18n.pick("监控", "Monitor"))
         action("加入总览", self.gallery_add_selected)
         action("移除总览", self.gallery_remove_selected)
         action("刷新列表", self.refresh_all)
-        group("AI")
-        action("AI 助手…", self.action_ai_assistant)
-        action("接入…", self.action_ai_connect)
-        group(i18n.pick("工具", "Tools"))
+
+        group(i18n.pick("工作台", "Workbench"))
         action("操作历史…", self.action_history)
+        action("清理程序文件…", self.action_clean_files)
+
+        group("AI")
+        #: 助手 / 接入 / 用量都收进「AI 工作区」；左栏不再并列两个入口。
+        action("AI 工作区…", self.action_show_ai_workspace)
+
+        group(i18n.pick("设置", "Settings"))
         #: 设置、AI 用量、使用说明三者合并：主界面只留一个「设置…」入口。
         action("设置…", self.action_settings)
         self._sync_action_rail_spacing()
@@ -6882,6 +7035,16 @@ class WinMonApp:
                 pass
         self._set_status(msg)
 
+    def action_show_ai_workspace(self) -> None:
+        """打开「AI 工作区」标签页（助手 / 接入 / 用量的统一入口）。"""
+        try:
+            self.notebook.select(self.ai_workspace.frame)
+        except Exception:
+            try:
+                self.notebook.select(5)
+            except Exception:
+                pass
+
     def action_ai_usage(self) -> None:
         """「AI 用量」是设置的一部分：打开设置并切到该标签页。"""
         self.action_settings("ai")
@@ -7238,8 +7401,66 @@ class WinMonApp:
                 self._path_cache[wi.pid] = wi.path
             wi.cpu = self._cpu_pct.get(wi.pid, 0.0)
         self._rebuild_tree(keep)
+        self._ensure_preview_alive()
         self._maybe_start_initial_preview()
         self._update_overview_text()
+
+    def _ensure_preview_alive(self) -> None:
+        """
+        预览的窗口没了（被结束、被外部关掉、进程退出）时**不要停在旧画面上**。
+
+        用户 2026-10-20 的反馈：在实时预览里结束当前窗口后，画面仍停在最后一帧。
+        根因是 `preview_key` 一直指向已经消失的 hwnd，取帧请求要么被丢弃，要么
+        拿到旧帧，界面没有任何“目标已不存在”的判断。
+
+        处理顺序：
+          1. 停掉旧请求、清掉旧画面和标题；
+          2. 如果「跟随选择」开着且没有暂停，自动选下一个可见窗口继续预览；
+          3. 一个都没有就明确显示“未选择程序”，而不是留一张旧图。
+        """
+        hwnd = getattr(self, "preview_key", None)
+        if hwnd is None or hwnd in getattr(self, "win_by_hwnd", {}):
+            return
+        try:
+            self.worker.forget(("win", hwnd))
+        except Exception:
+            pass
+        self.preview_key = None
+        self._last_preview_req = None
+        try:
+            self.preview.clear("预览的窗口已关闭或已结束")
+            self.preview.set_title("（未选择程序）")
+            self.preview.set_meta("")
+            self.preview.set_stats("")
+            self.preview.set_hint("")
+        except Exception:
+            pass
+        if getattr(self, "paused", False):
+            self._set_status("预览的窗口已关闭或已结束；预览已暂停，未自动切换")
+            return
+        if not self.follow_selection.get():
+            self._set_status("预览的窗口已关闭或已结束；跟随选择已关，未自动切换")
+            return
+        wi = choose_initial_preview(
+            getattr(self, "windows", []), getattr(self, "_fg_hwnd", 0), os.getpid())
+        if wi is None:
+            self._set_status("预览的窗口已关闭或已结束；没有可切换的窗口")
+            return
+        item = self.row_of_hwnd.get(wi.hwnd)
+        if not item:
+            self._set_status("预览的窗口已关闭或已结束；窗口列表正在刷新")
+            return
+        self._initial_preview_done = True
+        self.selected_hwnd = wi.hwnd
+        self.selected_pid = wi.pid
+        try:
+            self.tree.selection_set(item)
+            self.tree.see(item)
+        except Exception:
+            pass
+        self.start_preview(wi.hwnd)
+        self._set_status(
+            f"预览窗口已结束，已自动切换到「{wi.real_name}」")
 
     def _maybe_start_initial_preview(self) -> None:
         """
@@ -8610,8 +8831,13 @@ class WinMonApp:
                 rect = None
             if not rect:
                 continue
+            x, y, cw, ch = (int(v) for v in rect)
+            # 与 `core.capture_workspace` 同一条尺寸底线：被折叠成 0 宽的
+            # ShellExperienceHost 之类窗口拍下来没有意义，恢复时还会乱挪。
+            if cw < core.WS_MIN_W or ch < core.WS_MIN_H:
+                continue
             items.append({"name": wi.proc or wi.real_name, "title": wi.title or "",
-                          "rect": list(rect), "iconic": bool(wi.iconic)})
+                          "rect": [x, y, cw, ch], "iconic": bool(wi.iconic)})
         return items
 
     def apply_workspace(self, snapshot: dict) -> None:
@@ -9029,6 +9255,8 @@ class WinMonApp:
             self._ensure_catalog_loaded()
         elif idx == 4:
             self.workspace.refresh()          # 工作区：进页面时刷新（可能有窗口开/关了）
+        elif idx == 5:
+            self.ai_workspace.refresh()
         else:
             self._request_preview_frame(force=True)
 
@@ -9302,40 +9530,69 @@ class WinMonApp:
         finally:
             self.root.after(2000, self._periodic_refresh)
 
+    def _show_escalation(self, hwnd: int, pid: int, name: str, title: str) -> None:
+        """关闭超时后，在底栏放出「改为强制结束」按钮；目标固定，不跟随后续选择。"""
+        self._escalate_target = (hwnd, pid, name, title)
+        try:
+            self.escalate_btn.configure(text="改为强制结束")
+            if not self.escalate_btn.winfo_manager():
+                self.escalate_btn.pack(side="right", padx=(4, 8))
+        except Exception:
+            pass
+
+    def _clear_escalation(self) -> None:
+        self._escalate_target = None
+        try:
+            self.escalate_btn.pack_forget()
+        except Exception:
+            pass
+
     def _tick_close_watch(self) -> None:
         """
-        检查「优雅关闭」的窗口是否真的退出，超时未退出则提示改用强制结束。
+        检查「请求关闭」的窗口是否真的退出，超时未退出则放出「改为强制结束」。
 
         同时看「窗口是否还在」与「进程是否还活着」：有的程序响应关闭后会先销毁窗口、
         进程稍后才退出，只看窗口会误报"已退出"。
         """
         now = time.monotonic()
         still = []
+        pending = set()
         for hwnd, pid, t0, warned in self._close_watch:
             window_gone = not core.user32.IsWindow(core.w.HWND(hwnd))
             process_gone = not core.is_process_alive(pid)
             name = self.proc_map.get(pid, {}).get("name", f"PID {pid}")
+            title = self.win_by_hwnd.get(hwnd).title if hwnd in self.win_by_hwnd else ""
             if window_gone and process_gone:
                 self._set_status(f"窗口与进程均已正常退出（PID {pid}）")
                 self.log_action("关闭窗口", self._log_target(name, pid), "已退出（优雅）")
+                self.root.after(120, self.refresh_all)
                 continue
             if window_gone and not process_gone:
                 if now - t0 < 10.0:
                     still.append((hwnd, pid, t0, warned))
+                    pending.add(hwnd)
                     continue
                 if not warned:
-                    self._set_status(f"窗口已关闭，但 PID {pid} 进程仍在后台运行。")
+                    self._set_status(f"窗口已关闭，但 PID {pid} 进程仍在后台运行；可强制结束。")
                     self.log_action("关闭窗口", self._log_target(name, pid), "窗口关闭、进程仍在")
+                self._show_escalation(hwnd, pid, name, title)
                 still.append((hwnd, pid, t0, True))
+                pending.add(hwnd)
                 continue
             if now - t0 < 3.0:
                 still.append((hwnd, pid, t0, warned))
+                pending.add(hwnd)
                 continue
             if not warned:
-                self._set_status(f"PID {pid} 未响应关闭请求；如需要请点击「结束进程」强制终止。")
+                self._set_status(f"PID {pid} 未响应关闭请求；可点「改为强制结束」继续。")
                 self.log_action("关闭窗口", self._log_target(name, pid), "未响应（超时）")
+            self._show_escalation(hwnd, pid, name, title)
             still.append((hwnd, pid, t0, True))
+            pending.add(hwnd)
         self._close_watch = still
+        target = getattr(self, "_escalate_target", None)
+        if target is not None and target[0] not in pending:
+            self._clear_escalation()
         self.root.after(400, self._tick_close_watch)
     def _monitor_current_window(self) -> None:
         """
@@ -9665,9 +9922,23 @@ class WinMonApp:
         if not pid:
             self._set_status("请选择右侧窗口列表中的一个程序")
             return
+        wi = self.win_by_hwnd.get(self.selected_hwnd) if self.selected_hwnd else None
+        self._terminate_pid(pid, name, wi.title if wi else "", tree=tree)
+
+    def _terminate_pid(self, pid: int, name: str, title: str,
+                       tree: bool = False) -> bool:
+        """
+        强制结束一个 PID（或整棵树），带保护检查与确认框。
+
+        抽出来是为了让「关闭超时后的改为强制结束」复用完全相同的保护与确认，
+        而不是另写一条能绕过关键进程检查的捷径。
+        """
+        if not pid:
+            self._set_status("请选择右侧窗口列表中的一个程序")
+            return False
         if pid == os.getpid():
             messagebox.showwarning(APP_NAME, "不能结束 WinMon 自己。", parent=self.root)
-            return
+            return False
         low = name.lower()
         if low in core.CRITICAL_PROCESSES:
             messagebox.showerror(
@@ -9677,29 +9948,28 @@ class WinMonApp:
                 parent=self.root)
             self._set_status(f"已阻止结束关键系统进程 {name}")
             self.log_action("结束进程", f"{name} [{pid}]", "已阻止（关键系统进程）")
-            return
+            return False
         extra = ""
         if low in core.RISKY_PROCESSES:
             extra = ("\n\n注意：这是系统外壳 / 输入相关进程，结束它会让任务栏、开始菜单"
                      "或输入法暂时消失（通常会自动重启）。")
         if core.is_process_elevated(pid):
             extra += "\n\n该进程以管理员权限运行，可能需要在管理员模式下运行 WinMon 才能结束它。"
-        wi = self.win_by_hwnd.get(self.selected_hwnd) if self.selected_hwnd else None
-        target = self._log_target(name or "?", pid, wi.title if wi else "")
+        target = self._log_target(name or "?", pid, title)
         scope = "该进程及其全部子进程" if tree else "该进程"
-        win_title = "(无)"
-        if wi:
-            win_title = wi.title[:50] + "…" if len(wi.title) > 50 else wi.title
+        win_title = title[:50] + "…" if len(title) > 50 else (title or "(无)")
         msg = (f"确定要强制结束{scope}吗？\n\n"
                f"程序：{name or '(未知)'}\nPID：{pid}\n窗口：{win_title}\n\n"
                f"未保存的数据将会丢失。{extra}")
-        if not messagebox.askyesno(f"结束进程 — {name or pid}", msg,
+        if not messagebox.askyesno(f"强制结束 — {name or pid}", msg,
                                    icon="warning", parent=self.root):
-            return
+            return False
+        ok = False
         if tree:
             killed, failures = core.terminate_process_tree(pid, self.proc_map)
             result = f"成功 {killed} 个" + (f"，失败 {len(failures)}" if failures else "")
-            self._set_status(f"结束进程树：{result}")
+            ok = bool(killed)
+            self._set_status(f"强制结束整树：{result}")
             self.log_action("结束进程树", target, result)
             if failures:
                 self._set_status("部分失败：" + "；".join(failures[:3]))
@@ -9708,7 +9978,27 @@ class WinMonApp:
             self._set_status(f"{'成功' if ok else '失败'}：{msg2}（{name or pid}）")
             self.log_action("结束进程", target,
                             "成功" if ok else f"失败：{msg2}")
+        if ok:
+            self._close_watch = [x for x in getattr(self, "_close_watch", [])
+                                 if x[1] != pid]
+            target_esc = getattr(self, "_escalate_target", None)
+            if target_esc is not None and target_esc[1] == pid:
+                self._clear_escalation()
         self.root.after(120, self.refresh_all)
+        return ok
+
+    def action_escalate_close(self) -> None:
+        """底栏按钮：把当前关闭超时的目标改为强制结束。"""
+        target = getattr(self, "_escalate_target", None)
+        if target is None:
+            return
+        _hwnd, pid, name, title = target
+        if not core.is_process_alive(pid):
+            self._clear_escalation()
+            self._set_status(f"PID {pid} 已经退出，无需强制结束。")
+            self.root.after(120, self.refresh_all)
+            return
+        self._terminate_pid(pid, name, title, tree=False)
 
     def action_reveal(self) -> None:
         wi = self._selected_window()
@@ -10123,6 +10413,9 @@ class WinMonApp:
             self._sync_action_rail_spacing()
         except Exception:
             pass
+        target = getattr(self, "_escalate_target", None)
+        if target is not None:
+            self._show_escalation(*target)
 
     def action_settings(self, section: str = "general",
                         guide_section: str = "main") -> None:
