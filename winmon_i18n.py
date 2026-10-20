@@ -32,14 +32,14 @@ _current = DEFAULT_LANGUAGE
 #: 带 key 的整句（用于对话框标题、提示、动态拼接的段落）
 _STRINGS = {
     "zh": {
-        "app.title": "WinMon {ver}",
-        "settings.title": "WinMon 设置",
+        "app.title": "winmon1.0",
+        "settings.title": "winmon1.0 设置",
         "settings.language": "语言 / Language",
         "settings.language_hint": "切换后主界面与 AI 窗口立即生效；详细说明在「使用说明」标签页。",
         "settings.theme": "界面颜色",
         "settings.theme_hint": "普通是白底黑字，深色是黑底白字。保存后立即生效；"
                                "彩色高亮卡片会换成对应主题的底色。",
-        "assistant.title": "WinMon AI 助手",
+        "assistant.title": "winmon1.0 AI 助手",
         "assistant.header_reading": "正在读取当前 AI…",
         "assistant.time_reading": "正在读取时间…",
         "assistant.mode": "模式：",
@@ -52,7 +52,7 @@ _STRINGS = {
         "assistant.usage": "用量…",
         "assistant.empty": "还没有记录。点「交给 AI」会把当前窗口现场复制给你正在用的 AI。",
         "assistant.reminder_owner": "提醒由接入的 AI 在对话里说；WinMon 自己不弹窗。",
-        "connect.title": "接入 AI",
+        "connect.title": "winmon1.0 接入 AI",
         "connect.head": "连接你的 AI",
         "connect.mcp": "1）MCP 接入（推荐，只读）",
         "connect.mcp_hint": "把下面这段加到客户端的 MCP 配置里，重启客户端。"
@@ -131,7 +131,7 @@ _STRINGS = {
         "connect.facts_hint": "只给应用名；浏览器才给网页标题。不截屏、不读聊天/文件；"
                               "歌曲名和歌手不会交给 AI。",
         "connect.show_advanced": "主动 AI 的额外动作（会花 token）",
-        "connect.proactive": "5）主动搭子（C，默认关）",
+        "connect.proactive": "5）主动搭子",
         "connect.proactive_enable": "允许 WinMon 主动说一句（会花 token）",
         "connect.proactive_hint": "默认关；只在「主动 AI」且当前 AI 有 key 时生效。"
                                   "专注/会议/夜深默认不允许，由你逐项打开。",
@@ -159,15 +159,15 @@ _STRINGS = {
         "common.save": "保存",
     },
     "en": {
-        "app.title": "WinMon {ver}",
-        "settings.title": "WinMon Settings",
+        "app.title": "winmon1.0",
+        "settings.title": "winmon1.0 Settings",
         "settings.language": "Language / 语言",
         "settings.language_hint": "Applies to the main window and AI windows immediately; "
                                   "details are in the Guide tab.",
         "settings.theme": "Color",
         "settings.theme_hint": "Light is white with dark text; Dark is black with white text. "
                                "Applies immediately; colored cards switch with the theme.",
-        "assistant.title": "WinMon AI Assistant",
+        "assistant.title": "winmon1.0 AI Assistant",
         "assistant.header_reading": "Detecting the AI you are using…",
         "assistant.time_reading": "Reading local time…",
         "assistant.mode": "Mode:",
@@ -182,7 +182,7 @@ _STRINGS = {
                             "context to the AI you are already using.",
         "assistant.reminder_owner": "Reminders come from the connected AI in its own chat; "
                                      "WinMon does not pop them up itself.",
-        "connect.title": "Connect an AI",
+        "connect.title": "winmon1.0 Connect AI",
         "connect.head": "Connect your AI",
         "connect.mcp": "1) MCP connection (recommended, read-only)",
         "connect.mcp_hint": "Add this to the client's MCP config and restart it. "
@@ -266,7 +266,7 @@ _STRINGS = {
                               "screenshots, chats, or files; track and artist names are "
                               "never given to the AI.",
         "connect.show_advanced": "Extra Active AI actions (cost tokens)",
-        "connect.proactive": "5) Proactive companion (C, off by default)",
+        "connect.proactive": "5) Proactive companion",
         "connect.proactive_enable": "Allow WinMon to say one line on its own (costs tokens)",
         "connect.proactive_hint": "Off by default; only when Active AI is selected and the "
                                   "current AI has a key. Focus/meeting/late-night are denied "
@@ -315,7 +315,7 @@ _STATIC_EN = {
         "AI identity and usage (provider / tokenizer / estimated)",
     "AI 助手…": "AI assist",
     "接入…": "Connect…",
-    "WinMon 设置": "WinMon Settings",
+    "winmon1.0 设置": "winmon1.0 Settings",
     "常规": "General",
     "AI 用量": "AI usage",
     "使用说明": "Guide",

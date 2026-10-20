@@ -55,9 +55,10 @@ import winmon_core as core
 import winmon_i18n as i18n
 import winmon_mcp as mcp
 
-APP_NAME = "WinMon"
+#: 用户看到的产品名（窗口标题、托盘、对话框统一用它，不再混用 "WinMon 1.0"）。
+APP_NAME = "winmon1.0"
 #: 正式版本号。2026-10-11 这次「逐文件 SHA256 核对 C/D 两份副本 + 统一测试基线」
-#: 之后，项目正式定名为 **WinMon 1.0**（`APP_RELEASE`），版本号从这里重新起算
+#: 之后，项目正式定名为 **winmon1.0**（`APP_RELEASE`），版本号从这里重新起算
 #: （所以它比上一版的 "1.1" 看起来更小 —— 这是一次重新命名，不是回退）。
 APP_VER = "1.0"
 #: 发布名（用户看到的产品名）：winmon1.0
@@ -2893,6 +2894,22 @@ class _SettingsWindow:
                  font=SMALL_FONT, bg=UI_BG, fg=UI_MUTED,
                  anchor="w").pack(fill="x", pady=(2, 0))
 
+        # 先占住底部按钮条：AI 用量页是可滚动内容，若先 pack notebook，
+        # 它一旦请求较高，底部的保存/取消会被挤成 1px（实测）。
+        foot = ttk.Frame(top, padding=(18, 4, 18, 12))
+        foot.pack(side="bottom", fill="x")
+        self.status = tk.StringVar(value="")
+        tk.Label(foot, textvariable=self.status, font=SMALL_FONT,
+                 bg=UI_BG, fg=UI_OK, anchor="w", justify="left",
+                 wraplength=max(260, win_w - 240)).pack(
+            side="left", fill="x", expand=True)
+        btns = tk.Frame(foot, bg=UI_BG)
+        btns.pack(side="right")
+        ttk.Button(btns, text="保存 (Enter)", width=13,
+                   command=self._ok).pack(side="right")
+        ttk.Button(btns, text="取消 (Esc)", width=12,
+                   command=self._cancel).pack(side="right", padx=(0, 8))
+
         self.nb = ttk.Notebook(top)
         self.nb.pack(fill="both", expand=True, padx=14, pady=(6, 0))
         self._section_tabs = {"general": 0, "ai": 1, "guide": 2}
@@ -2920,19 +2937,6 @@ class _SettingsWindow:
         self.guide = _GuidePanel(self.nb, app, "main")
         self.nb.add(self.guide.frame, text=i18n.pick("使用说明", "Guide"))
 
-        foot = ttk.Frame(top, padding=(18, 4, 18, 12))
-        foot.pack(fill="x")
-        self.status = tk.StringVar(value="")
-        tk.Label(foot, textvariable=self.status, font=SMALL_FONT,
-                 bg=UI_BG, fg=UI_OK, anchor="w", justify="left",
-                 wraplength=max(260, win_w - 240)).pack(
-            side="left", fill="x", expand=True)
-        btns = tk.Frame(foot, bg=UI_BG)
-        btns.pack(side="right")
-        ttk.Button(btns, text="保存 (Enter)", width=13,
-                   command=self._ok).pack(side="right")
-        ttk.Button(btns, text="取消 (Esc)", width=12,
-                   command=self._cancel).pack(side="right", padx=(0, 8))
         top.bind("<Return>", lambda e: self._ok())
         top.bind("<KP_Enter>", lambda e: self._ok())
         top.bind("<Escape>", lambda e: self._cancel())
@@ -3157,7 +3161,7 @@ class _HistoryWindow:
         self.app = app
         self.top = tk.Toplevel(parent)
         top = self.top
-        top.title(f"WinMon 操作历史 — {os.path.basename(app.history.log_path)}")
+        top.title(f"{APP_NAME} 操作历史 — {os.path.basename(app.history.log_path)}")
         top.configure(bg=UI_BG)
         top.geometry("1100x560")
         top.minsize(760, 360)
@@ -3434,76 +3438,241 @@ class _HistoryWindow:
 
 class _AiUsagePanel:
     """
-    设置里的「AI 用量」标签页（阶段 2.5 / 阶段 5）。
+    设置里的「AI 用量」标签页（阶段 2.5 / 阶段 5，2026-10-20 重做视觉）。
 
-    只读展示 + **本地**恢复手段：暂停 / 恢复、重置今日、上限翻倍。
-    按设计，**MCP 没有任何改预算的工具** —— 钥匙只在人手里。
+    旧版把识别结果、预算、直连状态、最近记录全塞进一个等宽 Text，信息虽然齐全，
+    但一打开就是一大块文字。现在改成一张仪表盘：
+      · 顶部一张蓝色预算卡（今日已用 + 进度线 + 本小时调用）；
+      · 三张等宽小卡分别显示真实 / 精确 / 估算；
+      · 当前 AI 与直连模型各一张状态卡；
+      · 最近记录用表格，最多 5 行，不再拼成字符串。
 
-    用户 2026-10-19 的要求：打开后必须一眼看见
-      · 现在识别到的是哪个 AI（以及依据）；
-      · 这个 token 数是谁的（真实 API 回执 / 精确分词 / 估算）；
-      · 直连模型有没有就绪。
-    2026-10-20：不再单独开窗，作为「设置」的一个标签页复用。
+    交互仍是**本地**恢复手段：暂停 / 恢复、重置今日、上限翻倍。
+    MCP 没有任何改预算的工具 —— 钥匙只在人手里。
     """
 
     def __init__(self, parent: tk.Misc, app) -> None:
         self.app = app
-        self.frame = ttk.Frame(parent, padding=(12, 10))
+        self.frame = ttk.Frame(parent)
         self.budget = ai.Budget()
         self._after_id = None
         self._alive = True
+        self._ratio = 0.0
+        self._scale = float(getattr(app, "dpi_scale", 1.0) or 1.0)
+        self._build()
+        self.refresh()
+        self._auto_refresh()
 
-        wrap = self.frame
-        head = ttk.Frame(wrap)
+    # ---- 构建 -------------------------------------------------------
+
+    def _build(self) -> None:
+        self.frame.rowconfigure(0, weight=1)
+        self.frame.columnconfigure(0, weight=1)
+        self.canvas = tk.Canvas(self.frame, bg=UI_BG, highlightthickness=0)
+        scroll = ttk.Scrollbar(self.frame, orient="vertical",
+                               command=self.canvas.yview)
+        self.canvas.configure(yscrollcommand=scroll.set)
+        self.canvas.grid(row=0, column=0, sticky="nsew")
+        scroll.grid(row=0, column=1, sticky="ns")
+        wrap = tk.Frame(self.canvas, bg=UI_BG, padx=16, pady=8)
+        win_id = self.canvas.create_window((0, 0), window=wrap, anchor="nw")
+        wrap.bind("<Configure>",
+                  lambda _e: self.canvas.configure(
+                      scrollregion=self.canvas.bbox("all")))
+        self.canvas.bind("<Configure>",
+                         lambda e: self.canvas.itemconfigure(win_id, width=e.width))
+        self.canvas.bind("<Enter>",
+                         lambda _e: self.canvas.bind_all("<MouseWheel>", self._wheel))
+        self.canvas.bind("<Leave>",
+                         lambda _e: self.canvas.unbind_all("<MouseWheel>"))
+        self._build_header(wrap)
+        self._build_hero(wrap)
+        self._build_metrics(wrap)
+        self._build_status_cards(wrap)
+        self._build_recent(wrap)
+        # 操作条固定在底部：暂停/重置是这页最重要的动作，不能要求先滚动才看见。
+        tk.Frame(self.frame, bg=UI_LINE, height=1).grid(
+            row=1, column=0, columnspan=2, sticky="ew")
+        actions = tk.Frame(self.frame, bg=UI_BG)
+        actions.grid(row=2, column=0, columnspan=2, sticky="ew",
+                     padx=16, pady=(0, 8))
+        self._build_actions(actions)
+
+    def _wheel(self, event) -> None:
+        try:
+            self.canvas.yview_scroll(int(-event.delta / 120), "units")
+        except Exception:
+            pass
+
+    def _build_header(self, wrap) -> None:
+        head = tk.Frame(wrap, bg=UI_BG)
         head.pack(fill="x")
-        ttk.Label(head, text="AI 识别与用量（真实 / 精确 / 估算分栏）",
-                  font=BOLD_FONT).pack(side="left")
+        tk.Label(head, text="AI 用量与预算", font=BOLD_FONT,
+                 bg=UI_BG, fg=UI_INK, anchor="w").pack(side="left")
         self.state_text = tk.StringVar(value="")
-        ttk.Label(head, textvariable=self.state_text, font=UI_FONT,
-                  foreground=UI_MUTED).pack(side="right")
-        ttk.Label(wrap, text="这里的数字是 WinMon 经手的上下文 + 直连调用，"
+        self.state_label = tk.Label(head, textvariable=self.state_text,
+                                    font=SMALL_BOLD_FONT, padx=8, pady=2)
+        self.state_label.pack(side="right")
+        tk.Label(wrap, text=f"{APP_NAME} 经手的上下文与直连调用；"
                             "不是你客户端的完整账单。",
-                  font=SMALL_FONT, foreground=UI_MUTED,
-                  anchor="w", justify="left").pack(fill="x", pady=(4, 0))
+                 font=SMALL_FONT, bg=UI_BG, fg=UI_MUTED, anchor="w",
+                 justify="left").pack(fill="x", pady=(4, 0))
 
-        body_holder = ttk.Frame(wrap)
-        body_holder.pack(fill="both", expand=True, pady=(8, 8))
-        self.body = tk.Text(body_holder, height=20, wrap="word", font=MONO_FONT,
-                            relief="solid", borderwidth=1)
-        scroll = ttk.Scrollbar(body_holder, orient="vertical", command=self.body.yview)
-        self.body.configure(yscrollcommand=scroll.set)
-        self.body.pack(side="left", fill="both", expand=True)
-        scroll.pack(side="left", fill="y")
-        self.body.configure(state="disabled")
+    def _build_hero(self, wrap) -> None:
+        colors = UI_CARDS["ai"]
+        hero = tk.Frame(wrap, bg=colors["bg"],
+                        highlightbackground=colors["border"],
+                        highlightthickness=1, padx=10, pady=10)
+        hero.pack(fill="x", pady=(8, 6))
+        line = tk.Frame(hero, bg=colors["bg"])
+        line.pack(fill="x")
+        tk.Label(line, text="今日已用", font=SMALL_BOLD_FONT,
+                 bg=colors["bg"], fg=colors["muted"], anchor="w").pack(side="left")
+        self.hour_text = tk.StringVar(value="")
+        tk.Label(line, textvariable=self.hour_text, font=SMALL_FONT,
+                 bg=colors["bg"], fg=colors["muted"], anchor="e").pack(side="right")
+        self.percent_text = tk.StringVar(value="0.0%")
+        tk.Label(line, textvariable=self.percent_text, font=SMALL_BOLD_FONT,
+                 bg=colors["bg"], fg=colors["tag_bg"], anchor="e").pack(
+            side="right", padx=(0, 10))
+        amount = tk.Frame(hero, bg=colors["bg"])
+        amount.pack(fill="x", pady=(2, 0))
+        self.used_text = tk.StringVar(value="0")
+        tk.Label(amount, textvariable=self.used_text,
+                 font=("Microsoft YaHei UI", UI_FONT_SIZE + 9, "bold"),
+                 bg=colors["bg"], fg=colors["fg"], anchor="w").pack(side="left")
+        self.budget_text = tk.StringVar(value="")
+        tk.Label(amount, textvariable=self.budget_text, font=UI_FONT,
+                 bg=colors["bg"], fg=colors["muted"], anchor="w").pack(
+            side="left", padx=(8, 0), pady=(0, 5))
+        self.progress = tk.Canvas(hero, height=8, bg=colors["bg"],
+                                  highlightthickness=0)
+        self.progress.pack(fill="x", pady=(6, 1))
+        self.progress.bind("<Configure>", lambda _e: self._draw_progress())
 
-        bar = ttk.Frame(wrap)
-        bar.pack(fill="x")
+    def _metric_card(self, parent, title: str, var: tk.StringVar) -> None:
+        box = tk.Frame(parent, bg=UI_SURFACE_ALT, highlightbackground=UI_LINE,
+                       highlightthickness=1, padx=12, pady=6)
+        box.pack(side="left", fill="both", expand=True, padx=(0, 8))
+        tk.Label(box, text=title, font=SMALL_FONT, bg=UI_SURFACE_ALT,
+                 fg=UI_MUTED, anchor="w").pack(fill="x")
+        tk.Label(box, textvariable=var,
+                 font=("Microsoft YaHei UI", UI_FONT_SIZE + 3, "bold"),
+                 bg=UI_SURFACE_ALT, fg=UI_ACCENT, anchor="w").pack(
+            fill="x", pady=(1, 0))
+
+    def _build_metrics(self, wrap) -> None:
+        row = tk.Frame(wrap, bg=UI_BG)
+        row.pack(fill="x")
+        self.provider_text = tk.StringVar(value="0")
+        self.tokenizer_text = tk.StringVar(value="0")
+        self.estimated_text = tk.StringVar(value="0")
+        self._metric_card(row, "真实 API", self.provider_text)
+        self._metric_card(row, "精确分词", self.tokenizer_text)
+        self._metric_card(row, "估算", self.estimated_text)
+
+    def _status_card(self, parent, title: str):
+        box = tk.Frame(parent, bg=UI_SURFACE_ALT, highlightbackground=UI_LINE,
+                       highlightthickness=1, padx=12, pady=6)
+        tk.Label(box, text=title, font=SMALL_FONT, bg=UI_SURFACE_ALT,
+                 fg=UI_MUTED, anchor="w").pack(fill="x")
+        name = tk.StringVar(value="")
+        name_label = tk.Label(box, textvariable=name, font=BOLD_FONT,
+                              bg=UI_SURFACE_ALT, fg=UI_INK, anchor="w",
+                              justify="left",
+                              wraplength=int(380 * self._scale))
+        name_label.pack(fill="x", pady=(1, 0))
+        detail = tk.StringVar(value="")
+        tk.Label(box, textvariable=detail, font=SMALL_FONT,
+                 bg=UI_SURFACE_ALT, fg=UI_MUTED, anchor="w", justify="left",
+                 wraplength=int(380 * self._scale)).pack(fill="x", pady=(2, 0))
+        return box, name, name_label, detail
+
+    def _build_status_cards(self, wrap) -> None:
+        row = tk.Frame(wrap, bg=UI_BG)
+        row.pack(fill="x", pady=(8, 0))
+        row.columnconfigure(0, weight=1)
+        row.columnconfigure(1, weight=1)
+        left, self.ai_name_text, _ai_label, self.ai_detail_text = \
+            self._status_card(row, "当前 AI")
+        left.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
+        right, self.direct_title_text, self.direct_title_label, \
+            self.direct_detail_text = self._status_card(row, "直连模型")
+        right.grid(row=0, column=1, sticky="nsew")
+
+    def _build_recent(self, wrap) -> None:
+        head = tk.Frame(wrap, bg=UI_BG)
+        head.pack(fill="x", pady=(10, 3))
+        tk.Label(head, text="最近记录", font=BOLD_FONT, bg=UI_BG,
+                 fg=UI_INK, anchor="w").pack(side="left")
+        tk.Label(head, text="最多 5 条 · 只记在本机", font=SMALL_FONT,
+                 bg=UI_BG, fg=UI_MUTED, anchor="e").pack(side="right")
+        holder = tk.Frame(wrap, bg=UI_SURFACE, highlightbackground=UI_LINE,
+                          highlightthickness=1)
+        holder.pack(fill="x")
+        style = ttk.Style(self.frame)
+        style.configure("Usage.Treeview", font=UI_FONT,
+                        background=UI_SURFACE, fieldbackground=UI_SURFACE,
+                        foreground=UI_INK, bordercolor=UI_LINE,
+                        rowheight=max(22, int(20 * self._scale),
+                                      int(UI_FONT_SIZE * 2.4)))
+        # 只补表头底色：字体与前景由主界面的 ttk 全局样式决定，避免打开设置
+        # 后把主窗口的 Treeview 字号/颜色悄悄改掉。
+        style.configure("Treeview.Heading",
+                        background=UI_SURFACE_ALT, bordercolor=UI_LINE)
+        style.map("Treeview.Heading", background=[("active", UI_HOVER_BG)])
+        style.map("Usage.Treeview",
+                  background=[("selected", UI_SELECT_BG)],
+                  foreground=[("selected", UI_SELECT_FG)])
+        self.recent_tree = ttk.Treeview(
+            holder, columns=("time", "source", "what", "tokens"),
+            show="headings", height=5, selectmode="browse",
+            style="Usage.Treeview")
+        for key, label, width, anchor in (
+                ("time", "时间", 96, "w"),
+                ("source", "来源", 78, "w"),
+                ("what", "程序 / 工具", 390, "w"),
+                ("tokens", "token", 84, "e")):
+            self.recent_tree.heading(key, text=label)
+            self.recent_tree.column(key, width=int(width * self._scale),
+                                    minwidth=int(width * 0.7),
+                                    anchor=anchor,
+                                    stretch=(key == "what"))
+        self.recent_tree.tag_configure("provider", foreground=UI_OK)
+        self.recent_tree.tag_configure("tokenizer", foreground=UI_ACCENT)
+        self.recent_tree.tag_configure("estimated", foreground=UI_MUTED)
+        self.recent_tree.tag_configure("empty", foreground=UI_MUTED)
+        self.recent_tree.pack(fill="x")
+
+    def _build_actions(self, wrap) -> None:
+        bar = tk.Frame(wrap, bg=UI_BG)
+        bar.pack(fill="x", pady=(12, 0))
         self.pause_btn = ttk.Button(bar, text="暂停 AI 接入", width=14,
                                     command=self.toggle_pause)
-        self.pause_btn.pack(side="left", padx=2)
+        self.pause_btn.pack(side="left", padx=(0, 6))
         ttk.Button(bar, text="重置今日用量", width=14,
-                   command=self.reset_today).pack(side="left", padx=2)
-        ttk.Button(bar, text="上限 ×2", width=10,
-                   command=self.raise_limit).pack(side="left", padx=2)
-        ttk.Button(bar, text="刷新", width=8,
-                   command=self.refresh).pack(side="left", padx=2)
-        #: 精确分词开关：把 MCP 工具结果发给智谱分词器计数（默认跟随配置文件）
+                   command=self.reset_today).pack(side="left", padx=(0, 6))
+        ttk.Button(bar, text="上限 ×2", width=9,
+                   command=self.raise_limit).pack(side="left", padx=(0, 6))
+        ttk.Button(bar, text="刷新", width=7,
+                   command=self.refresh).pack(side="left", padx=(0, 6))
         self.exact_var = tk.BooleanVar(value=False)
         ttk.Checkbutton(bar, text="MCP 结果精确分词",
                         variable=self.exact_var,
-                        command=self.toggle_exact).pack(side="left", padx=(10, 2))
+                        command=self.toggle_exact).pack(side="left", padx=(8, 0))
         ttk.Button(bar, text="打开数据目录", width=14,
-                   command=self.reveal).pack(side="right", padx=2)
+                   command=self.reveal).pack(side="right")
         ttk.Button(bar, text="AI 助手…", width=9,
                    command=lambda: getattr(self.app, "action_ai_assistant",
-                                           lambda: None)()).pack(side="right", padx=2)
-        note = ttk.Frame(wrap)
-        note.pack(fill="x", pady=(4, 0))
-        ttk.Label(note, text="恢复预算只能在这里操作；MCP 没有改预算的工具。"
-                            "精确分词会把 MCP 工具结果发给智谱分词器。",
-                  font=UI_FONT, foreground=UI_MUTED).pack(side="left")
-        self.refresh()
-        self._auto_refresh()
+                                           lambda: None)()).pack(
+            side="right", padx=(0, 6))
+        foot = tk.Frame(wrap, bg=UI_BG)
+        foot.pack(fill="x", pady=(4, 0))
+        tk.Label(foot, text="恢复预算只能在这里操作；MCP 没有改预算的工具。",
+                 font=SMALL_FONT, bg=UI_BG, fg=UI_MUTED,
+                 anchor="w").pack(side="left")
+
+    # ---- 刷新 -------------------------------------------------------
 
     def _auto_refresh(self) -> None:
         """标签页开着时每 3 秒自刷新（关闭设置必须取消，否则会打 Tcl 噪音）。"""
@@ -3516,66 +3685,156 @@ class _AiUsagePanel:
         except tk.TclError:
             self._after_id = None
 
+    def _draw_progress(self) -> None:
+        try:
+            width = int(self.progress.winfo_width())
+        except Exception:
+            return
+        if width <= 2:
+            return
+        colors = UI_CARDS["ai"]
+        pad = 3
+        mid = 4
+        self.progress.delete("all")
+        self.progress.create_line(
+            pad, mid, width - pad, mid, fill=colors["border"],
+            width=6, capstyle="round")
+        ratio = max(0.0, min(1.0, float(self._ratio or 0.0)))
+        if ratio <= 0:
+            return
+        end = pad + (width - 2 * pad) * ratio
+        if end - pad < 1:
+            end = pad + 1
+        self.progress.create_line(
+            pad, mid, end, mid, fill=colors["tag_bg"],
+            width=6, capstyle="round")
+
+    def _update_state_color(self, state: str) -> None:
+        colors = UI_CARDS["ai"]
+        if state == "ok":
+            bg, fg = colors["state_ok_bg"], colors["state_ok_fg"]
+        elif state in ("warn", "paused", "exhausted"):
+            bg, fg = colors["state_warn_bg"], colors["state_warn_fg"]
+        else:
+            bg, fg = UI_SURFACE_ALT, UI_MUTED
+        try:
+            self.state_label.configure(bg=bg, fg=fg)
+        except Exception:
+            pass
+
+    def _refresh_ai_card(self) -> None:
+        sessions = getattr(self.app, "_ai_sessions", None) or {}
+        primary = sessions.get("primary") if isinstance(sessions, dict) else None
+        if not primary:
+            self.ai_name_text.set("尚未识别到")
+            self.ai_detail_text.set("界面运行 2 秒后自动识别")
+            return
+        name = str(primary.get("name") or "?")
+        if primary.get("pinned"):
+            name += " · 已指定"
+        kind = {"web": "网页", "desktop": "桌面", "cli": "命令行"}.get(
+            str(primary.get("kind") or ""), str(primary.get("kind") or "未知"))
+        detail = kind
+        conf = primary.get("confidence")
+        if conf is not None:
+            try:
+                detail += f" · 置信度 {float(conf):.2f}"
+            except (TypeError, ValueError):
+                pass
+        self.ai_name_text.set(name)
+        self.ai_detail_text.set(detail)
+
+    def _refresh_direct(self) -> None:
+        try:
+            info = self.app._ai_provider_snapshot()
+        except Exception:
+            info = {}
+        follow = str(info.get("follow_ai") or "")
+        if info.get("configured") is False:
+            title, detail, color = ("未配置直连",
+                                    "用剪贴板交接，不会调用模型", UI_MUTED)
+        elif info.get("configured"):
+            model = str(info.get("model") or "?")
+            if not info.get("enabled"):
+                title, detail, color = (f"{model} · 未启用",
+                                        "开启主动 AI 后才会调用", UI_MUTED)
+            elif not info.get("key_present"):
+                title, detail, color = (f"{model} · 缺 API key",
+                                        "填入 key 后可用", UI_DANGER)
+            else:
+                title = f"{model} · 已就绪"
+                detail = f"跟随 {follow or '当前 AI'}"
+                color = UI_OK
+        else:
+            title, detail, color = ("正在读取…", "稍后自动刷新", UI_MUTED)
+        self.direct_title_text.set(title)
+        self.direct_detail_text.set(detail)
+        try:
+            self.direct_title_label.configure(fg=color)
+        except Exception:
+            pass
+
+    def _refresh_recent(self, status: dict) -> None:
+        tree = self.recent_tree
+        for item in tree.get_children():
+            tree.delete(item)
+        recent = list(status.get("recent") or [])
+        if not recent:
+            tree.insert("", "end",
+                        values=("—", "—", "还没有调用记录", "—"),
+                        tags=("empty",))
+            return
+        source_label = {"provider": "真实 API", "tokenizer": "精确分词",
+                        "estimated": "估算"}
+        for row in recent[-5:]:
+            ts = str(row.get("ts") or "").replace("T", " ")
+            if len(ts) >= 16:
+                ts = ts[5:16]
+            source = str(row.get("token_source") or "estimated")
+            what = f"{row.get('client') or '?'} · {row.get('tool') or '-'}"
+            try:
+                tokens = f"{int(row.get('tokens', 0) or 0):,}"
+            except (TypeError, ValueError):
+                tokens = "0"
+            tree.insert("", "end",
+                        values=(ts or "—", source_label.get(source, "?"),
+                                what, tokens),
+                        tags=(source if source in source_label else "estimated",))
+
     def refresh(self) -> None:
         status = self.budget.status()
         label = {"ok": "正常", "warn": "接近上限", "exhausted": "已用尽",
                  "paused": "已暂停", "disabled": "已关闭"}.get(
                      status.get("state"), status.get("state"))
         self.state_text.set(f"当前：{label}")
+        self._update_state_color(str(status.get("state") or ""))
         self.pause_btn.configure(
             text="恢复 AI 接入" if status.get("paused") else "暂停 AI 接入")
         try:
-            info = self.app._ai_provider_snapshot()
-        except Exception:
-            info = {}
+            self.used_text.set(f"{int(status.get('used_tokens', 0) or 0):,}")
+            self.budget_text.set(
+                f"预算 {int(status.get('daily_tokens', 0) or 0):,} token")
+            self.hour_text.set(
+                f"本小时 {int(status.get('hourly_calls', 0) or 0)} / "
+                f"{int(status.get('hourly_limit', 0) or 0)} 次调用")
+            self.percent_text.set(f"{float(status.get('ratio', 0) or 0) * 100:.1f}%")
+            self.provider_text.set(f"{int(status.get('provider_tokens', 0) or 0):,}")
+            self.tokenizer_text.set(
+                f"{int(status.get('tokenizer_tokens', 0) or 0):,}")
+            self.estimated_text.set(
+                f"{int(status.get('estimated_tokens', 0) or 0):,}")
+            self._ratio = float(status.get("ratio", 0) or 0)
+        except (TypeError, ValueError):
+            self._ratio = 0.0
         try:
             tokenizer = provider.tokenizer_config()
             self.exact_var.set(bool(tokenizer is not None and tokenizer.exact_tokens))
         except Exception:
             pass
-        follow = str(info.get("follow_ai") or "")
-        if info.get("configured") is False:
-            direct = (f"当前 AI：{follow or '（还没识别到）'} 没有直连配置 → "
-                      "用剪贴板交接；不会调用任何模型")
-        elif info.get("configured"):
-            if not info.get("enabled"):
-                direct = f"{follow} → {info.get('model')} 未启用"
-            elif not info.get("key_present"):
-                direct = (f"{follow} → {info.get('model')} 缺 API key"
-                          f"（环境变量 {info.get('api_key_env') or 'WINMON_AI_API_KEY'}）")
-            else:
-                direct = (f"跟随当前 AI：{follow} → {info.get('model')} 已就绪"
-                          f"（{info.get('kind')}）")
-        else:
-            direct = "（主界面还没跑识别；2 秒后会自动刷新）"
-        lines = [
-            "== 当前识别（这是“现在在用谁”的唯一判据）==",
-            ai.format_sessions_detail(getattr(self.app, "_ai_sessions", None)),
-            "",
-            "== 用量与预算 ==",
-            ai.format_usage_text(status),
-            "",
-            "== 直连模型 ==",
-            f"  {direct}",
-            "  精确分词：MCP 工具结果用目标模型分词器计数；"
-            "关掉后这一部分只能估算（协议不提供客户端账单）。",
-            "",
-            "== 最近记录（最多 5 条）==",
-        ]
-        source_label = {"provider": "真实 API", "tokenizer": "精确分词",
-                        "estimated": "估算"}
-        recent = status.get("recent") or []
-        if not recent:
-            lines.append("（还没有记录）")
-        for row in recent[-5:]:
-            src = source_label.get(str(row.get("token_source")), "?")
-            lines.append(
-                f"{row.get('ts', '')}  {row.get('client') or '?'}  "
-                f"{row.get('tool') or '-'}  {row.get('tokens', 0)} token（{src}）")
-        self.body.configure(state="normal")
-        self.body.delete("1.0", "end")
-        self.body.insert("1.0", "\n".join(lines))
-        self.body.configure(state="disabled")
+        self._refresh_ai_card()
+        self._refresh_direct()
+        self._refresh_recent(status)
+        self._draw_progress()
 
     def toggle_pause(self) -> None:
         current = bool(self.budget.status().get("paused"))
@@ -4756,7 +5015,7 @@ class _AiConnectWindow:
         self._sync_behavior()
 
     def _build_proactive_section(self, wrap, assist) -> None:
-        # ---- 5) C：主动搭子（默认关，用户显式开启）----
+        # ---- 5) 主动搭子（默认关，用户显式开启）----
         pro, pro_body, colors = self._card(
             wrap, i18n.t("connect.proactive"), "proactive")
         self.proactive_var = tk.BooleanVar(value=bool(assist.get("proactive_enabled", False)))
@@ -5571,6 +5830,13 @@ class WinMonApp:
             self.theme_pref = THEME_DEFAULT
         self.theme_resolved = apply_theme(self.theme_pref)
         root.title(i18n.t("app.title", ver=APP_VER))
+        # 标题栏 / 任务栏也用同一枚图标；托盘与快捷方式共用 winmon.ico。
+        try:
+            icon = _icon_path()
+            if icon:
+                root.iconbitmap(default=icon)
+        except tk.TclError:
+            pass
         try:
             set_dark_title_bar(root, self.theme_resolved == THEME_DARK)
             # 窗口刚创建时可能还没映射，DWM 属性要等消息循环跑起来再设一次。
@@ -7385,7 +7651,7 @@ class WinMonApp:
                 os.path.dirname(os.path.abspath(self._settings_path)))
             if not missing_dir:
                 try:
-                    print(f"[WinMon] 设置保存失败：{self._settings_error}", file=sys.stderr)
+                    print(f"[{APP_NAME}] 设置保存失败：{self._settings_error}", file=sys.stderr)
                 except Exception:
                     pass
                 try:
@@ -8518,7 +8784,7 @@ class WinMonApp:
         text = ai.incident_notification_text(inc)
         if getattr(self, "_tray_ok", False) and getattr(self, "_tray", None) is not None:
             try:
-                if self._tray.notify("WinMon 提醒", text, severity=inc.severity):
+                if self._tray.notify(f"{APP_NAME} 提醒", text, severity=inc.severity):
                     return
             except Exception:
                 pass
@@ -9200,7 +9466,7 @@ class WinMonApp:
                 if p not in victims:
                     victims.append(p)
         if os.getpid() in victims:
-            messagebox.showerror(APP_NAME, "选中范围包含 WinMon 自身，已阻止该操作。",
+            messagebox.showerror(APP_NAME, f"选中范围包含 {APP_NAME} 自身，已阻止该操作。",
                                  parent=self.root)
             return
         names = [f"{self.proc_map.get(p, {}).get('name', '?')} [{p}]" for p in victims]
@@ -9297,7 +9563,7 @@ class WinMonApp:
         if wi.is_hidden_surface:
             hints.append("这是被系统隐藏的窗口，画面通常为空白。")
         if core.is_process_elevated(wi.pid) and wi.pid != os.getpid():
-            hints.append("该进程权限高于本程序，若无法结束请以管理员身份重新运行 WinMon。")
+            hints.append(f"该进程权限高于本程序，若无法结束请以管理员身份重新运行 {APP_NAME}。")
         self.preview.set_hint(" ".join(hints))
 
     def _current_interval_s(self) -> float:
@@ -10044,14 +10310,14 @@ class WinMonApp:
             self._set_status("请选择右侧窗口列表中的一个程序")
             return False
         if pid == os.getpid():
-            messagebox.showwarning(APP_NAME, "不能结束 WinMon 自己。", parent=self.root)
+            messagebox.showwarning(APP_NAME, f"不能结束 {APP_NAME} 自己。", parent=self.root)
             return False
         low = name.lower()
         if low in core.CRITICAL_PROCESSES:
             messagebox.showerror(
                 APP_NAME,
                 f"「{name}」(PID {pid}) 是 Windows 关键系统进程。\n\n"
-                "结束它会导致系统蓝屏、桌面崩溃或立即重启，WinMon 已阻止此操作。",
+                f"结束它会导致系统蓝屏、桌面崩溃或立即重启，{APP_NAME} 已阻止此操作。",
                 parent=self.root)
             self._set_status(f"已阻止结束关键系统进程 {name}")
             self.log_action("结束进程", f"{name} [{pid}]", "已阻止（关键系统进程）")
@@ -10061,7 +10327,7 @@ class WinMonApp:
             extra = ("\n\n注意：这是系统外壳 / 输入相关进程，结束它会让任务栏、开始菜单"
                      "或输入法暂时消失（通常会自动重启）。")
         if core.is_process_elevated(pid):
-            extra += "\n\n该进程以管理员权限运行，可能需要在管理员模式下运行 WinMon 才能结束它。"
+            extra += f"\n\n该进程以管理员权限运行，可能需要在管理员模式下运行 {APP_NAME} 才能结束它。"
         target = self._log_target(name or "?", pid, title)
         scope = "该进程及其全部子进程" if tree else "该进程"
         win_title = title[:50] + "…" if len(title) > 50 else (title or "(无)")
@@ -10190,7 +10456,7 @@ class WinMonApp:
                 self._tray_window = None
                 self._tray_error = msg
                 return False
-            tray = core.TrayIcon(hwnd, _icon_path(), "WinMon")
+            tray = core.TrayIcon(hwnd, _icon_path(), APP_NAME)
             ok2, msg2 = tray.add()
             if not ok2:
                 # 图标加不上就把窗口过程恢复回去，别留一个半成品
@@ -11233,7 +11499,7 @@ def ai_explain_cli() -> int:
     return 0
 
 
-USAGE_TEXT = """WinMon 1.0 —— Windows 桌面工具（纯 ctypes + tkinter，零第三方依赖）
+USAGE_TEXT = """winmon1.0 —— Windows 桌面工具（纯 ctypes + tkinter，零第三方依赖）
 
 用法：python winmon.py [选项]
 
@@ -11295,7 +11561,7 @@ AI / MCP（只读；直连 API 默认关闭）：
 
 def main() -> int:
     if sys.platform != "win32":
-        print("WinMon 仅支持 Windows。", file=sys.stderr)
+        print(f"{APP_NAME} 仅支持 Windows。", file=sys.stderr)
         return 1
     # 控制台编码（当时实测踩到）：Windows 的默认控制台编码是 GBK，
     # 而我们的输出里到处是中文（用法说明、类别名"影音播放"、程序名…），
@@ -11382,7 +11648,7 @@ def main() -> int:
         print(USAGE_TEXT)
         return 0
     if "--version" in args:
-        print(f"{APP_RELEASE}（WinMon {APP_VER}）")
+        print(APP_RELEASE)
         return 0
     if "--selftest" in args:
         return selftest()
@@ -11785,7 +12051,7 @@ if __name__ == "__main__":
             pass
         try:
             ctypes.windll.user32.MessageBoxW(
-                None, f"WinMon 启动失败：\n\n{detail[-1200:]}", "WinMon 错误", 0x10)
+                None, f"{APP_NAME} 启动失败：\n\n{detail[-1200:]}", f"{APP_NAME} 错误", 0x10)
         except Exception:
             pass
         sys.exit(1)

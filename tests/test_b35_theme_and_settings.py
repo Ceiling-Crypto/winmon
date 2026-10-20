@@ -5,7 +5,7 @@ B35 —— 颜色选择（普通 / 深色）与「设置」三合一。
 用户 2026-10-20 的要求：
   · AI 用量、设置、说明合并，主界面只保留一个「设置」入口；
   · 深色模式要可用，尤其是媒体行右侧 3 个按键不能糊在卡片里；
-  · 窗口标题只叫 WinMon，不再挂“实时监控与终止”的旧后缀；
+  · 窗口标题只叫 winmon1.0，不再挂“实时监控与终止”的旧后缀；
   · 请求关闭与强制结束本质不同，必须在界面上说清楚。
 
 这里守住可程序化的部分：色板切换、系统跟随、三标签页、媒体按键样式、
@@ -94,11 +94,52 @@ class TestBrandingAndActionMeaning(unittest.TestCase):
         import winmon
         i18n.set_language("zh")
         title = i18n.t("app.title", ver=winmon.APP_VER)
-        self.assertEqual(title, "WinMon 1.0")
+        self.assertEqual(title, "winmon1.0")
+        self.assertEqual(winmon.APP_NAME, "winmon1.0")
+        self.assertNotIn("WinMon", title)
         self.assertNotIn("—", title)
         self.assertNotIn("终止", title)
         self.assertFalse(hasattr(winmon, "APP_TITLE"),
                          "旧的带后缀标题常量已经删除，避免又被用回去")
+
+    def test_proactive_heading_has_no_hotkey_or_default_note(self):
+        """2026-10-20 用户要求：主动搭子标题旁不再挂「C，默认关」。"""
+        for lang in ("zh", "en"):
+            i18n.set_language(lang)
+            text = i18n.t("connect.proactive")
+            self.assertNotIn("默认关", text)
+            self.assertNotIn("off by default", text.lower())
+            self.assertNotIn("C，", text)
+            self.assertNotIn("C,", text)
+        i18n.set_language("zh")
+
+    def test_icon_pack_has_modern_sizes_and_valid_dib_frames(self):
+        """图标容器要同时含小尺寸和 256，且每一帧都是 32 位 DIB（不是 PNG）。"""
+        import struct
+        import winmon
+        path = winmon._icon_path()
+        self.assertTrue(path and os.path.exists(path), path)
+        with open(path, "rb") as fh:
+            data = fh.read()
+        self.assertEqual(data[:4], b"\x00\x00\x01\x00")
+        count = struct.unpack_from("<H", data, 4)[0]
+        sizes = set()
+        for i in range(count):
+            entry = 6 + 16 * i
+            width = data[entry] or 256
+            length, offset = struct.unpack_from("<II", data, entry + 8)
+            sizes.add(width)
+            self.assertNotEqual(data[offset:offset + 8],
+                                b"\x89PNG\r\n\x1a\n", f"{width}px 不能是 PNG-in-ICO")
+            (header_size, dib_w, dib_h, planes, bits,
+             _compression, image_size) = struct.unpack_from(
+                "<IiiHHII", data, offset)
+            self.assertEqual((header_size, dib_w, dib_h, planes, bits),
+                             (40, width, width * 2, 1, 32))
+            self.assertEqual(image_size, width * width * 4)
+            mask_stride = ((width + 31) // 32) * 4
+            self.assertEqual(length, 40 + image_size + mask_stride * width)
+        self.assertTrue({16, 32, 48, 256}.issubset(sizes), sizes)
 
     def test_close_and_terminate_are_different(self):
         import winmon
@@ -152,7 +193,7 @@ class TestSettingsMergedWindow(unittest.TestCase):
         dlg = self._open()
         labels = [dlg.nb.tab(i, "text") for i in range(len(dlg.nb.tabs()))]
         self.assertEqual(labels, ["常规", "AI 用量", "使用说明"])
-        self.assertEqual(dlg.top.title(), "WinMon 设置")
+        self.assertEqual(dlg.top.title(), "winmon1.0 设置")
         self.assertFalse(hasattr(self.winmon, "_AiUsageWindow"))
         self.assertFalse(hasattr(self.winmon, "_GuideWindow"))
 
@@ -177,7 +218,7 @@ class TestSettingsMergedWindow(unittest.TestCase):
         self.assertEqual(dlg.guide.nb.index("current"), 1)
         dlg.select("ai")
         self.assertEqual(dlg.nb.index("current"), 1)
-        self.assertIn("预算", dlg.usage.body.get("1.0", "end"))
+        self.assertIn("预算", dlg.usage.budget_text.get())
 
 
 @h.needs_tk

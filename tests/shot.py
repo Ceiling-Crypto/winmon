@@ -60,8 +60,14 @@ def build_app(width: int, height: int):
     import winmon
 
     root = tk.Tk()
-    root.title(f"WinMon {winmon.APP_VER}")
+    root.title(winmon.APP_NAME)
     root.geometry(f"{width}x{height}+0+0")
+    try:
+        icon = winmon._icon_path()
+        if icon:
+            root.iconbitmap(default=icon)
+    except Exception:
+        pass
     app = winmon.WinMonApp.__new__(winmon.WinMonApp)
     app.root = root
     # 设置与历史日志都写进临时目录：截图工具也不该碰用户真实数据、

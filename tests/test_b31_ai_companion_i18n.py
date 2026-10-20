@@ -60,7 +60,9 @@ class TestBilingualBase(unittest.TestCase):
         self.assertEqual(i18n.translate_text("不是界面文案"), "不是界面文案")
 
     def test_t_falls_back_safely(self):
-        self.assertIn("WinMon", i18n.t("app.title", ver="1.0"))
+        title = i18n.t("app.title", ver="1.0")
+        self.assertEqual(title, "winmon1.0")
+        self.assertNotIn("WinMon", title)
         self.assertEqual(i18n.t("no.such.key"), "no.such.key")
         self.assertEqual(i18n.pick("中文", "English"), "中文")
 

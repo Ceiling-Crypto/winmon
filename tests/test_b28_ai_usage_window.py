@@ -59,12 +59,22 @@ class TestAiUsageWindow(unittest.TestCase):
         win = self.winmon._AiUsagePanel(host, self.app)
         self.assertIn("当前", win.state_text.get())
         win.refresh()
-        text = win.body.get("1.0", "end")
-        self.assertIn("预算", text)
-        self.assertIn("当前识别", text)
-        self.assertIn("智谱清言", text, "打开设置就必须看见现在识别到的 AI")
-        self.assertIn("真实", text)
-        self.assertIn("估算", text)
+        self.assertIn("预算", win.budget_text.get())
+        self.assertIn("智谱清言", win.ai_name_text.get())
+        labels = []
+
+        def walk(widget):
+            yield widget
+            for child in widget.winfo_children():
+                yield from walk(child)
+
+        for widget in walk(win.frame):
+            try:
+                labels.append(str(widget.cget("text")))
+            except Exception:
+                pass
+        for title in ("真实 API", "精确分词", "估算"):
+            self.assertIn(title, labels)
         win.toggle_pause()
         self.assertTrue(win.budget.status().get("paused"))
         win.toggle_pause()

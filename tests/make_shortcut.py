@@ -22,8 +22,10 @@ sys.stdout.reconfigure(encoding="utf-8")
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CNW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
-APP_NAME = "WinMon"
-DESKTOP_NAME = "WinMon 程序监控.lnk"
+APP_NAME = "winmon1.0"
+DESKTOP_NAME = f"{APP_NAME}.lnk"
+#: 旧名称的快捷方式：改名后顺手清掉，避免桌面上并排两个图标。
+LEGACY_NAMES = ("WinMon 程序监控.lnk",)
 PY = sys.executable
 PYW = os.path.join(os.path.dirname(PY), "pythonw.exe")
 SCRIPT = os.path.join(ROOT, "winmon.py")
@@ -60,9 +62,14 @@ def main():
     print(f"图标     : {ICON}（存在={os.path.exists(ICON)}）")
 
     if "--remove" in argv:
-        if os.path.exists(lnk):
-            os.remove(lnk)
-            print("\n已删除桌面快捷方式")
+        removed = []
+        for name in (DESKTOP_NAME,) + LEGACY_NAMES:
+            path = os.path.join(desktop, name)
+            if os.path.exists(path):
+                os.remove(path)
+                removed.append(name)
+        if removed:
+            print("\n已删除桌面快捷方式：" + "、".join(removed))
         else:
             print("\n桌面没有该快捷方式")
         return 0
@@ -94,7 +101,7 @@ def main():
         f"$sc.Arguments = '\"{SCRIPT}\"'; "
         f"$sc.WorkingDirectory = '{ROOT}'; "
         f"$sc.IconLocation = '{ICON},0'; "
-        f"$sc.Description = 'WinMon'; "
+        f"$sc.Description = '{APP_NAME}'; "
         f"$sc.WindowStyle = 1; "
         f"$sc.Save(); "
         f"Write-Output 'saved'"
@@ -103,6 +110,15 @@ def main():
     if code != 0 or not os.path.exists(lnk):
         print(f"\n[失败] 创建快捷方式失败（ps 退出码 {code}）\n{err[-500:]}")
         return 3
+    # 旧名字的快捷方式只清项目自己创建的那几个固定名字，不扫桌面。
+    for legacy in LEGACY_NAMES:
+        old = os.path.join(desktop, legacy)
+        if os.path.exists(old):
+            try:
+                os.remove(old)
+                print(f"  已清理旧快捷方式：{legacy}")
+            except OSError as exc:
+                print(f"  [注意] 旧快捷方式没删掉：{legacy}（{exc}）")
     print("\n[成功] 已在桌面创建快捷方式")
     print(f"  目标   : {target}")
     print(f"  参数   : \"{SCRIPT}\"")

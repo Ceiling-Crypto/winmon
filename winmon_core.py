@@ -4124,7 +4124,7 @@ class TrayMessageWindow:
     def _menu(self) -> int:
         try:
             hmenu = user32.CreatePopupMenu()
-            user32.AppendMenuW(hmenu, 0x0000, IDM_TRAY_SHOW, "显示 WinMon")
+            user32.AppendMenuW(hmenu, 0x0000, IDM_TRAY_SHOW, "显示 winmon1.0")
             user32.AppendMenuW(hmenu, 0x0000, IDM_TRAY_SETTINGS, "设置…")
             user32.AppendMenuW(hmenu, 0x0800, 0, None)          # MF_SEPARATOR
             user32.AppendMenuW(hmenu, 0x0000, IDM_TRAY_EXIT, "退出")
@@ -4189,14 +4189,14 @@ class TrayIcon:
     不值得为它破"只用标准库"这条规矩。
 
     用法（必须在**有消息循环的线程**里创建）：
-        tray = TrayIcon(hwnd, icon_path, "WinMon")
+        tray = TrayIcon(hwnd, icon_path, "winmon1.0")
         tray.add()
         ... 菜单由 TrayMessageWindow 接管（它知道该弹哪几项）...
         tray.notify("标题", "正文")      # 可选的托盘气泡
         tray.remove()
     """
 
-    def __init__(self, hwnd: int, icon_path: str = "", tip: str = "WinMon",
+    def __init__(self, hwnd: int, icon_path: str = "", tip: str = "winmon1.0",
                  uid: int = 1) -> None:
         self.hwnd = int(hwnd)
         self.uid = int(uid)
@@ -4251,7 +4251,7 @@ class TrayIcon:
         self.ok = True
         return True, "已放入托盘（双击图标恢复窗口，右键出菜单）"
 
-    def notify(self, title: str = "WinMon", text: str = "", severity: str = "info",
+    def notify(self, title: str = "winmon1.0", text: str = "", severity: str = "info",
                timeout_ms: int = 5000) -> bool:
         """
         弹一条托盘气泡（Win10/11 上是"通知"）。
@@ -4269,7 +4269,7 @@ class TrayIcon:
             nid.uID = self.uid
             nid.uFlags = NIF_INFO
             nid.szInfo = (text or "")[:255]
-            nid.szInfoTitle = (title or "WinMon")[:63]
+            nid.szInfoTitle = (title or "winmon1.0")[:63]
             nid.dwInfoFlags = {"warn": NIIF_WARNING, "error": NIIF_ERROR}.get(
                 severity, NIIF_INFO)
             nid.uTimeoutOrVersion = max(1000, min(30000, int(timeout_ms)))
@@ -5731,10 +5731,10 @@ def sample_cpu_percent(pids, seconds: float = 1.0) -> dict[int, float]:
     return out
 
 
-#: 自己人：WinMon 主窗口的标题前缀（`WinMon 1.0`）。
+#: 自己人：winmon1.0 主窗口的标题前缀（`winmon1.0`）。
 #: 要排掉"自己"的地方不能只比 pid：**同一个程序可能开着不止一个实例**
 #: （界面在跑、命令行又在判定；或者用户就开了两个），那些实例的 pid 当然不等于本进程。
-WINMON_TITLE_PREFIX = "WinMon"
+WINMON_TITLE_PREFIX = "winmon1.0"
 
 
 def is_own_window(title: str, pid: int = 0, mine: int = 0) -> bool:

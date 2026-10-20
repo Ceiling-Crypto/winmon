@@ -1,6 +1,6 @@
 @echo off
 rem ===================================================================
-rem  WinMon - Desktop program live monitor and terminator (launcher)
+rem  winmon1.0 - Desktop program live monitor and terminator (launcher)
 rem  All Chinese UI text lives inside winmon.py / README.md
 rem ===================================================================
 setlocal
@@ -41,10 +41,10 @@ if "%~1"=="--test" goto selftest
 :menu
 cls
 echo ==========================================================
-echo    WinMon - Desktop program live monitor / terminator
+echo    winmon1.0 - Desktop program live monitor / terminator
 echo ==========================================================
 echo.
-echo     [1] Start WinMon        (open the GUI)
+echo     [1] Start winmon1.0    (open the GUI)
 echo     [2] Run self-test       (check capture + terminate)
 echo     [3] Open README         (usage instructions)
 echo     [4] Exit
