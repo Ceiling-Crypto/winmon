@@ -14,8 +14,7 @@ WinMon —— Windows 桌面工具（图形界面 + 命令行）
 7. AI 工作伴侣：识别当前 AI、用量预算、MCP / API / 纯本地
 8. 操作历史：谁在什么时候被关闭/结束了，可复制、可导出
 9. 前台窗口实时高亮、置顶窗口标记、程序图标、隐藏窗口过滤
-10. 界面颜色有 10 套设计主题（钴蓝电青 / 霓虹粉青 / 石墨信号 / 青柠白昼 /
-    晴日天绿 / 暖阳橙绿 / 落日珊瑚 / 云白天蓝 / 山雪梅染 / Edge 深色）；
+10. 界面颜色有 6 套设计主题（钴蓝 / 霓虹 / 石墨 / 青柠 / 山雪 / 深色）；
     字号 9–12
 
 命令行
@@ -178,10 +177,10 @@ UI_OPACITY_MIN = 45
 UI_OPACITY_MAX = 100
 UI_OPACITY = UI_OPACITY_DEFAULT
 
-# ---- 界面颜色（10 套设计主题）----
+# ---- 界面颜色（6 套设计主题）----
 #
-# 2026-10-21 用户决议：删掉旧的“普通白底 / 深色黑底”两套，改用从塞壬唱片
-# 专辑封面提炼、并由用户挑选的浅色设计主题；2026-10-22 增加 Edge 深色。颜色只换语义槽位，不碰按键的
+# 2026-10-21 用户决议：删掉旧的“普通白底 / 深色黑底”两套，改用设计主题；
+# 2026-10-22 保留钴蓝/霓虹/石墨/青柠/山雪/深色六套。颜色只换语义槽位，不碰按键的
 # 果冻回弹、圆角、阴影等结构——那些是交互设计，不是颜色。
 #
 # 2026-10-22 第四轮：删除所有整块彩色“高亮卡”，卡片统一回到 surface + 1px
@@ -192,18 +191,15 @@ SWITCH_ON_DARK = "#4C8DFF"
 
 # 每套主题只描述“页面 / 面 / 字 / 主色 / 次色 / 危险色”，其余槽位由
 # `_build_palette()` 统一推导，保证各主题的卡片、状态、按钮语义一致。
-THEME_DEFAULT = "sunlit"
+THEME_DEFAULT = "cobalt"
 THEME_PREFERENCE = THEME_DEFAULT
 THEME_RESOLVED = THEME_DEFAULT
-THEME_ORDER = (
-    "cobalt", "neon", "graphite", "lime", "sunlit",
-    "amber", "coral", "cloud", "snow", "edge_dark",
-)
+THEME_ORDER = ("cobalt", "neon", "graphite", "lime", "snow", "edge_dark")
 
-#: 名字是“设计名”，不再把专辑名当主题名。
+#: 主题名统一为两个字（中文）；英文保持单词，避免设置下拉过宽。
 _THEME_SPECS = {
     "cobalt": dict(
-        zh="钴蓝电青", en="Cobalt Current",
+        zh="钴蓝", en="Cobalt",
         page="#F3F8FE", surface="#FFFFFF", alt="#E8F2FC",
         ink="#0B1B2B", muted="#5C7085", line="#D7E8F7",
         accent="#064ED0", accent_dark="#043FA8", on_accent="#FFFFFF",
@@ -211,7 +207,7 @@ _THEME_SPECS = {
         danger="#A33A2A", on_danger="#FFFFFF",
     ),
     "neon": dict(
-        zh="霓虹粉青", en="Neon Pink",
+        zh="霓虹", en="Neon",
         page="#FFF6FA", surface="#FFFFFF", alt="#FBE9F1",
         ink="#24151D", muted="#7A6570", line="#F0DCE5",
         accent="#C9256A", accent_dark="#A81C56", on_accent="#FFFFFF",
@@ -219,7 +215,7 @@ _THEME_SPECS = {
         danger="#A33A2A", on_danger="#FFFFFF",
     ),
     "graphite": dict(
-        zh="石墨信号", en="Graphite Signal",
+        zh="石墨", en="Graphite",
         page="#F2F4F6", surface="#FFFFFF", alt="#E7EBEF",
         ink="#161A20", muted="#5D6B70", line="#D8DEE6",
         accent="#B3261E", accent_dark="#8E1A14", on_accent="#FFFFFF",
@@ -227,58 +223,24 @@ _THEME_SPECS = {
         danger="#8E1A14", on_danger="#FFFFFF",
     ),
     "lime": dict(
-        zh="青柠白昼", en="Lime Noon",
+        zh="青柠", en="Lime",
         page="#FBFDF7", surface="#FFFFFF", alt="#F2F8E9",
         ink="#1B281D", muted="#657463", line="#E0EAD6",
         accent="#A8C400", accent_dark="#8AA000", on_accent="#1B281D",
         secondary="#72B3F3", on_secondary="#1B281D",
         danger="#A33A2A", on_danger="#FFFFFF",
     ),
-    "sunlit": dict(
-        zh="晴日天绿", en="Sunlit Verdant",
-        page="#FAFDF6", surface="#FFFFFF", alt="#EFF7E6",
-        ink="#1B2A1F", muted="#61705F", line="#DFEAD5",
-        accent="#2F7F55", accent_dark="#236542", on_accent="#FFFFFF",
-        secondary="#B7D400", on_secondary="#1B2A1F",
-        danger="#A33A2A", on_danger="#FFFFFF",
-    ),
-    "amber": dict(
-        zh="暖阳橙绿", en="Amber Meadow",
-        page="#FBF7EC", surface="#FFFFFF", alt="#F5EDDE",
-        ink="#2A2217", muted="#776A56", line="#E8DCC6",
-        accent="#B05A1C", accent_dark="#8F4512", on_accent="#FFFFFF",
-        secondary="#B7D400", on_secondary="#2A2217",
-        danger="#A33A2A", on_danger="#FFFFFF",
-    ),
-    "coral": dict(
-        zh="落日珊瑚", en="Sunset Coral",
-        page="#FBF2EE", surface="#FFFFFF", alt="#F6E5E0",
-        ink="#2A1A20", muted="#78616A", line="#EAD7D3",
-        accent="#C2553F", accent_dark="#A33A2A", on_accent="#FFFFFF",
-        secondary="#E8B23A", on_secondary="#2A1A20",
-        danger="#A33A2A", on_danger="#FFFFFF",
-    ),
-    "cloud": dict(
-        zh="云白天蓝", en="Cloud & Sky",
-        page="#FBFDFE", surface="#FFFFFF", alt="#EDF6FB",
-        ink="#142027", muted="#5F7380", line="#D7E7F1",
-        accent="#1F6FAE", accent_dark="#155A8F", on_accent="#FFFFFF",
-        secondary="#8CC9E8", on_secondary="#142027",
-        danger="#A33A2E", on_danger="#FFFFFF",
-    ),
     "snow": dict(
-        zh="山雪梅染", en="Snow & Plum Dye",
+        zh="山雪", en="Snow",
         page="#F5F6F2", surface="#FFFFFF", alt="#E9EDE7",
         ink="#1B2525", muted="#626D6A", line="#D9E0DA",
         accent="#A83A3F", accent_dark="#8E2F34", on_accent="#FFFFFF",
         secondary="#5E7A6D", on_secondary="#FFFFFF",
         danger="#8E2F34", on_danger="#FFFFFF",
     ),
-    #: 2026-10-22：按 Edge 当前深色模式取色（页面 #202124 / 面 #292A2D /
-    #: 正文 #E8EAED / 强调 #2F6FCC）。它不是“把浅色反相”，所有卡片、
-    #: 状态条和 key 卡都有各自的可读前景色，见 `_build_palette()`。
+    #: 按 Edge 深色模式取色；唯一深色主题，中文名统一为「深色」。
     "edge_dark": dict(
-        zh="Edge 深色", en="Edge Dark",
+        zh="深色", en="Dark",
         page="#202124", surface="#292A2D", alt="#35363A",
         ink="#E8EAED", muted="#9AA0A6", line="#3C4043",
         accent="#2F6FCC", accent_dark="#255BA8", on_accent="#FFFFFF",
@@ -320,7 +282,7 @@ def _build_palette(spec: dict) -> dict:
 
     2026-10-22 第四轮起，媒体/AI/MCP/KEY/工作区/行为/主动搭子不再各混一块
     淡色底：它们统一用当前主题的 surface + line，只保留标题/小徽标/状态点的
-    语义色。这样 10 套主题只需要维护一组中性卡，不再逐张适配。
+    语义色。这样 6 套主题只需要维护一组中性卡，不再逐张适配。
     """
     page = spec["page"]
     surface = spec["surface"]
@@ -351,7 +313,7 @@ def _build_palette(spec: dict) -> dict:
     warn_fg = "#F5C26B" if dark else "#6E4308"
     warn_border = _blend_hex(surface, "#B7791F", 0.45 if dark else 0.34)
     #: 所有栏目卡共用同一块中性 surface；不同栏目只靠标题/小徽标/状态点区分。
-    #: 不再从主色/次色混出整块淡色底——那套卡在 10 套主题 + DPI 下太难逐张适配。
+    #: 不再从主色/次色混出整块淡色底——那套卡在 6 套主题 + DPI 下太难逐张适配。
     neutral = {"bg": surface, "fg": ink, "muted": muted, "border": line}
     return {
         "UI_BG": page,
@@ -374,9 +336,6 @@ def _build_palette(spec: dict) -> dict:
         "UI_PURPLE": "#C4B1FF" if dark else "#5E4699",
         "UI_HEADING": _blend_hex(ink, surface, 0.30),
         "UI_PLACEHOLDER": muted,
-        "UI_MEDIA_BTN_BG": accent,
-        "UI_MEDIA_BTN_FG": on_accent,
-        "UI_MEDIA_BTN_ACTIVE": accent_dark,
         "UI_CARDS": {
             "media": dict(neutral, tag_bg=accent, tag_fg=on_accent),
             "ai": dict(neutral, tag_bg=secondary, tag_fg=on_secondary,
@@ -404,10 +363,9 @@ _THEME_PALETTES = {key: _build_palette(spec)
 
 def normalize_theme_mode(mode) -> str:
     """
-    只认当前设计主题；旧 light/auto/system 回到默认，旧 dark 回到 Edge 深色。
-
-    2026-10-22 用户要求补一套 Edge 深色，所以旧的 `dark` 不再一律丢回
-    浅色默认：它能映射到真正可读的深色色板；坏值仍安全回到晴日天绿。
+    只认当前 6 套设计主题；旧 light/auto/system 回到默认（钴蓝），旧 dark
+    映射到「深色」。8.26 删掉的晴日天绿 / 暖阳橙绿 / 落日珊瑚 / 云白天蓝
+    不再保留色板，旧设置值安全回默认。
     """
     value = str(mode or "").strip().lower()
     aliases = {"normal": THEME_DEFAULT, "white": THEME_DEFAULT,
@@ -469,7 +427,7 @@ def set_dark_title_bar(widget, dark: bool | None = None) -> None:
     """
     让 Windows 原生标题栏跟随应用深浅色（Win10 1809+ / Win11）。
 
-    10 套设计主题里有 9 套浅色、1 套 Edge 深色，标题栏按页面亮度自动
+    6 套设计主题里有 5 套浅色、1 套「深色」，标题栏按页面亮度自动
     走浅色或深色；显式传 dark 的调用仍尊重参数。DWM 属性号旧版是 19、
     新版是 20，两个都试，失败就静默保持系统默认。
 
@@ -833,8 +791,7 @@ def apply_font_size_live(root, size) -> None:
         style.configure("TNotebook.Tab", font=UI_FONT, padding=(14, 6))
         for name in ("TButton", "TLabel", "TEntry", "TCombobox", "TCheckbutton",
                      "TRadiobutton", "TMenubutton", "TLabelframe.Label",
-                     "GreenCard.TCheckbutton", "PurpleCard.TCheckbutton",
-                     "MediaCard.TCheckbutton"):
+                     "GreenCard.TCheckbutton", "PurpleCard.TCheckbutton"):
             style.configure(name, font=UI_FONT)
     except Exception:
         pass
@@ -1484,8 +1441,8 @@ class RoundedButton(tk.Canvas):
                  width: int | None = None, height: int | None = None,
                  radius: int = 15, font=None, padx: int = 12,
                  anchor: str = "center", style: str = "", lead: str = "",
-                 shadow_room: int = 3, icon: str = "", ring: bool = False,
-                 bare: bool = False, tip=None, **kw) -> None:
+                 shadow_room: int = 3, icon: str = "", bare: bool = False,
+                 tip=None, **kw) -> None:
         self._text = str(text)
         self._command = command
         self._kind = str(kind or "secondary")
@@ -1497,8 +1454,6 @@ class RoundedButton(tk.Canvas):
         self._lead = str(lead or "")
         #: 可选矢量图标（目前只有 "gear"）：常见齿轮样式，不依赖字体里有没有 ⚙。
         self._icon = str(icon or "")
-        #: 静默的强调色描边：给“暂停刷新 / 移除总览”这类小按钮一圈透明边框。
-        self._ring = bool(ring)
         #: 裸按钮：静止时与页面同色，只在 hover/pressed 时浮出一层非常轻的底色。
         #: 媒体键、暂停刷新、移除总览用它，避免一圈常驻边框把界面切碎。
         self._bare = bool(bare)
@@ -1666,13 +1621,6 @@ class RoundedButton(tk.Canvas):
             self._lead = self._lead or UI_ON_ACCENT
             self._disabled_fill = UI_SURFACE_ALT
             self._shadow_tint = UI_ACCENT
-        elif kind == "media":
-            self._fill = UI_MEDIA_BTN_BG
-            self._hover_fill = mix_color(UI_MEDIA_BTN_BG, "#ffffff", 0.08)
-            self._pressed_fill = UI_MEDIA_BTN_ACTIVE
-            self._fg = UI_MEDIA_BTN_FG
-            self._disabled_fill = UI_LINE
-            self._shadow_tint = UI_MEDIA_BTN_BG
         elif kind == "rail":
             if light_bg:
                 self._fill = mix_color(self._bg, "#ffffff", 0.92)
@@ -1827,16 +1775,6 @@ class RoundedButton(tk.Canvas):
                 self._rounded_points(x1, y1, x2, y2, r),
                 smooth=True, splinesteps=28, fill=fill,
                 outline=rim, width=1, tags=("jelly-body",))
-            if self._ring and not disabled and not self._bare:
-                # 低透明强调色外环：不是焦点虚线，也不参与点击/焦点状态。
-                ring_color = mix_color(self._bg, UI_ACCENT, 0.52)
-                self.create_polygon(
-                    RoundedButton._rounded_points(
-                        self, max(0.6, x1 - 1.6), max(0.6, y1 - 1.1),
-                        min(width - 0.6, x2 + 1.6), min(height - 0.6, y2 + 1.1),
-                        r + 1.6),
-                    smooth=True, splinesteps=24, fill="",
-                    outline=ring_color, width=1.6, tags=("jelly-ring",))
             # 顶部高光 / 底部内阴影：各一条细线，薄而有弹性，不压成厚塑料块。
             if x2 - x1 > 12 and y2 - y1 > 8 and not self._bare:
                 self.create_line(
@@ -2970,7 +2908,8 @@ class SearchField(tk.Canvas):
             self.create_polygon(
                 RoundedButton._rounded_points(self, 1, 1, w - 1, h - 1, radius),
                 smooth=True, splinesteps=26, fill=self._fill,
-                outline=self._line, width=1)
+                outline=UI_ACCENT if self._focused else self._line,
+                width=1.5 if self._focused else 1)
             cy = h / 2.0 - 1
             self.create_oval(12, cy - 6, 23, cy + 5,
                              outline=UI_MUTED, width=1.5)
@@ -2991,6 +2930,373 @@ class SearchField(tk.Canvas):
                 self._placeholder_label.place_forget()
         except Exception:
             pass
+
+
+class CapsuleCombo(tk.Canvas):
+    """
+    设置里的胶囊下拉：圆角输入面 + 圆角选项浮层，完全自绘。
+
+    为什么不用 `ttk.Combobox`：clam 的下拉面/选项都是直角，且系统弹出的
+    Listbox 不受 Tk 主题控制。设置页从这一版开始统一用胶囊：面是 30px 高的
+    圆角条，选项是一枚枚圆角胶囊；打开时不抢主窗口焦点，选完自动还焦点。
+    """
+
+    def __init__(self, parent, textvariable, values, *, width: int = 18,
+                 font=None, state: str = "readonly", bg: str | None = None,
+                 command=None, height: int = 30) -> None:
+        self._var = textvariable
+        self._values = [str(value) for value in values]
+        self._font = font or UI_FONT
+        self._font_obj = tkfont.Font(root=parent, font=self._font)
+        self._state = str(state or "readonly")
+        self._command = command
+        self._bg = bg if bg is not None else _container_bg(parent)
+        self._h = max(28, int(height))
+        self._hover = False
+        self._focused = False
+        self._open = False
+        self._popup: tk.Toplevel | None = None
+        self._pop_canvas: tk.Canvas | None = None
+        self._hover_row = -1
+        self._selected_row = -1
+        self._row_h = max(28, self._font_obj.metrics("linespace") + 10)
+        self._w = max(
+            max(90, int(width) * max(7, self._font_obj.measure("0")) + 44),
+            max((self._font_obj.measure(v) for v in self._values), default=0) + 48)
+        super().__init__(parent, width=self._w, height=self._h,
+                         bg=self._bg, bd=0, highlightthickness=0,
+                         takefocus=1, cursor="hand2")
+        self._trace = self._var.trace_add("write", self._on_var)
+        self.bind("<Configure>", lambda _e: self._draw(), add="+")
+        self.bind("<Button-1>", self._on_click, add="+")
+        self.bind("<Enter>", lambda _e: self._set_hover(True), add="+")
+        self.bind("<Leave>", lambda _e: self._set_hover(False), add="+")
+        self.bind("<FocusIn>", lambda _e: self._set_focus(True), add="+")
+        self.bind("<FocusOut>", lambda _e: self._set_focus(False), add="+")
+        self.bind("<Down>", lambda _e: self._open_popup(), add="+")
+        self.bind("<Return>", lambda _e: self._open_popup(), add="+")
+        self.bind("<space>", lambda _e: self._open_popup(), add="+")
+        self.bind("<Escape>", lambda _e: self._close_popup(), add="+")
+        self.bind("<Destroy>", self._on_destroy, add="+")
+        self._draw()
+
+    def winfo_class(self):
+        # 语义上仍是下拉框；设置布局/测试按 TCombobox 识别。
+        return "TCombobox"
+
+    def cget(self, key):
+        key = str(key)
+        if key == "values":
+            return tuple(self._values)
+        if key == "width":
+            return self._w
+        if key == "state":
+            return self._state
+        if key == "textvariable":
+            return str(self._var)
+        return super().cget(key)
+
+    def configure(self, cnf=None, **kw):
+        values = kw.pop("values", None)
+        width = kw.pop("width", None)
+        state = kw.pop("state", None)
+        if values is not None:
+            self._values = [str(value) for value in values]
+            self._w = max(self._w, max(
+                (self._font_obj.measure(v) for v in self._values),
+                default=0) + 48)
+            self.configure(width=self._w)
+        if width is not None:
+            self._w = max(90, int(width) * max(7, self._font_obj.measure("0")) + 44)
+            super().configure(width=self._w)
+        if state is not None:
+            self._state = str(state)
+            self.configure(cursor="arrow" if self._state == "disabled"
+                           else "hand2")
+        if cnf is not None:
+            return super().configure(cnf, **kw)
+        result = super().configure(**kw)
+        self._draw()
+        return result
+
+    def _natural_text(self) -> str:
+        try:
+            text = str(self._var.get())
+        except Exception:
+            text = ""
+        return text
+
+    def _display_text(self, available: int) -> str:
+        text = self._natural_text()
+        if not text:
+            return ""
+        try:
+            if self._font_obj.measure(text) <= available:
+                return text
+            while text and self._font_obj.measure(text + "…") > available:
+                text = text[:-1]
+            return text + "…" if text else "…"
+        except Exception:
+            return text
+
+    def _set_hover(self, hover: bool) -> None:
+        self._hover = bool(hover)
+        self._draw()
+
+    def _set_focus(self, focused: bool) -> None:
+        self._focused = bool(focused)
+        self._draw()
+
+    def _on_click(self, _event=None) -> None:
+        if self._state == "disabled":
+            return
+        self.focus_set()
+        if self._open:
+            self._close_popup()
+        else:
+            self._open_popup()
+
+    def _on_var(self, *_args) -> None:
+        try:
+            if self.winfo_exists():
+                self._draw()
+        except Exception:
+            pass
+
+    def _draw(self) -> None:
+        try:
+            if not self.winfo_exists():
+                return
+            w = max(2, int(self.winfo_width() or self._w))
+            h = max(2, int(self.winfo_height() or self._h))
+            self.delete("all")
+            disabled = self._state == "disabled"
+            fill = UI_HOVER_BG if self._hover and not disabled else UI_SURFACE_ALT
+            if disabled:
+                fill = mix_color(self._bg, UI_LINE, 0.45)
+            outline = UI_ACCENT if (self._focused or self._open) and not disabled \
+                else UI_LINE
+            radius = h / 2.0 - 0.5
+            self.create_polygon(
+                RoundedButton._rounded_points(self, 1, 1, w - 1, h - 1, radius),
+                smooth=True, splinesteps=26, fill=fill,
+                outline=outline, width=1.5 if self._focused or self._open else 1,
+                tags=("combo-body",))
+            if w > 24:
+                self.create_line(
+                    9, 1.6, w - 9, 1.6,
+                    fill=mix_color(fill, "#ffffff",
+                                   0.42 if color_luminance(fill) > 0.45 else 0.14),
+                    width=1, tags=("combo-highlight",))
+            fg = UI_MUTED if disabled else UI_INK
+            text = self._display_text(max(24, int(w - 40)))
+            self.create_text(12, h / 2.0, anchor="w", text=text,
+                             font=self._font, fill=fg, tags=("combo-text",))
+            cx, cy = w - 17, h / 2.0 - 1
+            self.create_line(cx - 4, cy - 2, cx, cy + 3, cx + 4, cy - 2,
+                             fill=fg, width=1.6, capstyle="round",
+                             joinstyle="round", tags=("combo-arrow",))
+        except Exception:
+            pass
+
+    def _index_of_value(self) -> int:
+        text = self._natural_text()
+        try:
+            return self._values.index(text)
+        except ValueError:
+            return -1
+
+    def _open_popup(self) -> None:
+        if self._state == "disabled" or self._open:
+            return
+        try:
+            self.update_idletasks()
+            width = max(int(self.winfo_width()), max(
+                (self._font_obj.measure(v) for v in self._values),
+                default=0) + 48, 150)
+            height = len(self._values) * self._row_h + 12
+            pop = tk.Toplevel(self)
+            pop.overrideredirect(True)
+            pop.attributes("-topmost", True)
+            pop.configure(bg=UI_BG)
+            canvas = tk.Canvas(pop, width=width, height=height, bg=UI_BG,
+                               bd=0, highlightthickness=0, takefocus=1,
+                               cursor="hand2")
+            canvas.pack(fill="both", expand=True)
+            self._popup = pop
+            self._pop_canvas = canvas
+            self._hover_row = -1
+            self._selected_row = self._index_of_value()
+            self._row_h = max(28, self._font_obj.metrics("linespace") + 10)
+            x = self.winfo_rootx()
+            y = self.winfo_rooty() + self.winfo_height() + 3
+            sw, sh = pop.winfo_screenwidth(), pop.winfo_screenheight()
+            x = max(4, min(int(x), sw - width - 4))
+            y = max(4, min(int(y), sh - height - 4))
+            pop.geometry(f"{int(width)}x{int(height)}+{x}+{y}")
+            canvas.bind("<Button-1>", self._on_popup_click, add="+")
+            canvas.bind("<Motion>", self._on_popup_motion, add="+")
+            canvas.bind("<Leave>", lambda _e: self._set_popup_hover(-1), add="+")
+            canvas.bind("<Escape>", lambda _e: self._close_popup(), add="+")
+            canvas.bind("<Up>", lambda _e: self._move_popup(-1), add="+")
+            canvas.bind("<Down>", lambda _e: self._move_popup(1), add="+")
+            canvas.bind("<Return>", lambda _e: self._choose_popup(), add="+")
+            canvas.bind("<KP_Enter>", lambda _e: self._choose_popup(), add="+")
+            #: 不在 FocusOut 上立刻关闭：`focus_force`/`canvas.focus_set` 期间
+            #: 会产生一次焦点迁移，过早关闭会让浮层刚建好就消失。关闭交给
+            #: 选择、Esc、点击浮层外（grab 生效时）或父窗口关闭。
+            self._draw_popup()
+            pop.deiconify()
+            pop.update_idletasks()
+            pop.lift()
+            try:
+                pop.grab_set()
+            except Exception:
+                # 设置窗口本身已经有 grab 时，部分 Tk 版本会拒绝嵌套 grab；
+                # 浮层仍然显示，靠 FocusOut/Escape/选择来关闭。
+                pass
+            try:
+                pop.focus_force()
+            except Exception:
+                pass
+            canvas.focus_set()
+            self._open = True
+            self._draw()
+        except Exception:
+            self._open = False
+            self._destroy_popup()
+
+    def _draw_popup(self) -> None:
+        canvas = self._pop_canvas
+        if canvas is None:
+            return
+        try:
+            width = int(canvas.winfo_width() or canvas.winfo_reqwidth())
+            height = int(canvas.winfo_height() or canvas.winfo_reqheight())
+            canvas.delete("all")
+            canvas.create_polygon(
+                RoundedButton._rounded_points(self, 1, 1, width - 1,
+                                              height - 1, 12),
+                smooth=True, splinesteps=24, fill=UI_SURFACE,
+                outline=UI_LINE, width=1, tags=("combo-pop",))
+            for index, value in enumerate(self._values):
+                y1 = 6 + index * self._row_h
+                y2 = y1 + self._row_h - 2
+                active = index in (self._hover_row, self._selected_row)
+                if active:
+                    fill = (UI_SELECT_BG if index == self._selected_row
+                            else UI_HOVER_BG)
+                    canvas.create_polygon(
+                        RoundedButton._rounded_points(
+                            self, 4, y1 + 1, width - 4, y2,
+                            min(10.0, (y2 - y1) / 2.0)),
+                        smooth=True, splinesteps=18, fill=fill, outline="")
+                canvas.create_text(
+                    16, (y1 + y2) / 2.0, anchor="w",
+                    text=self._display_value(value, width - 48),
+                    font=self._font, fill=UI_INK,
+                    tags=("combo-option",))
+        except Exception:
+            pass
+
+    def _display_value(self, text: str, available: int) -> str:
+        try:
+            if self._font_obj.measure(text) <= available:
+                return text
+            while text and self._font_obj.measure(text + "…") > available:
+                text = text[:-1]
+            return text + "…" if text else "…"
+        except Exception:
+            return text
+
+    def _set_popup_hover(self, row: int) -> None:
+        self._hover_row = row
+        self._draw_popup()
+
+    def _on_popup_motion(self, event) -> None:
+        row = int((event.y - 6) // self._row_h)
+        if not 0 <= row < len(self._values):
+            row = -1
+        if row != self._hover_row:
+            self._set_popup_hover(row)
+
+    def _on_popup_click(self, event) -> None:
+        row = int((event.y - 6) // self._row_h)
+        if not 0 <= row < len(self._values):
+            self._close_popup()
+            return
+        self._choose_row(row)
+
+    def _move_popup(self, delta: int) -> str:
+        if not self._values:
+            return "break"
+        current = self._selected_row
+        if current < 0:
+            current = 0
+        self._selected_row = max(0, min(len(self._values) - 1,
+                                        current + int(delta)))
+        self._hover_row = -1
+        self._draw_popup()
+        return "break"
+
+    def _choose_popup(self) -> str:
+        if 0 <= self._selected_row < len(self._values):
+            self._choose_row(self._selected_row)
+        return "break"
+
+    def _choose_row(self, row: int) -> None:
+        if not 0 <= row < len(self._values):
+            return
+        try:
+            self._var.set(self._values[row])
+        except Exception:
+            pass
+        self._close_popup()
+        if callable(self._command):
+            try:
+                self._command()
+            except Exception:
+                pass
+
+    def _close_popup(self) -> None:
+        self._open = False
+        self._destroy_popup()
+        try:
+            self.focus_set()
+        except Exception:
+            pass
+        self._draw()
+
+    def _destroy_popup(self) -> None:
+        pop = self._popup
+        self._popup = None
+        self._pop_canvas = None
+        if pop is not None:
+            try:
+                pop.grab_release()
+            except Exception:
+                pass
+            try:
+                pop.destroy()
+            except Exception:
+                pass
+
+    def _on_destroy(self, event=None) -> None:
+        if event is not None and getattr(event, "widget", None) is not self:
+            return
+        self._destroy_popup()
+        try:
+            self._var.trace_remove("write", self._trace)
+        except Exception:
+            pass
+
+    def _refresh_font(self) -> None:
+        self._font = UI_FONT
+        self._font_obj = tkfont.Font(root=self, font=self._font)
+        self._w = max(self._w, max(
+            (self._font_obj.measure(v) for v in self._values), default=0) + 48)
+        super().configure(width=self._w)
+        self._draw()
 
 
 # ============================================================================
@@ -3222,155 +3528,6 @@ class TabStrip(tk.Canvas):
 # ============================================================================
 # 二之三、高亮卡的拟光氛围（媒体播放时由淡到深）
 # ============================================================================
-
-class AmbientGlowFrame(SoftPanel):
-    """
-    带“拟光”边缘的圆角高亮卡容器（媒体栏）。
-
-    旧实现用三层 1px Frame 叠边，四个角始终是直角；现在背景改为 Canvas
-    绘制的圆角色带，内容仍是普通 Frame，媒体行的 Combobox / 按钮布局不受影响。
-    播放开始后外圈从底色过渡到强调色；暂停/停止慢慢退回，不闪烁。
-    """
-
-    def __init__(self, parent, card: dict, **kw) -> None:
-        self.card = dict(card or {})
-        self._base = self.card.get("bg") or UI_CARDS["media"]["bg"]
-        self._accent = (self.card.get("tag_bg")
-                        or self.card.get("border") or UI_ACCENT)
-        self._border = self.card.get("border") or UI_LINE
-        self._outer = self._base
-        self._level = 0.0
-        self._target = 0.0
-        self._anim_after = None
-        self._anim_start = 0.0
-        self._anim_from = 0.0
-        self._anim_to = 0.0
-        super().__init__(parent, self._base, radius=16, shadow=0, pad=7,
-                         border=self._border, **kw)
-        self._apply_level(0.0)
-
-    def cget(self, key):
-        # 测试/调用方把 `bg` 当作“当前最外圈光色”；实际容器底仍是父页面底色，
-        # 这样圆角之外才能透出页面，而不是四个白角。
-        if str(key) == "bg":
-            return self._outer
-        return super().cget(key)
-
-    @property
-    def intensity(self) -> float:
-        return float(self._level)
-
-    def _redraw(self) -> None:
-        """把 0–1 的光强画成外深内浅的三圈圆角色带。"""
-        try:
-            width = int(self.winfo_width())
-            height = int(self.winfo_height())
-            if width <= 2 or height <= 2:
-                return
-            self.canvas.delete("all")
-            t = self._level
-            rings = (
-                (0.0, self._outer),
-                (1.4, mix_color(self._base, self._accent, 0.24 * t)),
-                (2.8, mix_color(self._base, self._accent, 0.10 * t)),
-            )
-            for inset, color in rings:
-                x1, y1 = inset, inset
-                x2, y2 = width - inset, height - inset
-                rad = max(2.0, 16.0 - inset * 0.7)
-                self.canvas.create_polygon(
-                    self._rounded_points(x1, y1, x2, y2, rad),
-                    smooth=True, splinesteps=26, fill=color, outline="")
-            edge = mix_color(self._border, self._accent, 0.62 * t)
-            self.canvas.create_polygon(
-                self._rounded_points(4.2, 4.2, width - 4.2, height - 4.2,
-                                     13.0),
-                smooth=True, splinesteps=26, fill=self._base,
-                outline=edge, width=1)
-            if width > 24:
-                self.canvas.create_line(
-                    15, 5.2, width - 15, 5.2,
-                    fill=mix_color(self._base, "#ffffff",
-                                   0.45 if color_luminance(self._base) > 0.45
-                                   else 0.12),
-                    width=1)
-        except Exception:
-            pass
-
-    def _apply_level(self, level: float) -> None:
-        self._level = max(0.0, min(1.0, float(level)))
-        t = self._level
-        # t=0 时直接保留原色串（大小写也一致），避免“熄灭后底色变成另一个字符串”。
-        self._outer = (self._base if t <= 0.0
-                       else mix_color(self._base, self._accent, 0.43 * t))
-        self._redraw()
-
-    def set_active(self, active: bool, animate: bool = True) -> None:
-        """播放时点亮，暂停/停止时收回；重复调用相同目标不会重启动画。"""
-        self.set_level(1.0 if active else 0.0, animate=animate)
-
-    def set_level(self, level: float, animate: bool = True) -> None:
-        """
-        设置 0–1 的光强。
-
-        真实媒体会话“正在播放” = 1；“只有窗口标题能证明有歌名”（网易云这类
-        不发布会话的播放器）= 0.5，光更含蓄；暂停/没有媒体 = 0。
-        """
-        try:
-            target = max(0.0, min(1.0, float(level)))
-        except (TypeError, ValueError):
-            target = 0.0
-        if abs(target - self._target) < 0.01:
-            return
-        self._target = target
-        self._cancel_animation()
-        if not animate:
-            self._apply_level(target)
-            return
-        self._anim_from = self._level
-        self._anim_to = target
-        self._anim_start = time.perf_counter()
-        self._glow_tick()
-
-    def _cancel_animation(self) -> None:
-        if self._anim_after is not None:
-            try:
-                self.after_cancel(self._anim_after)
-            except Exception:
-                pass
-            self._anim_after = None
-
-    def _glow_tick(self) -> None:
-        self._anim_after = None
-        try:
-            if not self.winfo_exists():
-                return
-        except Exception:
-            return
-        span = 0.95 if self._anim_to > self._anim_from else 0.65
-        progress = min(1.0, max(0.0, (time.perf_counter() - self._anim_start)
-                               / span))
-        eased = 1.0 - (1.0 - progress) ** 3
-        self._apply_level(self._anim_from
-                          + (self._anim_to - self._anim_from) * eased)
-        if progress < 1.0:
-            try:
-                self._anim_after = self.after(33, self._glow_tick)
-            except Exception:
-                self._anim_after = None
-
-    # 不绑 `<Destroy>`：Tkinter 在销毁控件时会先 auto-delete 绑定命令，
-    # 再让 `Misc.destroy()` 遍历 `_tclCommands`，两者撞在一起会抛
-    # “can't delete Tcl command”，把 root.destroy 整个中断（实测）。
-    # 改在 `destroy()` 里先取消 after 定时器，时序可控。
-    def destroy(self) -> None:
-        self._cancel_animation()
-        _discard_widget_commands(self)
-        try:
-            super().destroy()
-        except tk.TclError:
-            pass
-
 
 # ============================================================================
 # 二之二、右键菜单（自绘 Toplevel，才能跟界面透明度一起变）
@@ -5695,10 +5852,10 @@ class _SettingsWindow:
         btns = tk.Frame(foot, bg=UI_BG)
         btns.pack(side="right")
         RoundedButton(btns, text="保存", kind="accent",
-                      height=32, radius=8, padx=18,
+                      height=32, radius=16, padx=18,
                       command=self._ok).pack(side="right")
         RoundedButton(btns, text="取消", kind="ghost",
-                      height=32, radius=8, padx=16,
+                      height=32, radius=16, padx=16,
                       command=self._cancel).pack(side="right", padx=(0, 8))
 
         # ---- Edge 式两栏：左导航 / 右内容 ----
@@ -5898,9 +6055,11 @@ class _SettingsWindow:
             startup=startup, first=first)
 
     def _combo(self, parent, variable, values, *, width: int = 18):
-        return ttk.Combobox(parent, textvariable=variable, state="readonly",
-                            width=width, font=UI_FONT,
-                            values=list(values))
+        # 设置页统一用自绘胶囊下拉；值仍是普通 StringVar，保存逻辑不变。
+        return CapsuleCombo(
+            parent, variable, list(values), width=width, font=UI_FONT,
+            state="readonly", bg=UI_SURFACE,
+            height=max(30, int(round(30 * getattr(self, "_scale", 1.0)))))
 
     # ---- 左侧导航 ----------------------------------------------------
 
@@ -5911,20 +6070,21 @@ class _SettingsWindow:
             "guide": i18n.pick("使用说明", "Guide"),
         }
         icons = {"general": "sliders", "ai": "spark", "guide": "info"}
+        nav_h = max(36, int(round(36 * self._scale)))
         for section in self._nav_order:
-            frame = tk.Frame(self._nav_holder, bg=UI_SURFACE, cursor="hand2")
+            frame = tk.Canvas(self._nav_holder, bg=UI_SURFACE,
+                              height=nav_h, bd=0, highlightthickness=0,
+                              cursor="hand2", takefocus=1)
             frame.pack(fill="x", padx=10, pady=1)
-            accent = tk.Frame(frame, bg=UI_SURFACE, width=3)
-            accent.pack(side="left", fill="y")
             icon = tk.Canvas(frame, width=18, height=18, bg=UI_SURFACE,
                              bd=0, highlightthickness=0, cursor="hand2")
-            icon.pack(side="left", padx=(9, 8), pady=9)
+            icon.place(x=13, y=max(0, (nav_h - 18) // 2))
             label = tk.Label(frame, text=labels[section], font=UI_FONT,
                              bg=UI_SURFACE, fg=UI_INK, anchor="w",
-                             cursor="hand2")
-            label.pack(side="left", fill="x", expand=True, pady=9)
-            item = {"frame": frame, "accent": accent, "icon": icon,
-                    "label": label, "kind": icons[section],
+                             cursor="hand2", bd=0, padx=0, pady=0)
+            label.place(x=40, y=0, width=200, height=nav_h)
+            item = {"frame": frame, "icon": icon, "label": label,
+                    "kind": icons[section], "fill": UI_SURFACE,
                     "keywords": {
                         "general": ("常规 主题 颜色 语言 字号 透明 窗口 列表 "
                                     "刷新 视频 闲置 启动 关闭 维护 历史 清理"),
@@ -5932,7 +6092,34 @@ class _SettingsWindow:
                         "guide": "使用说明 帮助 快捷键 媒体 隐私",
                     }[section]}
             self._nav_items[section] = item
-            for widget in (frame, accent, icon, label):
+
+            def _resize(event, it=item):
+                width = max(20, int(event.width) - 52)
+                try:
+                    it["label"].place_configure(width=width)
+                    it["_draw"]()
+                except Exception:
+                    pass
+
+            def _draw(it=item):
+                canvas = it["frame"]
+                try:
+                    canvas.delete("nav-bg")
+                    width = max(2, int(canvas.winfo_width()))
+                    height = max(2, int(canvas.winfo_height()))
+                    radius = max(4.0, height / 2.0 - 2.0)
+                    canvas.create_polygon(
+                        RoundedButton._rounded_points(
+                            canvas, 2, 2, width - 2, height - 2, radius),
+                        smooth=True, splinesteps=24, fill=it["fill"],
+                        outline="", tags=("nav-bg",))
+                    canvas.tag_lower("nav-bg")
+                except Exception:
+                    pass
+
+            item["_draw"] = _draw
+            frame.bind("<Configure>", _resize, add="+")
+            for widget in (frame, icon, label):
                 widget.bind("<Button-1>",
                             lambda _e, s=section: self.select(s), add="+")
                 widget.bind("<Enter>",
@@ -5973,14 +6160,13 @@ class _SettingsWindow:
         item = getattr(self, "_nav_items", {}).get(section)
         if not item:
             return
-        bg = UI_SELECT_BG if selected else (UI_HOVER_BG if hover else UI_SURFACE)
-        fg = UI_INK
+        fill = UI_SELECT_BG if selected else (UI_HOVER_BG if hover else UI_SURFACE)
         try:
-            item["frame"].configure(bg=bg)
-            item["accent"].configure(bg=UI_ACCENT if selected
-                                     else (UI_HOVER_BG if hover else UI_SURFACE))
-            item["icon"].configure(bg=bg)
-            item["label"].configure(bg=bg, fg=fg)
+            item["fill"] = fill
+            item["frame"].configure(bg=UI_SURFACE)
+            item["icon"].configure(bg=fill)
+            item["label"].configure(bg=fill, fg=UI_INK)
+            item["_draw"]()
             self._draw_nav_icon(item["icon"], item["kind"],
                                 UI_ACCENT if selected else UI_MUTED)
         except Exception:
@@ -6158,7 +6344,7 @@ class _SettingsWindow:
                      bg=UI_SURFACE, fg=UI_ACCENT, anchor="e", width=5).pack(
                 side="left", padx=(8, 6))
             RoundedButton(box, text="重置", kind="ghost", bg=UI_SURFACE,
-                          height=28, radius=7, padx=11,
+                          height=28, radius=14, padx=11,
                           command=lambda: self._set_opacity_value(UI_OPACITY_MAX)
                           ).pack(side="left")
             return box
@@ -7928,10 +8114,9 @@ _GUIDE_CONTENT = {
                   "请求关闭是发关闭消息，程序可以先保存再退出；强制结束是直接终止，"
                   "未保存内容会丢。请求关闭超时后，底栏会出现「改为强制结束」。"),
             ("h", "设置与颜色"),
-            ("p", "界面颜色有 10 套设计主题：钴蓝电青、霓虹粉青、石墨信号、"
-                  "青柠白昼、晴日天绿、暖阳橙绿、落日珊瑚、云白天蓝、"
-                  "山雪梅染、Edge 深色。保存后立即生效；中性卡片、媒体键、开关和"
-                  "状态条一起换，但按键的果冻回弹、圆角、阴影不变。"),
+            ("p", "界面颜色有 6 套设计主题：钴蓝、霓虹、石墨、青柠、山雪、深色。"
+                  "保存后立即生效；中性卡片、媒体键、开关和状态条一起换，"
+                  "但按键的果冻回弹、圆角、阴影不变。"),
             ("p", "配色参考：鹰角网络《明日方舟》/ 塞壬唱片（Monster Siren）"
                   "专辑封面。仅作色彩研究，不代表官方合作或官方配色。"),
             ("p", "「设置 → 常规 → 界面透明度」默认 100%，最低 45%：只淡到仍能看见"
@@ -9740,7 +9925,7 @@ class WinMonApp:
         self.video_link_visible = tk.BooleanVar(value=False)
         #: 界面语言：zh / en（默认中文；切换后主界面与 AI 窗口立即重译）
         self.language = tk.StringVar(value=i18n.get_language())
-        #: 界面颜色：9 套设计主题之一。存 slug，显示当前语言标签。
+        #: 界面颜色：6 套设计主题之一。存 slug，显示当前语言标签。
         self.theme_mode = tk.StringVar(
             value=theme_display(getattr(self, "theme_pref", THEME_DEFAULT)))
         #: 整窗透明度（45–100，默认 100）；改设置时同步给所有 Toplevel。
@@ -9850,16 +10035,6 @@ class WinMonApp:
         style.map("Accent.TButton",
                   background=[("active", UI_ACCENT_DARK), ("pressed", UI_ACCENT_DARK)],
                   foreground=[("disabled", UI_MUTED)])
-        # 旧版媒体键用的高对比样式；现在主界面媒体键已换成 Canvas 裸按钮，
-        # 这里保留给兼容调用，不再有彩色卡背景的约束。
-        style.configure("Media.TButton", font=UI_FONT, background=UI_MEDIA_BTN_BG,
-                        foreground=UI_MEDIA_BTN_FG, bordercolor=UI_MEDIA_BTN_ACTIVE,
-                        relief="flat", borderwidth=0, padding=(7, 3))
-        style.map("Media.TButton",
-                  background=[("active", UI_MEDIA_BTN_ACTIVE),
-                              ("pressed", UI_MEDIA_BTN_ACTIVE),
-                              ("disabled", UI_LINE)],
-                  foreground=[("disabled", UI_MUTED)])
         style.configure("TCheckbutton", background=base_bg, foreground=ink,
                         padding=(2, 2), focuscolor=base_bg, focusthickness=0)
         style.map("TCheckbutton",
@@ -9867,8 +10042,7 @@ class WinMonApp:
                   foreground=[("disabled", UI_MUTED)])
         # 兼容旧样式：背景跟当前卡片的中性 surface 走，避免挖出异色底。
         for style_name, card_key in (("GreenCard", "behavior"),
-                                     ("PurpleCard", "proactive"),
-                                     ("MediaCard", "media")):
+                                     ("PurpleCard", "proactive")):
             card = UI_CARDS[card_key]
             style.configure(f"{style_name}.TCheckbutton", background=card["bg"],
                             foreground=card["fg"], padding=(2, 2),
@@ -10026,9 +10200,7 @@ class WinMonApp:
             "disabled": disc(UI_SURFACE_ALT, UI_LINE),
         }
         #: 生命周期跟着 root；Tk 图片不能用完就丢。
-        #: 旧属性名保留，外部测试/兼容代码仍能取到同一组蓝色圆点。
         self.root._winmon_check_images = blue
-        self.root._winmon_check_images_startup = blue
         try:
             used = {n for n in style.element_names()
                     if str(n).startswith("WinMon.CheckIndicator")}
@@ -10060,13 +10232,8 @@ class WinMonApp:
                 ])
 
             install("TCheckbutton", "WinMon.CheckIndicator", blue, UI_BG)
-            #: 设置页已经全部换成 ToggleSwitch；这两个旧样式只做兼容保留。
-            install("Settings.TCheckbutton", "WinMon.CheckSettings", blue,
-                    UI_SURFACE)
-            install("Startup.TCheckbutton", "WinMon.CheckStartup", blue,
-                    UI_SURFACE)
             layout = style.layout("TCheckbutton")
-            for style_name in ("GreenCard", "PurpleCard", "MediaCard"):
+            for style_name in ("GreenCard", "PurpleCard"):
                 style.layout(f"{style_name}.TCheckbutton", layout)
         except tk.TclError:
             pass
@@ -10110,14 +10277,16 @@ class WinMonApp:
         self.search_field.pack(side="right", padx=(4, 0), pady=(1, 0))
         ent = self.search_field.entry
         self.search_entry = ent
-        ent.bind("<KeyRelease>", self._on_search_text_changed)
+        #: 用 StringVar trace 而不是只绑 `<KeyRelease>`：中文输入法、粘贴、
+        #: 预设文本都能触发同一套防抖；避免出现“输入了但界面没反应”。
+        if not getattr(self, "_search_trace_bound", False):
+            self.search_text.trace_add("write", self._on_search_text_changed)
+            self._search_trace_bound = True
         ent.bind("<Return>", self._on_search_submit)
         ent.bind("<KP_Enter>", self._on_search_submit)
         ent.bind("<Down>", self._on_search_down)
         ent.bind("<Escape>", self._on_search_escape)
-        ent.bind("<FocusIn>", lambda _e: (
-            self._show_search_results()
-            if self.search_text.get().strip() else None))
+        ent.bind("<FocusIn>", self._on_search_focus)
 
         # ---- 媒体 + AI 合成一条中性状态带（左右两栏，避免两条全宽横条右侧全空）----
         self._build_status_band()
@@ -10423,15 +10592,14 @@ class WinMonApp:
                       height=30, radius=15,
                       command=self.action_stop_video).pack(side="left", padx=2)
 
-        # ---- 媒体：媒体键在左、播放器在右；曲名在下 ----
+        # ---- 媒体：媒体键在左、播放器紧随其后；「媒体」和曲名同一行 ----
         #
-        # 用户 2026-10-22 第五轮定的顺序：
-        #   [媒体]  [|◀] [▶] [▶|]            [播放器：自动 ▾]
-        #           曲名 · 状态
-        # 媒体键是主操作，所以放在左边、紧挨媒体标签；播放器选择是配置项，
-        # 留在右端。三枚媒体键仍是裸按钮（无边框/阴影）。
+        # 用户 2026-10-22 第六轮定的顺序：
+        #   [|◀] [▶] [▶|]   播放器：[自动 ▾]
+        #   [媒体] 曲名 · 状态
+        # “媒体”不再悬在控件行左侧，而是降到曲名行做前缀，两个字和曲名
+        # 同一条基线。媒体键仍是裸按钮（无边框/阴影）。
         media = UI_CARDS["media"]
-        self.media_glow = None
         media_parent = getattr(self, "media_pane", None)
         if media_parent is None:
             # 兼容直接调用 `_build_video_bars()` 的测试/脚本。
@@ -10441,14 +10609,10 @@ class WinMonApp:
         self.media_bar.pack(fill="both", expand=True)
         mbar = tk.Frame(self.media_bar, bg=UI_SURFACE, padx=1, pady=1)
         mbar.pack(fill="x")
-        mbar.columnconfigure(1, weight=1)
-        RoundedBadge(mbar, text="媒体", fill=media["tag_bg"],
-                     fg=media["tag_fg"], bg=UI_SURFACE,
-                     font=SMALL_BOLD_FONT, padx=8, height=18).grid(
-            row=0, column=0, rowspan=2, sticky="nw", padx=(0, 7), pady=(1, 0))
+        mbar.columnconfigure(0, weight=1)
 
         content = tk.Frame(mbar, bg=UI_SURFACE)
-        content.grid(row=0, column=1, rowspan=2, sticky="ew")
+        content.grid(row=0, column=0, sticky="ew")
         controls = tk.Frame(content, bg=UI_SURFACE)
         controls.pack(fill="x")
         self._media_controls = controls
@@ -10500,6 +10664,12 @@ class WinMonApp:
 
         title_row = tk.Frame(content, bg=UI_SURFACE)
         title_row.pack(fill="x", pady=(2, 0))
+        #: “媒体”两个字和曲名同排：badge 和标题都在 title_row 里。
+        self.media_badge = RoundedBadge(
+            title_row, text="媒体", fill=media["tag_bg"],
+            fg=media["tag_fg"], bg=UI_SURFACE,
+            font=SMALL_BOLD_FONT, padx=8, height=18)
+        self.media_badge.pack(side="left", pady=(1, 0))
         #: 当前在放什么（曲名 · 歌手 · 状态）。**没有进度**。
         self.media_text = tk.StringVar(value="（没有程序播放媒体）")
         self.MEDIA_TEXT_WIDTH = self._media_text_width()
@@ -10507,7 +10677,8 @@ class WinMonApp:
             title_row, textvariable=self.media_text,
             font=(UI_FONT_FAMILY, UI_FONT_SIZE, "bold"), anchor="w",
             fg=UI_INK, bg=UI_SURFACE)
-        self.media_label.pack(side="left", fill="x", expand=True)
+        self.media_label.pack(side="left", fill="x", expand=True,
+                              padx=(7, 0))
         # 点下拉框 = 出**多选**面板（tkinter 的 Combobox 只能单选，见
         # `_edit_media_app_multi`）。这里必须由实例绑定返回 "break"：
         # 只用 postcommand 的话，原生单选下拉仍会跟着弹出，用户会看到
@@ -10895,28 +11066,6 @@ class WinMonApp:
         except Exception:
             pass
 
-    def _sync_media_ambience(self, animate: bool = True) -> None:
-        """
-        媒体栏的拟光：**真的在播放**才点亮，暂停/找不到就收回。
-
-        为什么用 `_media_found and _media_playing`：只“读到了会话”但状态是暂停，
-        不该装作正在放；错误路径会把两者都清掉，光也会自动退回去。
-        """
-        glow = getattr(self, "media_glow", None)
-        if glow is None:
-            return
-        try:
-            if (getattr(self, "_media_found", False)
-                    and getattr(self, "_media_playing", False)):
-                level = 1.0                 # 真会话且状态为“正在播放”
-            elif getattr(self, "_media_source", "") == "title":
-                level = 0.5                 # 标题兜底：确实有歌名，但不知道暂停与否
-            else:
-                level = 0.0
-            glow.set_level(level, animate=bool(animate))
-        except Exception:
-            pass
-
     def _set_media_line(self, text: str) -> None:
         """
         写"正在播放"那一行：先按标签宽度裁（装不下就 `…` 收尾），再上屏。
@@ -10973,7 +11122,6 @@ class WinMonApp:
             self._media_found = False
             self._media_last_pick = {}
             self._sync_media_play_button()
-            self._sync_media_ambience()
             return
         info = core.media_session_summary(data.get("sessions") or [],
                                          self._app_key_for_media())
@@ -10990,18 +11138,12 @@ class WinMonApp:
             hint = self._title_hint_when_no_session()
             if hint:
                 self._set_media_line(hint)
-                # 标题兜底也说明“有媒体内容”；给半档拟光，别装作完整会话。
-                self._sync_media_ambience()
                 return
             app = self._picked_media_app()
             self._set_media_line(
                 f"（{app.label} 没有在播放的媒体）" if app
                 else "（没有程序在播放媒体）")
-            self._sync_media_ambience()
             return
-        # 会话找到了：现在才写光强，避免“无会话→先归零→标题兜底再亮起”
-        # 每 4 秒抖一下。
-        self._sync_media_ambience()
         # 曲名 · 歌手 · 状态 —— 前面**冠上正在放它的那个程序名**（用户第 2 条：
         # "明确哪个程序它是啥、运行了啥"）。会话里的 app 常是家族名（Edge 报 MSEdge），
         # 能换成用户选的显示名就换。
@@ -11660,7 +11802,13 @@ class WinMonApp:
         self._hide_search_popup()
         return "break"
 
-    def _on_search_text_changed(self, event=None) -> None:
+    def _on_search_focus(self, _event=None) -> None:
+        """聚焦搜索框时先把目录索引拉起来，避免第一次输入长时间没结果。"""
+        self._ensure_catalog_for_search()
+        if self.search_text.get().strip():
+            self._show_search_results()
+
+    def _on_search_text_changed(self, event=None, *_trace_args) -> None:
         """输入防抖：窗口列表和程序目录结果一起刷新。"""
         if event is not None and getattr(event, "keysym", "") in (
                 "Return", "KP_Enter", "Down", "Up", "Escape"):
@@ -15306,7 +15454,6 @@ class WinMonApp:
             self.preview.btn_pause.configure(
                 text="继续刷新" if self.paused else "暂停刷新")
             self._sync_media_play_button()
-            self._sync_media_ambience(animate=False)
         except Exception:
             pass
         target = getattr(self, "_escalate_target", None)

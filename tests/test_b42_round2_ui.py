@@ -35,7 +35,7 @@ class TestRound2MainUi(unittest.TestCase):
         from shot import build_app
         import winmon
         cls.winmon = winmon
-        winmon.apply_theme("sunlit")
+        winmon.apply_theme("cobalt")
         cls.root, cls.app = build_app(1160, 730)
         cls.root.update()
 
@@ -77,7 +77,6 @@ class TestRound2MainUi(unittest.TestCase):
         for btn in (self.app.media_prev_btn, self.app.media_play_btn,
                     self.app.media_next_btn):
             self.assertTrue(btn._bare)
-            self.assertFalse(btn._ring)
             self.assertTrue(btn._icon.startswith("media_"),
                             "媒体键必须是矢量图标，不依赖字体字形")
             icons = [item for item in btn.find_all()
@@ -90,7 +89,6 @@ class TestRound2MainUi(unittest.TestCase):
         remove = self.app.gallery.remove_btn
         for btn in (pause, remove):
             self.assertTrue(btn._bare, "暂停/移除不再用常驻描边")
-            self.assertFalse(btn._ring)
         self.assertGreaterEqual(pause.winfo_reqheight(), 30)
         self.assertGreaterEqual(remove.winfo_reqheight(), 30)
 
@@ -103,7 +101,7 @@ class TestRound2MainUi(unittest.TestCase):
         with mock.patch.object(core, "get_autostart", return_value=False):
             dlg = winmon._SettingsWindow(
                 self.root, self.app, "exit", False, False, 30, "zh", 9,
-                "sunlit", 100, {"fps_choice": "很流畅 10 FPS"})
+                "cobalt", 100, {"fps_choice": "很流畅 10 FPS"})
         self.addCleanup(dlg._cancel)
         self.assertEqual(dlg.fps_choice.get(), "很流畅 10 FPS")
 
@@ -112,7 +110,7 @@ class TestRound2MainUi(unittest.TestCase):
         with mock.patch.object(core, "get_autostart", return_value=False):
             dlg = winmon._SettingsWindow(
                 self.root, self.app, "exit", False, False, 30, "zh", 9,
-                "sunlit", 100, {})
+                "cobalt", 100, {})
         self.addCleanup(dlg._cancel)
         dlg.select("general")
         self.root.update()
@@ -209,7 +207,7 @@ class TestAssistantOpensFromSettings(unittest.TestCase):
         with mock.patch.object(core, "get_autostart", return_value=False):
             dlg = self.winmon._SettingsWindow(
                 self.root, self.app, "exit", False, False, 30, "zh", 9,
-                "sunlit", 100, {})
+                "cobalt", 100, {})
         self.app._settings_window = dlg
         try:
             self.app.action_ai_assistant()

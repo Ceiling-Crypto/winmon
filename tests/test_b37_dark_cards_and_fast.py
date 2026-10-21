@@ -4,7 +4,7 @@ B37 —— 深色中性卡 + `--fast` 测试筛选。
 
 2026-10-22 第四轮起，媒体/AI/MCP/KEY 等不再铺整块栏目色；所有卡统一
 surface + line，栏目色只留在小徽标和状态文字上。这里守两件事：
-  1. 10 套主题的卡片都跟当前 surface 走，深色主题下发白即失败；
+  1. 6 套主题的卡片都跟当前 surface 走，深色主题下发白即失败；
      文字/状态仍要满足 4.5:1 对比度。
   2. `run_tests.py --fast` 只跳过带 slow 标记的端到端用例；
      标记工具本身零依赖，不影响普通发现。
@@ -52,7 +52,7 @@ def walk(widget):
 class TestCardPalettes(unittest.TestCase):
     def tearDown(self):
         import winmon
-        winmon.apply_theme("sunlit")
+        winmon.apply_theme("cobalt")
 
     def test_every_theme_has_all_neutral_cards(self):
         import winmon
@@ -219,7 +219,7 @@ class TestThemeConnectWindow(unittest.TestCase):
         i18n.set_language("zh")
         self.addCleanup(i18n.set_language, "zh")
         winmon.apply_theme("snow")
-        self.addCleanup(winmon.apply_theme, "sunlit")
+        self.addCleanup(winmon.apply_theme, "cobalt")
         self.root = tk.Tk()
         self.root.withdraw()
         self.addCleanup(h.destroy_root, self.root)

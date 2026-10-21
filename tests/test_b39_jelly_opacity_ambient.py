@@ -1,12 +1,13 @@
 # -*- coding: utf-8 -*-
 """
-B39 —— 果冻按钮、整窗透明度与媒体栏拟光。
+B39 —— 果冻按钮与整窗透明度。
 
 用户 2026-10-21 的要求：
   · 按键按下有阻尼感，松手果冻回弹，视觉上有 3D 错觉；
   · 界面透明度可调，默认 100%，最低只淡到还能看见窗口边缘；
-    透明度要影响二级菜单；
-  · 媒体真正播放后，媒体高亮卡出现由淡到深的拟光，并同样受透明度影响。
+    透明度要影响二级菜单。
+
+2026-10-22 第六轮已删除媒体拟光/`AmbientGlowFrame`（媒体栏早已不是高亮卡）。
 """
 from __future__ import annotations
 
@@ -103,7 +104,7 @@ class TestOpacityRuntime(unittest.TestCase):
 
 
 @h.needs_tk
-class TestJellyButtonAndAmbientGlow(unittest.TestCase):
+class TestJellyButton(unittest.TestCase):
     def setUp(self):
         import tkinter as tk
         import winmon
@@ -144,27 +145,6 @@ class TestJellyButtonAndAmbientGlow(unittest.TestCase):
         self.assertIsNone(btn._anim_after)
         self.assertLess(abs(btn._squash), 0.02, "回弹最终要收住")
 
-    def test_ambient_glow_fades_from_base_to_accent(self):
-        media = self.winmon.UI_CARDS["media"]
-        glow = self.winmon.AmbientGlowFrame(self.root, media)
-        glow.pack(fill="x")
-        self.root.update_idletasks()
-        base = media["bg"]
-        self.assertEqual(str(glow.cget("bg")), base)
-        self.assertEqual(glow.intensity, 0.0)
-
-        glow.set_level(1.0, animate=False)
-        self.root.update_idletasks()
-        self.assertEqual(glow.intensity, 1.0)
-        outer = str(glow.cget("bg"))
-        self.assertNotEqual(outer, base, "播放时高亮卡边缘必须亮起")
-        self.assertEqual(outer, self.winmon.mix_color(
-            base, media["tag_bg"], 0.43))
-
-        glow.set_level(0.0, animate=False)
-        self.root.update_idletasks()
-        self.assertEqual(str(glow.cget("bg")), base)
-
     def test_destroy_with_pending_animation_is_clean(self):
         """
         定时器还挂着时销毁控件不能抛 “can't delete Tcl command”。
@@ -179,41 +159,6 @@ class TestJellyButtonAndAmbientGlow(unittest.TestCase):
         btn._animate_release()
         self.assertIsNotNone(btn._anim_after)
         btn.destroy()
-
-        media = self.winmon.UI_CARDS["media"]
-        glow = self.winmon.AmbientGlowFrame(self.root, media)
-        glow.pack()
-        glow.set_level(1.0)
-        self.assertIsNotNone(glow._anim_after)
-        glow.destroy()
-
-    def test_media_ambience_tracks_session_and_title_fallback(self):
-        media = self.winmon.UI_CARDS["media"]
-        glow = self.winmon.AmbientGlowFrame(self.root, media)
-        glow.pack()
-        self.root.update_idletasks()
-
-        class Stub:
-            pass
-
-        app = Stub()
-        app.media_glow = glow
-        app._media_found = True
-        app._media_playing = True
-        app._media_source = "session"
-        self.winmon.WinMonApp._sync_media_ambience(app, animate=False)
-        self.assertEqual(glow.intensity, 1.0)
-
-        app._media_found = False
-        app._media_playing = False
-        app._media_source = "title"
-        self.winmon.WinMonApp._sync_media_ambience(app, animate=False)
-        self.assertEqual(glow.intensity, 0.5,
-                         "标题兜底只给半档光，不能装作完整会话")
-
-        app._media_source = ""
-        self.winmon.WinMonApp._sync_media_ambience(app, animate=False)
-        self.assertEqual(glow.intensity, 0.0)
 
 
 @h.needs_tk

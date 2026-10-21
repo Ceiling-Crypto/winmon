@@ -8,7 +8,7 @@ B40 —— 现代视觉层：无衬线字体、胶囊标签、圆角浮片与目
   · 整个窗口/主要表面有圆角，而不是早期 WinForms / WPF 默认控件；
   · 程序目录名称不能盖到图标上，并且要能左右滑动。
 
-配色在 2026-10-21 晚改为 9 套设计主题；默认「晴日天绿」。
+配色在 2026-10-22 收敛为 6 套设计主题；默认「钴蓝」。
 """
 from __future__ import annotations
 
@@ -26,19 +26,18 @@ import _helpers as h                     # noqa: E402
 class TestModernPaletteAndType(unittest.TestCase):
     def tearDown(self):
         import winmon
-        winmon.apply_theme("sunlit")
+        winmon.apply_theme("cobalt")
 
     def test_design_themes_and_default(self):
         import winmon
-        winmon.apply_theme("sunlit")
-        self.assertEqual(winmon.THEME_DEFAULT, "sunlit")
-        self.assertEqual(len(winmon.THEME_ORDER), 10)
-        self.assertEqual(winmon.UI_BG, "#FAFDF6")
-        self.assertEqual(winmon.UI_INK, "#1B2A1F")
-        self.assertEqual(winmon.UI_ACCENT, "#2F7F55")
+        winmon.apply_theme("cobalt")
+        self.assertEqual(winmon.THEME_DEFAULT, "cobalt")
+        self.assertEqual(len(winmon.THEME_ORDER), 6)
+        self.assertEqual(winmon.UI_BG, "#F3F8FE")
+        self.assertEqual(winmon.UI_INK, "#0B1B2B")
+        self.assertEqual(winmon.UI_ACCENT, "#064ED0")
         self.assertEqual(winmon.UI_CARDS["media"]["tag_bg"],
                          winmon.UI_ACCENT)
-        self.assertEqual(winmon.UI_MEDIA_BTN_BG, winmon.UI_ACCENT)
         self.assertFalse(hasattr(winmon, "_THEME_PALETTES_LEGACY"))
         self.assertFalse(hasattr(winmon, "_THEME_PALETTES_MODERN"))
 
@@ -66,7 +65,7 @@ class TestModernWidgets(unittest.TestCase):
         import tkinter as tk
         import winmon
         self.winmon = winmon
-        winmon.apply_theme("sunlit")
+        winmon.apply_theme("cobalt")
         self.root = tk.Tk()
         self.root.geometry("900x560+20+20")
         self.addCleanup(h.destroy_root, self.root)

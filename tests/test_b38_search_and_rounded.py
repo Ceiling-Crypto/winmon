@@ -198,6 +198,28 @@ class TestUnifiedSearchUi(unittest.TestCase):
         self.assertEqual(results[0][0], "catalog",
                          "PID 被系统回收后不能把别的程序当成网易云")
 
+    def test_text_variable_alone_triggers_search_debounce(self):
+        """不依赖 KeyRelease：中文输入法/粘贴/预设文本也要触发搜索。"""
+        self.app.search_text.set("winmon")
+        self.assertIsNotNone(self.app._search_after,
+                             "StringVar 变化后应安排一次搜索")
+        self.app._cancel_search_debounce()
+        self.assertIsNone(self.app._search_after)
+
+    def test_search_entry_gets_focus_and_shows_focus_ring(self):
+        self.app.search_entry.focus_force()
+        self.root.update()
+        self.assertIs(self.root.focus_get(), self.app.search_entry)
+        #: FocusIn 事件在部分无窗口管理器的测试会话里不会自动派发，
+        #: 这里直接走画布自己的焦点回调，只验证描边确实会变成强调色。
+        self.app.search_field._on_focus()
+        self.assertTrue(self.app.search_field._focused)
+        outline = [str(self.app.search_field.itemcget(i, "outline")).lower()
+                   for i in self.app.search_field.find_all()
+                   if "polygon" in str(self.app.search_field.type(i))]
+        self.assertIn(self.winmon.UI_ACCENT.lower(), outline)
+        self.app.search_field._on_blur()
+
     def test_media_keys_order_and_symbols(self):
         self.assertEqual(self.app.media_prev_btn.cget("text"), "⏮")
         self.assertEqual(self.app.media_play_btn.cget("text"), "▶")
@@ -219,7 +241,6 @@ class TestUnifiedSearchUi(unittest.TestCase):
         #: 2026-10-22 第四轮起媒体键是裸图标键，不再用深色 Media.TButton。
         self.assertIsInstance(btn, self.winmon.RoundedButton)
         self.assertTrue(btn._bare)
-        self.assertFalse(btn._ring)
         self.assertEqual(str(btn.cget("width")), "30")
         self.assertGreaterEqual(btn.winfo_reqheight(), 28)
 

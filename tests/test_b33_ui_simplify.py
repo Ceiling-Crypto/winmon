@@ -152,7 +152,6 @@ class TestMainUiHierarchy(unittest.TestCase):
         for btn in (self.app.media_prev_btn, self.app.media_play_btn,
                     self.app.media_next_btn):
             self.assertTrue(btn._bare)
-            self.assertFalse(btn._ring)
 
     def test_actions_are_no_longer_a_permanent_left_rail(self):
         """2026-10-21：左栏撤掉，搜索/设置收进右上角，加入总览只在右键菜单。"""

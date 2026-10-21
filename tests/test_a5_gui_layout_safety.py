@@ -385,7 +385,7 @@ class TestMainWindowLayout(unittest.TestCase):
         want = [label for label, _s in core.IDLE_SNOOZE_CHOICES]
         with mock.patch.object(self.winmon.core, "get_autostart", return_value=False):
             dlg = self.winmon._SettingsWindow(
-                self.root, self.app, "exit", False, False, 30, "zh", 9, "sunlit")
+                self.root, self.app, "exit", False, False, 30, "zh", 9, "cobalt")
         self.addCleanup(dlg._cancel)
         box = None
         for w in walk(dlg.top):

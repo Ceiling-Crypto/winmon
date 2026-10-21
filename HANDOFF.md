@@ -3,7 +3,7 @@
 > 用途：在新的对话里快速恢复上下文。读这一份即可继续开发。
 > **正式发布名 `winmon1.0`**（`APP_VER = "1.0"`，查版本：`py winmon.py --version`）。
 > **先读 §一点五「WinMon 的定位与能力边界」** —— 输入注入已明确不再投入。
-> 代码状态：**1036 个测试用例全绿**（约 110–120 秒；`--fast` 979 条约 51–56 秒；
+> 代码状态：**1038 个测试用例全绿**（约 110–120 秒；`--fast` 981 条约 52–56 秒；
 > 跳过数按当前桌面/媒体环境在 3–7 之间变化）+
 > 代码复检 0 新增问题（基线为空）、
 > 自检 8/8、界面冒烟通过、
@@ -22,10 +22,10 @@
 
 | | |
 | --- | --- |
-| 测试 | **1036 用例全绿**（`py tests\run_tests.py`，约 110–120 秒；跳过数按环境 3–7）；`--fast` 979 条约 51–56 秒 |
+| 测试 | **1038 用例全绿**（`py tests\run_tests.py`，约 110–120 秒；跳过数按环境 3–7）；`--fast` 981 条约 52–56 秒 |
 | 代码复检 | `py tests\lint_check.py` → **新增问题 0**（基线已清空，见 §四） |
 | 自检 / 冒烟 | `py winmon.py --selftest` 8/8 通过；`--smoke` 通过 |
-| 规模 | `winmon_core.py` ~6900 行 / `winmon.py` ~16640 行 / 测试 57 个 .py（43 个测试模块） |
+| 规模 | `winmon_core.py` ~6900 行 / `winmon.py` ~16790 行 / 测试 57 个 .py（43 个测试模块） |
 | 运行方式 | `py winmon.py`（GUI）或双击「winmon1.0」快捷方式；**单实例**：第二个实例会把已有窗口带到前台后自己退出 |
 | 窗口尺寸 | 设计稿 **1160×730**，开窗时**按 DPI 缩放**（本机 150% → 1740×1095；见 §9.15 第 14 条） |
 | 数据文件 | `winmon_settings.json`（界面偏好/收藏）、`winmon_history.log`（操作留痕）、`winmon_catalog.json`（程序目录缓存）、`winmon_media.jsonl`（媒体快照缓存，可删） |
@@ -102,12 +102,12 @@
 | 文件 | 行数级 | 作用 |
 | --- | --- | --- |
 | `winmon_core.py` | ~6750 | **核心层**：Win32 采集/捕获/终止/图标/程序目录/媒体会话/视频来源与视频操作/可清理文件。不依赖 tkinter，可当库用 |
-| `winmon.py` | ~16640 | GUI（6 个标签页 + 设置三合一）+ 命令行入口 |
+| `winmon.py` | ~16790 | GUI（6 个标签页 + 设置三合一）+ 命令行入口 |
 | `winmon_ai.py` | ~2800 | **AI 工作伴侣**：识别 / 本地事件 / 剧本 / 用量账本与预算 / token 估算 / 人设库。不依赖 tkinter |
 | `winmon_mcp.py` | ~800 | **MCP 服务器**：双时代 stdio + 本地 HTTP + 四个只读工具 |
 | `winmon_ai_provider.py` | ~250 | **可选**直连模型 API（默认关；精确 usage；key 只从环境变量读） |
 | `media_session.ps1` | ~230 | 系统媒体会话（GSMTC）桥接脚本（PowerShell + Windows 自带 WinRT 投影；**必须纯 ASCII 无 BOM**） |
-| `tests/` | 57 个 .py | **可重复运行的测试**（1036 用例，纯 unittest） + `_marks.py` 慢用例标记 + 开发辅助工具 + `lint_check.py` / `lint_baseline.txt` |
+| `tests/` | 57 个 .py | **可重复运行的测试**（1038 用例，纯 unittest） + `_marks.py` 慢用例标记 + 开发辅助工具 + `lint_check.py` / `lint_baseline.txt` |
 | `启动WinMon.bat` | — | 菜单式启动器（纯 ASCII，避免批处理编码问题） |
 | `scan_windows.py` | — | 命令行窗口清单 |
 | `close_others.py` | — | 批量关闭除当前窗口外的窗口 |
@@ -160,8 +160,8 @@ python winmon.py --videos --open 3 --watch --close-window   :: 完整视频链�
 python winmon.py --version          :: 打印版本（winmon1.0）
 python winmon.py --idle             :: 列出"长期开着、没人用"的程序（只看，不关任何东西）
 python winmon.py --idle --idle-minutes 5   :: 换个闲置阈值（分钟）
-py tests\run_tests.py               :: 全部测试（1036 用例，约 110 秒）
-py tests\run_tests.py --fast        :: 快跑（979 用例，约 51 秒；跳过真窗口/抓屏慢用例）
+py tests\run_tests.py               :: 全部测试（1038 用例，约 110 秒）
+py tests\run_tests.py --fast        :: 快跑（981 用例，约 52 秒；跳过真窗口/抓屏慢用例）
 ```
 
 ---
@@ -3280,6 +3280,58 @@ AI 深蓝卡可见；深色接入窗展开后目视无浅色卡残留。
   `--smoke` 退出 0，白底截图已目视确认。
 - 跳过数会随桌面是否有 Edge / 媒体会话变化。
 
+### 9.36 阶段 8.26：六套主题、胶囊下拉、搜索修复、死代码清理（2026-10-22）
+
+用户这一轮 5 条：媒体二字对齐曲名、搜索无响应、删四套主题并把名字统一为
+两个字、设置胶囊/下拉不够圆滑、复查 bug 并清死代码。
+
+1. **“媒体”对齐曲名**：徽标从控件行移到 `title_row`，和 `media_label`
+   同为该 Frame 的子控件；`media_badge.pack(side="left", pady=(1,0))`，
+   标题 `padx=(7,0)`。控件行不再留出徽标列，所以三枚键从 pane 左边开始。
+2. **搜索无响应**：
+   - 根因之一是只绑 `<KeyRelease>`，输入法/粘贴/程序化 set 时不一定触发；
+     改为 `search_text.trace_add("write", ...)`（只绑一次，防止重建累加），
+     方法签名接收 trace 的 3 个参数；
+   - 聚焦搜索框时先 `_ensure_catalog_for_search()`，避免第一次输入只看到
+     “正在读取程序目录”而以为坏了；
+   - `SearchField` 聚焦描边改为 `UI_ACCENT`，有可见反馈；
+   - 新增测试：只设 StringVar 也会安排 debounce；焦点环为强调色。
+3. **主题收敛**：
+   - `THEME_DEFAULT="cobalt"`，`THEME_ORDER=("cobalt","neon","graphite",
+     "lime","snow","edge_dark")`；
+   - 删除 sunlit/amber/coral/cloud 的 spec；旧值统一回 cobalt；
+   - 中文名 2 字：钴蓝/霓虹/石墨/青柠/山雪/深色；英文 Cobalt/Neon/Graphite/
+     Lime/Snow/Dark；
+   - `themes_choices` 顺序即设置下拉顺序；测试改为 6 套。
+4. **设置胶囊**：
+   - 左侧 nav 改为 Canvas 胶囊：`_draw` 画 `nav-bg` 圆角块，icon/label
+     作为 Canvas 子控件；选中/悬停只换 fill，不再用直角 Frame + 左色条；
+   - 新增 `CapsuleCombo`（约 330 行）：Canvas 画 30px 胶囊面 + 箭头，
+     Toplevel + Canvas 画圆角选项浮层；支持点击、上下、回车、Esc、选择；
+     选中后写 StringVar，保存逻辑完全不变；
+   - `_combo()` 全部走 CapsuleCombo；保存/取消/重置改成完整胶囊半径；
+   - `CapsuleCombo.winfo_class()` 返回 `"TCombobox"`，`cget("values")`
+     兼容旧布局测试。
+   - 两个坑：设置窗口已有 grab 时，部分 Tk 版本拒绝嵌套 grab；现在
+     grab 失败不销毁浮层。`FocusOut` 会在 `focus_force`/`canvas.focus_set`
+     之间误触发关闭，所以不绑即时 FocusOut，改由选择/Esc/点击浮层外关闭。
+5. **死代码清理**：
+   - 删除 `AmbientGlowFrame` 整类（媒体拟光早已不用）、`_sync_media_ambience`、
+     `media_glow` 及所有调用、`test_b39` 的拟光用例；
+   - 删除 `RoundedButton(ring=...)` 参数/绘制、`Media.TButton`、
+     `UI_MEDIA_BTN_*`、`MediaCard/Settings/Startup.TCheckbutton` 样式；
+   - 保留 `GreenCard/PurpleCard`（接入窗口仍在用）。
+
+#### 一、测试与验收（8.26）
+
+- 全量 **1038 用例**，失败 0 / 错误 0，跳过 7，**111.706 秒**；
+  `--fast` **981 条**，失败 0 / 错误 0，跳过 6，**51.999 秒**；
+  `lint_check` 新增 0；`--selftest` 8/8；`--mcp-selftest` 13/13；
+  `--smoke` 退出 0。
+- 新截图：`docs/ui-8.26-{main,main-1080-font12,settings,dark-settings,
+  dark-main,ai-workspace,ai-usage}.png`。设置页截图已目视确认：
+  左侧选中项是胶囊、下拉面是胶囊、保存/取消是胶囊。
+
 ### 9.35 阶段 8.25：媒体/AI 并排状态带、媒体键换位（2026-10-22）
 
 用户在 8.24 截图上圈了两块空白（AI 卡右侧、预览头部），并手写了一行大字
@@ -4179,7 +4231,7 @@ README 的界面颜色一节也加了同样说明。
 ## 四、测试体系（**改代码后先跑这个**）
 
 ```bat
-py tests\run_tests.py            :: 1036 用例，约 110 秒（--fast 979 条约 51 秒）
+py tests\run_tests.py            :: 1038 用例，约 110 秒（--fast 981 条约 52 秒）
 py tests\run_tests.py -v         :: 逐个看
 py tests\run_tests.py -k capture :: 只跑关心的
 py tests\lint_check.py           :: 代码复检（退出码 1 = 有新增问题）
@@ -4863,8 +4915,8 @@ C 盘那份**保持原样、一字未改**（用户 2026-10-11 确认：暂不�
 
 > 继续开发 **winmon1.0** —— Windows 程序监控与终止工具，纯标准库，在 `项目根目录\`。
 > 请先读 `HANDOFF.md` 和 `README.md`，然后跑 `py tests\run_tests.py`
-> 确认基线是 **1036 用例全绿**（需要哔哩哔哩/UIA 页面的用例会按需 skip；
-> 日常改动用 `--fast` 跑 979 条，提交前跑全量）、
+> 确认基线是 **1038 用例全绿**（需要哔哩哔哩/UIA 页面的用例会按需 skip；
+> 日常改动用 `--fast` 跑 981 条，提交前跑全量）、
 > `py tests\lint_check.py` 退出码 0（无新增问题）。
 > **版式要另眼验收**：测试进程没有开 DPI 感知，布局检查看不到"真实 DPI 下控件被挤没"，
 > 所以改动界面后还要跑一次 `py winmon.py --smoke` 看截图（见 §9.15 第 14 条）。

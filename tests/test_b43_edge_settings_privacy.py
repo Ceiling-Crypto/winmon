@@ -49,7 +49,7 @@ class TestEdgeSettings(unittest.TestCase):
         from shot import build_app
         import winmon
         cls.winmon = winmon
-        winmon.apply_theme("sunlit")
+        winmon.apply_theme("cobalt")
         cls.root, cls.app = build_app(1160, 730)
         cls.root.update()
 
@@ -61,7 +61,7 @@ class TestEdgeSettings(unittest.TestCase):
         with mock.patch.object(core, "get_autostart", return_value=False):
             dlg = self.winmon._SettingsWindow(
                 self.root, self.app, "tray", True, True, 30, "zh", 9,
-                "sunlit", 80, {})
+                "cobalt", 80, {})
         self.addCleanup(dlg._cancel)
         self.root.update()
         return dlg
@@ -151,6 +151,33 @@ class TestEdgeSettings(unittest.TestCase):
         self.assertLessEqual(self.winmon.ToggleSwitch.ANIM_MS, 160,
                             "滑动应短促，不能拖成慢动画")
 
+    def test_capsule_combo_opens_and_selects(self):
+        dlg = self._open()
+        combos = [w for w in walk(dlg.top)
+                  if isinstance(w, self.winmon.CapsuleCombo)]
+        self.assertTrue(combos, "设置里应使用自绘胶囊下拉")
+        theme = next(c for c in combos
+                     if "钴蓝" in list(c.cget("values")))
+        theme._open_popup()
+        self.root.update()
+        self.assertIsNotNone(theme._popup, "点击后应出现胶囊选项浮层")
+        self.assertTrue(theme._popup.winfo_exists())
+        names = list(theme.cget("values"))
+        theme._choose_row(names.index("山雪"))
+        self.root.update()
+        self.assertEqual(dlg.theme.get(), "山雪")
+        self.assertIsNone(theme._popup, "选完后浮层应销毁")
+
+    def test_selected_nav_is_a_rounded_canvas_pill(self):
+        dlg = self._open()
+        item = dlg._nav_items["general"]
+        self.assertEqual(item["frame"].winfo_class(), "Canvas")
+        items = [i for i in item["frame"].find_all()
+                 if "nav-bg" in item["frame"].gettags(i)]
+        self.assertTrue(items)
+        fill = str(item["frame"].itemcget(items[0], "fill"))
+        self.assertEqual(fill.lower(), self.winmon.UI_SELECT_BG.lower())
+
     def test_old_migration_hints_are_not_in_settings(self):
         dlg = self._open()
         joined = "\n".join(texts(dlg.top))
@@ -169,7 +196,7 @@ class TestRound3MainPlacement(unittest.TestCase):
         from shot import build_app
         import winmon
         cls.winmon = winmon
-        winmon.apply_theme("sunlit")
+        winmon.apply_theme("cobalt")
         cls.root, cls.app = build_app(1160, 730)
         cls.root.update()
 
@@ -199,6 +226,13 @@ class TestRound3MainPlacement(unittest.TestCase):
                         "搜索框仍应在齿轮左侧，位置没有互换")
 
     def test_media_controls_above_full_width_title(self):
+        #: “媒体”两个字和曲名同排、同一条基线，不再悬在控件行左侧。
+        self.assertIs(self.app.media_badge.master,
+                      self.app.media_label.master)
+        self.assertLessEqual(abs(self.app.media_badge.winfo_rooty()
+                                 - self.app.media_label.winfo_rooty()), 4)
+        self.assertLess(self.app.media_badge.winfo_rootx(),
+                        self.app.media_label.winfo_rootx())
         keys = self.app.media_play_btn.master
         self.assertIs(keys.master,
                       self.app.media_app_combo.master.master,

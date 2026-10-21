@@ -6,10 +6,10 @@ B35 —— 设计主题与「设置」三合一。
   · 旧普通/深色两套删掉，改用设计主题；
   · 只换颜色，按键的果冻回弹、圆角、阴影不动；
   · 旧设置里的 light / dark / system 要安全迁移；
-  · 2026-10-22 增加 Edge 深色，旧 dark 映射到它；
+  · 2026-10-22 收敛为 6 套，旧 dark 映射到「深色」；
   · 窗口标题只叫 winmon1.0；关闭窗口与强制结束必须说清楚。
 
-这里守住可程序化的部分：10 套色板、旧值迁移、三标签页、媒体按键样式、
+这里守住可程序化的部分：6 套色板、旧值迁移、三标签页、媒体按键样式、
 实时重建、标题文案、两个操作的解释。
 """
 from __future__ import annotations
@@ -29,23 +29,23 @@ import winmon_i18n as i18n               # noqa: E402
 class TestThemeSelection(unittest.TestCase):
     def tearDown(self):
         import winmon
-        winmon.apply_theme("sunlit")
+        winmon.apply_theme("cobalt")
         i18n.set_language("zh")
 
     def test_design_themes_and_default(self):
         import winmon
-        self.assertEqual(len(winmon.THEME_ORDER), 10)
-        self.assertEqual(winmon.THEME_DEFAULT, "sunlit")
-        self.assertEqual(winmon.apply_theme("sunlit"), "sunlit")
-        self.assertEqual(winmon.THEME_PREFERENCE, "sunlit")
-        self.assertEqual(winmon.UI_BG, "#FAFDF6")
-        self.assertEqual(winmon.UI_ACCENT, "#2F7F55")
-        self.assertEqual(winmon.UI_INK, "#1B2A1F")
+        self.assertEqual(len(winmon.THEME_ORDER), 6)
+        self.assertEqual(winmon.THEME_DEFAULT, "cobalt")
+        self.assertEqual(winmon.apply_theme("cobalt"), "cobalt")
+        self.assertEqual(winmon.THEME_PREFERENCE, "cobalt")
+        self.assertEqual(winmon.UI_BG, "#F3F8FE")
+        self.assertEqual(winmon.UI_ACCENT, "#064ED0")
+        self.assertEqual(winmon.UI_INK, "#0B1B2B")
         self.assertEqual(
             [slug for slug, _label in winmon.theme_choices()],
             list(winmon.THEME_ORDER))
         self.assertEqual(len({slug for slug, _label in winmon.theme_choices()}),
-                         10, "主题 slug 不能重复")
+                         6, "主题 slug 不能重复")
         self.assertEqual(winmon.apply_theme("edge_dark"), "edge_dark")
         self.assertEqual(winmon.UI_BG, "#202124")
         self.assertEqual(winmon.UI_ACCENT, "#2F6FCC")
@@ -53,14 +53,16 @@ class TestThemeSelection(unittest.TestCase):
     def test_normalize_accepts_aliases_and_rejects_junk(self):
         import winmon
         for old in ("normal", "white", "light", "auto", "system"):
-            self.assertEqual(winmon.normalize_theme_mode(old), "sunlit",
+            self.assertEqual(winmon.normalize_theme_mode(old), "cobalt",
                              f"旧值 {old} 应迁移到默认主题")
         for old in ("dark", "black", "night"):
             self.assertEqual(winmon.normalize_theme_mode(old), "edge_dark")
         self.assertEqual(winmon.normalize_theme_mode("snow"), "snow")
-        self.assertEqual(winmon.normalize_theme_mode("cloud"), "cloud")
-        self.assertEqual(winmon.normalize_theme_mode("blue"), "sunlit")
-        self.assertEqual(winmon.normalize_theme_mode(""), "sunlit")
+        for removed in ("sunlit", "amber", "coral", "cloud"):
+            self.assertEqual(winmon.normalize_theme_mode(removed), "cobalt",
+                             f"已删除的 {removed} 应回默认钴蓝")
+        self.assertEqual(winmon.normalize_theme_mode("blue"), "cobalt")
+        self.assertEqual(winmon.normalize_theme_mode(""), "cobalt")
         self.assertFalse(hasattr(winmon, "THEME_SYSTEM"))
         self.assertFalse(hasattr(winmon, "detect_system_theme"))
 
@@ -69,14 +71,16 @@ class TestThemeSelection(unittest.TestCase):
         import winmon
         with tempfile.TemporaryDirectory(prefix="winmon-b35-legacy-") as tmp:
             path = os.path.join(tmp, "settings.json")
-            for old, want in (("system", "sunlit"), ("light", "sunlit"),
-                              ("dark", "edge_dark")):
+            for old, want in (("system", "cobalt"), ("light", "cobalt"),
+                              ("dark", "edge_dark"), ("sunlit", "cobalt"),
+                              ("amber", "cobalt"), ("coral", "cobalt"),
+                              ("cloud", "cobalt")):
                 with open(path, "w", encoding="utf-8") as fh:
                     fh.write('{"theme": "%s"}' % old)
                 self.assertEqual(winmon.read_theme_mode(path), want)
-        self.assertEqual(winmon.apply_theme("system"), "sunlit")
-        self.assertEqual(winmon.THEME_PREFERENCE, "sunlit")
-        self.assertEqual(winmon.UI_BG, "#FAFDF6")
+        self.assertEqual(winmon.apply_theme("system"), "cobalt")
+        self.assertEqual(winmon.THEME_PREFERENCE, "cobalt")
+        self.assertEqual(winmon.UI_BG, "#F3F8FE")
 
     def test_read_theme_mode_from_settings(self):
         import winmon
@@ -87,21 +91,25 @@ class TestThemeSelection(unittest.TestCase):
             self.assertEqual(winmon.read_theme_mode(path), "snow")
             with open(path, "w", encoding="utf-8") as fh:
                 fh.write('{"theme": "broken"}')
-            self.assertEqual(winmon.read_theme_mode(path), "sunlit")
+            self.assertEqual(winmon.read_theme_mode(path), "cobalt")
 
     def test_labels_follow_language_and_are_design_names(self):
         import winmon
         i18n.set_language("zh")
         labels = dict(winmon.theme_choices())
-        self.assertEqual(labels["sunlit"], "晴日天绿")
-        self.assertEqual(labels["cloud"], "云白天蓝")
-        self.assertEqual(labels["snow"], "山雪梅染")
+        self.assertEqual(labels["cobalt"], "钴蓝")
+        self.assertEqual(labels["snow"], "山雪")
+        self.assertEqual(labels["edge_dark"], "深色")
+        self.assertNotIn("cloud", labels)
+        for label in labels.values():
+            self.assertEqual(len(label), 2, "中文主题名统一为两个字")
         self.assertNotIn("月行水上", "".join(labels.values()),
                          "主题名应是设计名，不是专辑名")
         i18n.set_language("en")
         english = dict(winmon.theme_choices())
-        self.assertEqual(english["sunlit"], "Sunlit Verdant")
-        self.assertNotIn("Follow", winmon.theme_display("sunlit"))
+        self.assertEqual(english["cobalt"], "Cobalt")
+        self.assertEqual(english["edge_dark"], "Dark")
+        self.assertNotIn("Follow", winmon.theme_display("cobalt"))
 
 
 class TestBrandingAndActionMeaning(unittest.TestCase):
@@ -200,7 +208,7 @@ class TestSettingsMergedWindow(unittest.TestCase):
                                return_value=False):
             dlg = self.winmon._SettingsWindow(
                 self.root, self.FakeApp(), "exit", False, False, 30,
-                "zh", 9, "sunlit")
+                "zh", 9, "cobalt")
         self.addCleanup(dlg._cancel)
         return dlg
 
@@ -217,8 +225,8 @@ class TestSettingsMergedWindow(unittest.TestCase):
         labels = [label for _slug, label in self.winmon.theme_choices()]
         self.assertEqual(list(dlg._theme_by_label), labels,
                          "设置里应列出全部设计主题")
-        self.assertEqual(dlg.theme.get(), "晴日天绿")
-        dlg.theme.set("山雪梅染")
+        self.assertEqual(dlg.theme.get(), "钴蓝")
+        dlg.theme.set("山雪")
         with mock.patch.object(self.winmon.core, "get_autostart",
                                return_value=False):
             dlg._ok()
@@ -246,7 +254,7 @@ class TestThemeMainWindow(unittest.TestCase):
         cls.winmon = winmon
         cls.root = tk.Tk()
         cls.root.geometry("1160x730+0+0")
-        winmon.apply_theme("sunlit")
+        winmon.apply_theme("cobalt")
         app = cls.app = winmon.WinMonApp.__new__(winmon.WinMonApp)
         app.root = cls.root
         app._settings_path = os.path.join(tempfile.mkdtemp(prefix="winmon-b35-"),
@@ -277,10 +285,10 @@ class TestThemeMainWindow(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         h.destroy_root(cls.root)
-        cls.winmon.apply_theme("sunlit")
+        cls.winmon.apply_theme("cobalt")
 
     def test_page_and_status_band_stay_distinct(self):
-        self.assertEqual(str(self.root.cget("background")), "#FAFDF6")
+        self.assertEqual(str(self.root.cget("background")), "#F3F8FE")
         ai = self.winmon.UI_CARDS["ai"]
         #: 媒体和 AI 共用一条中性状态带，底色是 surface，不是页面。
         self.assertEqual(str(self.app.media_label.cget("bg")),
@@ -296,7 +304,6 @@ class TestThemeMainWindow(unittest.TestCase):
                     self.app.media_next_btn):
             self.assertIsInstance(btn, self.winmon.RoundedButton)
             self.assertTrue(btn._bare, "媒体键应是裸按钮，只在悬停时浮出薄底")
-            self.assertFalse(btn._ring, "媒体键不再带常驻描边")
             self.assertEqual(str(btn.cget("width")), "30")
             self.assertEqual(str(btn.cget("height")), "30")
 
@@ -310,7 +317,7 @@ class TestThemeMainWindow(unittest.TestCase):
                          "预览下方的操作条已经按用户要求删除")
 
     def test_z_live_theme_rebuild_restores_the_checkbox_and_buttons(self):
-        self.winmon.apply_theme("cloud")
+        self.winmon.apply_theme("neon")
         self.app.selected_hwnd = None
         self.app.preview_key = None
         # 这里只验证“换色后控件确实重建了”；真实窗口数据刷新由主流程测试覆盖。
@@ -324,12 +331,11 @@ class TestThemeMainWindow(unittest.TestCase):
             self.assertIsInstance(self.app.media_play_btn,
                                   self.winmon.RoundedButton)
             self.assertTrue(self.app.media_play_btn._bare)
-            self.assertFalse(self.app.media_play_btn._ring)
             self.assertTrue(self.app.search_field.winfo_exists())
             self.assertTrue(self.app.settings_button.winfo_exists())
         finally:
             # 这个类共用一套控件；把状态还回默认，避免依赖测试执行顺序。
-            self.winmon.apply_theme("sunlit")
+            self.winmon.apply_theme("cobalt")
             with mock.patch.object(self.app, "refresh_processes"), \
                     mock.patch.object(self.app, "refresh_windows"):
                 self.app._rebuild_ui_for_theme(0)

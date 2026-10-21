@@ -35,7 +35,7 @@ class TestMainWindowRefinement(unittest.TestCase):
         import winmon
         import winmon_core as core
         cls.winmon = winmon
-        winmon.apply_theme("sunlit")
+        winmon.apply_theme("cobalt")
         cls.root = tk.Tk()
         cls.root.geometry("1160x730+0+0")
         app = cls.app = winmon.WinMonApp.__new__(winmon.WinMonApp)
@@ -65,7 +65,7 @@ class TestMainWindowRefinement(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         h.destroy_root(cls.root)
-        cls.winmon.apply_theme("sunlit")
+        cls.winmon.apply_theme("cobalt")
 
     def test_main_has_search_gear_and_no_action_rail(self):
         self.assertFalse(hasattr(self.app, "action_rail"))
@@ -122,7 +122,7 @@ class TestMainWindowRefinement(unittest.TestCase):
                                 return_value=False):
             dlg = self.winmon._SettingsWindow(
                 self.root, self.app, "exit", False, False, 30, "zh", 9,
-                "sunlit", 100, prefs)
+                "cobalt", 100, prefs)
             dlg.only_windowed.set(False)
             dlg.video_link_visible.set(True)
             dlg.idle_alert.set(True)
@@ -148,7 +148,7 @@ class TestMainWindowRefinement(unittest.TestCase):
                                 return_value=False):
             dlg = self.winmon._SettingsWindow(
                 self.root, self.app, "exit", False, False, 30, "zh", 9,
-                "sunlit", 100, prefs)
+                "cobalt", 100, prefs)
         self.addCleanup(dlg._cancel)
         texts = [str(w.cget("text")) for w in walk(dlg.top)
                  if w.winfo_class() in ("Label", "TLabel", "TButton", "Button",

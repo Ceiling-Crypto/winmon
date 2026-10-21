@@ -173,13 +173,13 @@ class TestLightThemeAndPreviewFirst(unittest.TestCase):
     @classmethod
     def tearDownClass(cls):
         h.destroy_root(cls.root)
-        cls.winmon.apply_theme("sunlit")
+        cls.winmon.apply_theme("cobalt")
 
-    def test_default_design_theme_but_highlight_cards_stay_colored(self):
+    def test_default_design_theme_and_neutral_status_band(self):
         self.assertEqual(str(self.root.cget("background")), self.winmon.UI_BG)
-        self.assertEqual(self.winmon.UI_BG, "#FAFDF6")
-        self.assertEqual(self.winmon.UI_ACCENT, "#2F7F55")
-        self.assertNotEqual(self.winmon.UI_INK, "#FAFDF6",
+        self.assertEqual(self.winmon.UI_BG, "#F3F8FE")
+        self.assertEqual(self.winmon.UI_ACCENT, "#064ED0")
+        self.assertNotEqual(self.winmon.UI_INK, "#F3F8FE",
                             "浅色页面必须配深色字，否则什么都看不见")
         self.assertEqual(str(self.app.media_label.cget("bg")),
                          self.winmon.UI_SURFACE,
