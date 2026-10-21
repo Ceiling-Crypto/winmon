@@ -2917,7 +2917,14 @@ def launch_item(item: ProgramItem, as_admin: bool = False,
     args = " ".join(x for x in (item.args, extra_args) if x).strip()
     workdir = item.workdir if item.workdir and os.path.isdir(item.workdir) else ""
 
-    # ---- 已经在运行：切到前台即可，不重复启动 ----
+    # ---- 已经在运行：有可见窗口就切前台；只有后台进程则继续启动 ----
+    #
+    # 2026-10-21 修 Edge 打不开：Edge 的“启动预加载 / 后台扩展”会留下
+    # msedge.exe 进程但没有任何顶层窗口（任务管理器里 5 个进程、MainWindowHandle=0）。
+    # 旧逻辑只要 is_program_running() 为真就 return "已在运行，已尝试切到前台"，
+    # 根本没调用 ShellExecute —— 用户看到的就是“点打开没反应”。
+    # 正确语义是：没有可见窗口不算“已经打开”，继续请求一个窗口。
+    already_background = False
     if not extra_args and not always_shell:
         procs = snapshot_processes()
         if is_program_running(target, procs):
@@ -2928,7 +2935,8 @@ def launch_item(item: ProgramItem, as_admin: bool = False,
                     user32.SetForegroundWindow(w.HWND(hwnd))
                 except Exception:
                     pass
-            return True, f"{item.name} 已在运行，已尝试切到前台"
+                return True, f"{item.name} 已在运行，已尝试切到前台"
+            already_background = True
 
     if always_shell:
         ok, msg = start_via_shell(target, args, workdir)
@@ -2963,6 +2971,20 @@ def launch_item(item: ProgramItem, as_admin: bool = False,
     if as_admin or not verify:
         return True, f"已启动 {item.name}" + ("（管理员）" if as_admin else "")
 
+    if already_background:
+        # 后台进程已经在，但刚才没有可见窗口：不等“进程存在”（它一直存在），
+        # 只等一个**新的可见顶层窗口**。这是 Edge 场景的关键判据。
+        hwnd = _wait_window_for_target(target, max(2.5, settle + 1.0), procs)
+        if hwnd:
+            return True, f"{item.name} 已在后台运行，已打开窗口"
+        ok, msg = start_via_shell(target, args, workdir)
+        if ok:
+            hwnd = _wait_window_for_target(target, 4.0, procs)
+            if hwnd:
+                return True, f"{item.name} 已在后台运行，已通过系统 shell 打开窗口"
+        return True, (f"{item.name} 正在后台运行；已请求打开窗口，"
+                      f"但未确认可见窗口（可再点一次，或从开始菜单打开）")
+
     if _wait_running(target, max(0.3, settle)):
         return True, f"已启动 {item.name}"
 
@@ -2982,6 +3004,26 @@ def launch_item(item: ProgramItem, as_admin: bool = False,
         note = "（起始目录由系统 shell 决定）" if workdir else ""
         return True, f"已启动 {item.name}（ShellExecute 未确认，经系统 shell 兜底成功）{note}"
     return True, f"已请求启动 {item.name}（未能确认进程是否出现）"
+
+
+def _wait_window_for_target(path: str, seconds: float,
+                            procs: dict | None = None) -> int:
+    """
+    等目标程序出现一个**可见顶层窗口**，返回 hwnd（没有则 0）。
+
+    和 `_wait_running()` 的区别：后台常驻进程（Edge 启动预加载、Steam 托盘）
+    一直有进程，所以“进程出现了”不能证明“窗口打开了”。这里只认窗口。
+    每次重查窗口列表，但进程快照复用调用方传进来的那份（窗口进程不会换 pid）。
+    """
+    import time as _time
+    snapshot = procs if procs is not None else snapshot_processes()
+    deadline = _time.monotonic() + max(0.2, seconds)
+    while _time.monotonic() < deadline:
+        hwnd = _find_window_for_target(path, snapshot)
+        if hwnd:
+            return hwnd
+        _time.sleep(0.15)
+    return 0
 
 
 def _wait_running(path: str, seconds: float) -> bool:

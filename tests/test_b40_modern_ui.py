@@ -31,16 +31,24 @@ class TestModernPaletteAndType(unittest.TestCase):
     def test_klein_blue_is_used_but_legacy_palette_is_untouched(self):
         import winmon
         winmon.apply_theme("light")
-        self.assertEqual(winmon.UI_ACCENT, "#002fa7",
-                         "新强调色应是克莱因蓝")
+        self.assertEqual(winmon.UI_BG, "#04122f",
+                         "默认窗口应是克莱因蓝玻璃，不是纯白页")
+        self.assertEqual(winmon.UI_ACCENT, "#5e7cff",
+                         "强调色应是提亮的克莱因蓝")
         legacy = winmon._THEME_PALETTES_LEGACY
         self.assertIsNot(legacy, winmon._THEME_PALETTES)
         self.assertEqual(legacy["light"]["UI_ACCENT"], "#2563eb",
                          "旧色板必须原样保留，等用户决议")
+        self.assertEqual(legacy["light"]["UI_BG"], "#ffffff",
+                         "旧色板的纯白页也要原样保留")
         self.assertEqual(legacy["dark"]["UI_BG"], "#000000")
         self.assertNotEqual(winmon.UI_CARDS["ai"]["bg"],
                             legacy["light"]["UI_CARDS"]["ai"]["bg"],
                             "高亮卡应跟随新色板，而不是继续用旧底色")
+        self.assertNotEqual(winmon.UI_CARDS["media"]["tag_bg"], "#0f6b5c",
+                            "媒体卡不再使用绿色")
+        self.assertNotEqual(winmon.UI_MEDIA_BTN_BG, "#0f6b5c",
+                            "媒体键也不再使用绿色")
 
     def test_ui_font_is_a_modern_sans_serif(self):
         import winmon
@@ -147,6 +155,28 @@ class TestModernWidgets(unittest.TestCase):
         self.assertGreaterEqual(int(pane.tree.column("name", "width")), 370)
         self.assertNotEqual(tuple(pane.tree.xview()), (0.0, 1.0),
                             "列总宽应超过面板，横向滚动才有可滑动范围")
+
+    def test_rail_button_has_soft_shadow_room_and_no_hard_rim(self):
+        rail_bg = self.winmon.mix_color(
+            self.winmon.UI_BG, self.winmon.UI_SURFACE_ALT, 0.72)
+        btn = self.winmon.RoundedButton(
+            self.root, text="加入总览", kind="rail", bg=rail_bg,
+            height=32, radius=16, padx=13, lead=self.winmon.UI_ACCENT,
+            shadow_room=5)
+        btn.pack()
+        self.root.update()
+        shadows, body = [], []
+        for item in btn.find_all():
+            tags = btn.gettags(item)
+            if "jelly-shadow" in tags:
+                shadows.append(item)
+            if "jelly-body" in tags:
+                body.append(item)
+        self.assertGreaterEqual(len(shadows), 5,
+                                "栏内按钮需要多层低透明投影")
+        self.assertTrue(body)
+        self.assertEqual(str(btn.itemcget(body[0], "outline")), "",
+                         "栏内按钮不能再用硬描边，层次交给阴影和高光")
 
     def test_soft_panel_and_badge_are_rounded_canvas_layers(self):
         panel = self.winmon.SoftPanel(self.root, "#ffffff",

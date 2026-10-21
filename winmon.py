@@ -14,7 +14,7 @@ WinMon —— Windows 桌面工具（图形界面 + 命令行）
 7. AI 工作伴侣：识别当前 AI、用量预算、MCP / API / 纯本地
 8. 操作历史：谁在什么时候被关闭/结束了，可复制、可导出
 9. 前台窗口实时高亮、置顶窗口标记、程序图标、隐藏窗口过滤
-10. 颜色可选普通（白底）/ 深色（黑底）；字号 9–12
+10. 颜色可选普通（克莱因蓝）/ 深色（午夜蓝）；字号 9–12
 
 命令行
 ------
@@ -174,7 +174,7 @@ THEME_RESOLVED = THEME_DEFAULT
 
 # ---- 界面透明度（2026-10-21）----
 # 用户要求：默认 100%，可调，但下限只到“窗口边缘淡下去”为止，不允许整窗消失。
-# 45% 下白底仍能看清文字与边界；再低就开始影响可用性，所以把它定为硬下限。
+# 45% 下深蓝底仍能看清文字与边界；再低就开始影响可用性，所以把它定为硬下限。
 UI_OPACITY_DEFAULT = 100
 UI_OPACITY_MIN = 45
 UI_OPACITY_MAX = 100
@@ -293,105 +293,110 @@ _THEME_PALETTES = {
 #: 想回退时只要把 `_THEME_PALETTES = _THEME_PALETTES_LEGACY` 一行换回来。
 _THEME_PALETTES_LEGACY = _THEME_PALETTES
 
-#: 现代色板：克莱因蓝 #002FA7 作为主强调色，冷白/墨蓝作中性色；
-#: 高亮卡从“浅色补丁”改成低饱和的薄雾底 + 同色系状态色，和页面同一套语言。
-#: 注意：媒体按钮仍保留深青（对比度最好）；MCP/KEY 的浅色前景沿用旧值，
-#: 因为它们是各自卡片的视觉锚点，换了反而会和旁边状态条打架。
+#: 现代色板：整窗是**克莱因蓝玻璃**（#061B4E → #102F78 三层明度），
+#: 强调色用亮克莱因蓝 #4D74FF；高亮卡是比页面亮一档的蓝玻璃，不再是浅色补丁。
+#: 媒体卡/媒体键全部改为蓝色系，不再使用绿色；只有“已连接/成功”这类语义状态
+#: 保留绿色，避免把状态色和栏目色混在一起。
 _THEME_PALETTES_MODERN = {
     THEME_LIGHT: {
-        "UI_BG": "#ffffff",
-        "UI_SURFACE": "#ffffff",
-        "UI_SURFACE_ALT": "#f4f6fc",
-        "UI_INK": "#0b1020",
-        "UI_MUTED": "#5f6b85",
-        "UI_LINE": "#e4e8f3",
-        "UI_ACCENT": "#002fa7",
-        "UI_ACCENT_DARK": "#001e6b",
+        #: 2026-10-21 用户决议：整窗不再是白底，而是**克莱因蓝玻璃**。
+        #: 背景/浮片/卡片是同一蓝色系的三个明度层，靠亮边与暗影制造“半透明”
+        #: 的错觉；真正整窗 alpha 仍由设置里的透明度控制。
+        "UI_BG": "#04122f",
+        "UI_SURFACE": "#0a2460",
+        "UI_SURFACE_ALT": "#13357d",
+        "UI_INK": "#f5f8ff",
+        "UI_MUTED": "#b9c9ed",
+        "UI_LINE": "#3558a8",
+        "UI_ACCENT": "#5e7cff",
+        "UI_ACCENT_DARK": "#3b57d6",
         "UI_ON_ACCENT": "#ffffff",
-        "UI_INDICATOR": "#2f55d4",
-        "UI_INDICATOR_BORDER": "#002fa7",
-        "UI_HOVER_BG": "#edf2ff",
-        "UI_SELECT_BG": "#e3e9ff",
-        "UI_SELECT_FG": "#0b1020",
-        "UI_OK": "#087a5b",
-        "UI_WARN": "#a35a00",
-        "UI_DANGER": "#c62828",
-        "UI_PURPLE": "#6d28d9",
-        "UI_HEADING": "#475467",
-        "UI_PLACEHOLDER": "#667085",
-        "UI_MEDIA_BTN_BG": "#0f6b5c",
+        "UI_INDICATOR": "#8fa8ff",
+        "UI_INDICATOR_BORDER": "#c0ceff",
+        "UI_HOVER_BG": "#1a3f8f",
+        "UI_SELECT_BG": "#2453b8",
+        "UI_SELECT_FG": "#ffffff",
+        "UI_OK": "#77e8bc",
+        "UI_WARN": "#ffc86b",
+        "UI_DANGER": "#ff929f",
+        "UI_PURPLE": "#c7b6ff",
+        "UI_HEADING": "#a8bce8",
+        "UI_PLACEHOLDER": "#8fa6d6",
+        #: 媒体键改为克莱因蓝系的玻璃按钮，不再使用绿色。
+        "UI_MEDIA_BTN_BG": "#4f61e8",
         "UI_MEDIA_BTN_FG": "#ffffff",
-        "UI_MEDIA_BTN_ACTIVE": "#0b584b",
+        "UI_MEDIA_BTN_ACTIVE": "#3b4bc8",
         "UI_CARDS": {
-            "media": {"bg": "#f2faf7", "fg": "#0a2b25", "muted": "#52746c",
-                      "border": "#d3e8e1", "tag_bg": "#0f6b5c", "tag_fg": "#ffffff"},
-            "ai": {"bg": "#f4f7ff", "fg": "#0b1b3a", "muted": "#5a6b8c",
-                   "border": "#d8e1fa", "tag_bg": "#002fa7", "tag_fg": "#ffffff",
-                   "state_ok_bg": "#eaf8f1", "state_ok_fg": "#0a6b4f",
-                   "state_warn_bg": "#fff7e6", "state_warn_fg": "#8a4b00"},
-            "connect": {"ok_bg": "#e9f8f0", "ok_fg": "#0a6b4f", "ok_border": "#a7d8c3",
-                        "warn_bg": "#fff6e3", "warn_fg": "#7a4a00",
-                        "warn_border": "#e8c98f"},
-            "mcp": {"bg": "#f2f8ff", "fg": "#1f6f9e", "muted": "#4b6473",
-                    "border": "#9cc8e2", "accent": "#1f6f9e",
-                    "code_bg": "#ffffff", "code_fg": "#1f3340"},
-            "key": {"bg": "#fff9ec", "fg": "#a86b00", "muted": "#7a6240",
-                    "border": "#d8b36d", "accent": "#a86b00", "warn": "#a33b1f",
-                    "state": "#8a5a00"},
-            "workspace": {"bg": "#f4f7fa", "fg": "#26425c", "muted": "#536377",
-                          "border": "#c8d5e2", "accent": "#395c7a"},
-            "behavior": {"bg": "#f1f9f5", "fg": "#24513f", "muted": "#5a7167",
-                         "border": "#bfdccc", "accent": "#0f6b5c"},
-            "proactive": {"bg": "#f7f3ff", "fg": "#513a72", "muted": "#6a5b7e",
-                          "border": "#d9c8f0", "accent": "#6d28d9"},
+            #: 高亮卡是“比页面亮一档的蓝玻璃”，不是浅色补丁；媒体卡不再有绿色。
+            "media": {"bg": "#202a72", "fg": "#f4f8ff", "muted": "#c1c9ff",
+                      "border": "#6e7bff", "tag_bg": "#a9bcff", "tag_fg": "#0a1b45"},
+            "ai": {"bg": "#0d2e73", "fg": "#f2f7ff", "muted": "#adc3f0",
+                   "border": "#4b74d9", "tag_bg": "#5e7cff", "tag_fg": "#ffffff",
+                   "state_ok_bg": "#0b3d4e", "state_ok_fg": "#8cf0d4",
+                   "state_warn_bg": "#3a2a5e", "state_warn_fg": "#ffd98a"},
+            "connect": {"ok_bg": "#0c3b4f", "ok_fg": "#8cf0d4", "ok_border": "#2f7c8a",
+                        "warn_bg": "#3a2a0a", "warn_fg": "#ffd98a",
+                        "warn_border": "#7a5a16"},
+            "mcp": {"bg": "#0a2752", "fg": "#d9ecff", "muted": "#9fbce2",
+                    "border": "#3f78b8", "accent": "#7fbbff",
+                    "code_bg": "#061a38", "code_fg": "#e5f4ff"},
+            "key": {"bg": "#2a2450", "fg": "#ffe1a8", "muted": "#c9b9e8",
+                    "border": "#7b63b8", "accent": "#ffc86b", "warn": "#ff9b9b",
+                    "state": "#ffd071"},
+            "workspace": {"bg": "#0c2854", "fg": "#e6f0ff", "muted": "#a7bee0",
+                          "border": "#3e5e9b", "accent": "#8fb6ff"},
+            "behavior": {"bg": "#0d2f4a", "fg": "#e3f4ff", "muted": "#a6c4d9",
+                         "border": "#3a6b8a", "accent": "#7cd9ef"},
+            "proactive": {"bg": "#241b4d", "fg": "#ede6ff", "muted": "#b9a8e6",
+                          "border": "#6b55a8", "accent": "#c7b6ff"},
         },
     },
     THEME_DARK: {
         "UI_BG": "#000000",
-        "UI_SURFACE": "#0b0c12",
-        "UI_SURFACE_ALT": "#15171f",
+        "UI_SURFACE": "#070d1d",
+        "UI_SURFACE_ALT": "#0d1730",
         "UI_INK": "#ffffff",
-        "UI_MUTED": "#b6bed0",
-        "UI_LINE": "#2a2e3b",
-        "UI_ACCENT": "#7f9bff",
-        "UI_ACCENT_DARK": "#4f6fe8",
-        "UI_ON_ACCENT": "#060b18",
-        "UI_INDICATOR": "#6f8bff",
-        "UI_INDICATOR_BORDER": "#a9bcff",
-        "UI_HOVER_BG": "#1a1d28",
-        "UI_SELECT_BG": "#1c2a55",
+        "UI_MUTED": "#b5c2dc",
+        "UI_LINE": "#1e2a4a",
+        "UI_ACCENT": "#8fa8ff",
+        "UI_ACCENT_DARK": "#5b76e8",
+        "UI_ON_ACCENT": "#040a18",
+        "UI_INDICATOR": "#8fa8ff",
+        "UI_INDICATOR_BORDER": "#c0ceff",
+        "UI_HOVER_BG": "#121e3a",
+        "UI_SELECT_BG": "#1a2a55",
         "UI_SELECT_FG": "#ffffff",
-        "UI_OK": "#5be3a7",
-        "UI_WARN": "#ffc65c",
-        "UI_DANGER": "#ff8a8a",
-        "UI_PURPLE": "#c4b5fd",
-        "UI_HEADING": "#c3cfe3",
-        "UI_PLACEHOLDER": "#8e9ab0",
-        "UI_MEDIA_BTN_BG": "#0f6b5c",
+        "UI_OK": "#77e8bc",
+        "UI_WARN": "#ffc86b",
+        "UI_DANGER": "#ff929f",
+        "UI_PURPLE": "#c7b6ff",
+        "UI_HEADING": "#b8c8e8",
+        "UI_PLACEHOLDER": "#8fa6d6",
+        "UI_MEDIA_BTN_BG": "#2e5bff",
         "UI_MEDIA_BTN_FG": "#ffffff",
-        "UI_MEDIA_BTN_ACTIVE": "#0b584b",
+        "UI_MEDIA_BTN_ACTIVE": "#1e43c8",
         "UI_CARDS": {
-            "media": {"bg": "#0c2a25", "fg": "#e4fff8", "muted": "#a6d3c7",
-                      "border": "#2f7e6d", "tag_bg": "#2fa98e", "tag_fg": "#04120e"},
-            "ai": {"bg": "#0c1b33", "fg": "#eaf2ff", "muted": "#a6badb",
-                   "border": "#2f528c", "tag_bg": "#7f9bff", "tag_fg": "#071020",
-                   "state_ok_bg": "#0b3528", "state_ok_fg": "#88f0c0",
-                   "state_warn_bg": "#3a2a06", "state_warn_fg": "#ffd98a"},
-            "connect": {"ok_bg": "#0c3327", "ok_fg": "#8cf2c5", "ok_border": "#2a7a5b",
-                        "warn_bg": "#3a2b0a", "warn_fg": "#ffd98a",
-                        "warn_border": "#7a5a16"},
-            "mcp": {"bg": "#0b2233", "fg": "#d6efff", "muted": "#8fb8cf",
-                    "border": "#2d7196", "accent": "#8dd3ff",
-                    "code_bg": "#071721", "code_fg": "#d6efff"},
-            "key": {"bg": "#2f240b", "fg": "#ffe6b0", "muted": "#c8ab78",
-                    "border": "#8a671d", "accent": "#f0b64a", "warn": "#ff9b7a",
+            "media": {"bg": "#0a1b3c", "fg": "#f4f8ff", "muted": "#a9bfe8",
+                      "border": "#2f4f9a", "tag_bg": "#a9bcff", "tag_fg": "#07122e"},
+            "ai": {"bg": "#081a3a", "fg": "#f2f7ff", "muted": "#a9c0ea",
+                   "border": "#2d4c91", "tag_bg": "#8fa8ff", "tag_fg": "#040a18",
+                   "state_ok_bg": "#0a2f3c", "state_ok_fg": "#8cf0d4",
+                   "state_warn_bg": "#2f2348", "state_warn_fg": "#ffd98a"},
+            "connect": {"ok_bg": "#0a2f3c", "ok_fg": "#8cf0d4", "ok_border": "#2a6b78",
+                        "warn_bg": "#2f2308", "warn_fg": "#ffd98a",
+                        "warn_border": "#6a4d12"},
+            "mcp": {"bg": "#071b33", "fg": "#d9ecff", "muted": "#99b9dc",
+                    "border": "#2d5c8f", "accent": "#8fc9ff",
+                    "code_bg": "#030e1c", "code_fg": "#e5f4ff"},
+            "key": {"bg": "#211b3d", "fg": "#ffe1a8", "muted": "#c9b9e8",
+                    "border": "#64509b", "accent": "#ffc86b", "warn": "#ff9b9b",
                     "state": "#ffd071"},
-            "workspace": {"bg": "#171b20", "fg": "#dbe7f2", "muted": "#a6b6c4",
-                          "border": "#4b5c6b", "accent": "#a9c3d6"},
-            "behavior": {"bg": "#10291f", "fg": "#d5f5e3", "muted": "#9bc6ae",
-                         "border": "#346c55", "accent": "#73d6a7"},
-            "proactive": {"bg": "#24182f", "fg": "#eadcff", "muted": "#c3addd",
-                          "border": "#67468f", "accent": "#c4a6ff"},
+            "workspace": {"bg": "#081a35", "fg": "#e6f0ff", "muted": "#a7bee0",
+                          "border": "#2d4770", "accent": "#8fb6ff"},
+            "behavior": {"bg": "#092235", "fg": "#e3f4ff", "muted": "#a6c4d9",
+                         "border": "#2b536a", "accent": "#7cd9ef"},
+            "proactive": {"bg": "#1b1438", "fg": "#ede6ff", "muted": "#b9a8e6",
+                          "border": "#524084", "accent": "#c7b6ff"},
         },
     },
 }
@@ -401,12 +406,12 @@ _THEME_PALETTES = _THEME_PALETTES_MODERN
 
 _THEME_LABELS = {
     "zh": (
-        (THEME_LIGHT, "普通（白底）"),
-        (THEME_DARK, "深色（黑底）"),
+        (THEME_LIGHT, "普通（克莱因蓝）"),
+        (THEME_DARK, "深色（午夜蓝）"),
     ),
     "en": (
-        (THEME_LIGHT, "Light (white)"),
-        (THEME_DARK, "Dark (black)"),
+        (THEME_LIGHT, "Light (Klein blue)"),
+        (THEME_DARK, "Dark (midnight)"),
     ),
 }
 
@@ -476,7 +481,15 @@ def set_dark_title_bar(widget, dark: bool | None = None) -> None:
     窗口销毁时 Tk 会一起回收这个绑定，不会留下 “invalid command name …_later”
     的收尾噪音。
     """
-    want = (THEME_RESOLVED == THEME_DARK) if dark is None else bool(dark)
+    if dark is None:
+        # 2026-10-21 起默认主题也是克莱因蓝深底，不能再按 light/dark 判断；
+        # 直接用页面亮度决定标题栏明暗，换任何色板都不会出现白标题栏。
+        try:
+            want = color_luminance(UI_BG) < 0.55
+        except Exception:
+            want = (THEME_RESOLVED == THEME_DARK)
+    else:
+        want = bool(dark)
     try:
         hwnd = core.user32.GetAncestor(
             core.w.HWND(widget.winfo_id()), core.GA_ROOT)
@@ -1353,7 +1366,7 @@ class RoundedButton(tk.Canvas):
                  width: int | None = None, height: int | None = None,
                  radius: int = 15, font=None, padx: int = 12,
                  anchor: str = "center", style: str = "", lead: str = "",
-                 **kw) -> None:
+                 shadow_room: int = 3, **kw) -> None:
         self._text = str(text)
         self._command = command
         self._kind = str(kind or "secondary")
@@ -1363,6 +1376,7 @@ class RoundedButton(tk.Canvas):
         self._anchor = anchor if anchor in ("center", "w", "e") else "center"
         #: 左侧的小色条（动作栏用来区分“监控 / 工作台 / AI / 设置”，不是图标）。
         self._lead = str(lead or "")
+        self._shadow_room = max(2, min(8, int(shadow_room)))
         self._state = str(kw.pop("state", "normal") or "normal")
         self._hover = False
         self._pressed = False
@@ -1432,7 +1446,7 @@ class RoundedButton(tk.Canvas):
         """
         按钮配色：不再画“灰色方块 + 边框”，而是近白/深色浮片 + 柔和投影。
 
-        强调按钮用克莱因蓝；媒体键保留深青（与卡片对比最好）；次级按钮
+        强调按钮用克莱因蓝；媒体键也是蓝紫玻璃（不再用深青）；次级按钮
         只在悬停时浮起半档，靠投影和位移表达层次，符合“边框换成大范围
         低透明阴影”的要求。
         """
@@ -1459,17 +1473,18 @@ class RoundedButton(tk.Canvas):
                 self._hover_fill = "#ffffff"
                 self._pressed_fill = mix_color(UI_SELECT_BG, "#ffffff", 0.18)
             else:
-                # 深色底上不要“白块”：用一层极淡的蓝灰玻璃，和黑底拉开半档。
-                self._fill = mix_color(mix_color(self._bg, UI_ACCENT, 0.10),
-                                       "#ffffff", 0.10)
-                self._hover_fill = mix_color(self._fill, "#ffffff", 0.10)
-                self._pressed_fill = mix_color(self._fill, UI_ACCENT, 0.22)
+                # 深色底上不要“白块”：用一层淡蓝玻璃，和面板拉开一档，
+                # 再把阴影压到下面，形成玻璃片浮起的感觉。
+                self._fill = mix_color(mix_color(self._bg, UI_ACCENT, 0.12),
+                                       "#ffffff", 0.18)
+                self._hover_fill = mix_color(self._fill, "#ffffff", 0.16)
+                self._pressed_fill = mix_color(self._fill, UI_ACCENT, 0.25)
             self._fg = UI_INK
             self._disabled_fill = UI_SURFACE_ALT
             self._shadow_tint = UI_ACCENT
         elif kind == "ghost":
             # 不是“透明到看不见”：给一层和页面只差半档的薄底 + 柔影，
-            # 白底上仍能看出可点的胶囊，但不会像旧版灰块那样抢视线。
+            # 深蓝底上仍能看出可点的胶囊，但不会像旧版灰块那样抢视线。
             self._fill = mix_color(self._bg, UI_SURFACE_ALT,
                                    0.90 if light_bg else 0.85)
             self._hover_fill = mix_color(self._bg, "#ffffff",
@@ -1499,10 +1514,10 @@ class RoundedButton(tk.Canvas):
         base = self._bg
         tint = self._shadow_tint or "#0b1020"
         if color_luminance(base) < 0.30:
-            # 深色页上黑色阴影不可见；改用一点冷白提亮，像环境光。
-            tint = "#ffffff"
-            strength *= 0.35
-        return mix_color(base, tint, max(0.0, min(0.22, strength)))
+            # 深蓝玻璃上不要白边光晕（会像描边）；用更深的墨蓝做“下沉”阴影。
+            tint = "#000000"
+            strength *= 1.10
+        return mix_color(base, tint, max(0.0, min(0.34, strength)))
 
     @staticmethod
     def _edge_colors(fill: str) -> tuple[str, str, str]:
@@ -1552,46 +1567,70 @@ class RoundedButton(tk.Canvas):
             hover_lift = -1.2 if hovering else 0.0
             margin_x = 2.5
             body_w = max(8.0, (width - margin_x * 2) * sx)
-            body_h = max(8.0, (height - 6.0) * sy)
+            # 给阴影留出真实空间：之前 body 只离底边 3px，投影层全被 Canvas
+            # 裁掉，看起来像一条硬线。shadow_room 越大，投影越能铺开。
+            room = self._shadow_room
+            top_margin = 1.8 + max(0, room - 3) * 0.35
+            bottom_margin = 2.8 + max(0, room - 3) * 0.45
+            body_h = max(8.0, (height - top_margin - bottom_margin) * sy)
             cx = width / 2.0
-            body_top = (2.0 + hover_lift + 1.8 * max(0.0, squash)
+            body_top = (top_margin + hover_lift + 1.8 * max(0.0, squash)
                         - 1.5 * max(0.0, -squash))
-            body_top = max(1.0, min(height - 7.0, body_top))
+            body_top = max(1.0, min(height - bottom_margin - 4.0, body_top))
             x1 = cx - body_w / 2.0
             x2 = cx + body_w / 2.0
             y1 = body_top
-            y2 = min(height - 3.0, body_top + body_h)
+            y2 = min(height - bottom_margin, body_top + body_h)
             r = max(1.0, min(self._radius, (y2 - y1) / 2.0,
                              (x2 - x1) / 2.0))
 
-            # 大范围低透明阴影：三层同形、逐层扩大，越靠外越淡。
-            # 它替代了早期 WinForms/WPF 那种硬描边，也让按钮“浮”在页面上。
+            # 多层低透明投影：越靠外越淡，且所有层都在 shadow_room 里，
+            # 不再被 Canvas 底边裁成一条硬线。深蓝底上用墨色下沉，靠亮边提气。
             if not disabled:
-                spread = 2.0 + (0.8 if hovering else 0.0) \
-                    - 1.0 * max(0.0, squash) + 0.8 * max(0.0, -squash)
-                for grow, gap, strength in ((7.0, 3.4, 0.030),
-                                            (4.5, 2.7, 0.050),
-                                            (2.2, 2.0, 0.075)):
+                layers = ((room - 0.4, 1.9, 0.030),
+                          (room - 1.0, 1.6, 0.042),
+                          (room - 1.7, 1.35, 0.055),
+                          (room - 2.4, 1.15, 0.070),
+                          (max(0.5, room - 3.1), 1.0, 0.085))
+                for grow, gap, strength in layers:
+                    grow = max(0.4, grow)
+                    if self._kind == "rail":
+                        # 栏内按钮的“果冻”要保留，但阴影改成更深、更柔的下沉，
+                        # 不再用亮描边勾轮廓；这样在蓝玻璃面板上不会显得脏。
+                        strength *= 2.20
                     self.create_polygon(
                         self._rounded_points(
-                            x1 - grow, y1 - grow * 0.30 + gap,
-                            x2 + grow, y2 + grow * 0.30 + gap,
+                            x1 - grow, y1 - grow * 0.28 + gap,
+                            x2 + grow, y2 + grow * 0.28 + gap,
                             r + grow * 0.72),
                         smooth=True, splinesteps=28,
-                        fill=self._shadow_color(strength), outline="",
-                        tags=("jelly-shadow",))
+                        fill=self._shadow_color(
+                            strength + (0.012 if hovering else 0.0)),
+                        outline="", tags=("jelly-shadow",))
             # 主体：一颗完整的圆角胶囊。焦点不再额外画描边，避免点击后出现
             # 类似虚线框的“选中框”；键盘仍可 Tab 到按钮并回车触发。
+            fill_lum = color_luminance(fill)
+            if self._kind == "rail":
+                rim = ""                     # 栏内只靠阴影和高光，不勾硬边
+            elif fill_lum < 0.32:
+                rim = mix_color(fill, "#ffffff", 0.16)
+            else:
+                rim = mix_color(fill, self._bg, 0.10)
             self.create_polygon(
                 self._rounded_points(x1, y1, x2, y2, r),
                 smooth=True, splinesteps=28, fill=fill,
-                outline=mix_color(fill, self._bg, 0.10), width=1,
-                tags=("jelly-body",))
+                outline=rim, width=1, tags=("jelly-body",))
             # 顶部高光 / 底部内阴影：各一条细线，薄而有弹性，不压成厚塑料块。
             if x2 - x1 > 12 and y2 - y1 > 8:
                 self.create_line(
                     x1 + r * 0.62, y1 + 1.35, x2 - r * 0.62, y1 + 1.35,
                     fill=highlight, width=1, tags=("jelly-highlight",))
+                # 第二条更淡的顶光：Canvas 没有 alpha，用相邻色阶模拟柔和的
+                # 玻璃反光，避免一条亮线看起来像硬描边。
+                self.create_line(
+                    x1 + r * 0.72, y1 + 2.65, x2 - r * 0.72, y1 + 2.65,
+                    fill=mix_color(fill, "#ffffff", 0.10),
+                    width=1, tags=("jelly-highlight",))
                 self.create_line(
                     x1 + r * 0.68, y2 - 1.45, x2 - r * 0.68, y2 - 1.45,
                     fill=lip, width=1, tags=("jelly-shade",))
@@ -1878,7 +1917,7 @@ class RoundedButton(tk.Canvas):
 # ============================================================================
 
 def _container_bg(parent) -> str:
-    """读父容器底色；读不到就按页面白底处理。"""
+    """读父容器底色；读不到就按页面品牌蓝处理。"""
     for key in ("bg", "background"):
         try:
             value = str(parent.cget(key))
@@ -1924,9 +1963,10 @@ class SoftPanel(tk.Frame):
 
     def _shadow_color(self, strength: float) -> str:
         lum = color_luminance(self._panel_bg)
-        tint = "#0b1020" if lum > 0.35 else "#ffffff"
+        # 深蓝页面上用更深的墨蓝下沉，不再铺白色光晕（那会像硬描边）。
+        tint = "#0b1020" if lum > 0.35 else "#000000"
         if lum < 0.30:
-            strength *= 0.35
+            strength *= 0.95
         return mix_color(self._panel_bg, tint, max(0.0, min(0.2, strength)))
 
     def _redraw(self) -> None:
@@ -1942,13 +1982,17 @@ class SoftPanel(tk.Frame):
             r = max(4.0, min(float(self._radius), (x2 - x1) / 2.0,
                              (y2 - y1) / 2.0))
             for grow, gap, strength in ((4.0, 2.6, 0.045),
-                                        (2.2, 1.8, 0.070)):
+                                        (2.6, 2.0, 0.060),
+                                        (1.4, 1.5, 0.075)):
                 self.canvas.create_polygon(
                     self._rounded_points(x1 - grow, y1 + gap,
                                          x2 + grow, y2 + gap, r + grow * 0.7),
                     smooth=True, splinesteps=26,
                     fill=self._shadow_color(strength), outline="")
-            outline = self._border or mix_color(self.fill, self._panel_bg, 0.10)
+            fill_lum = color_luminance(self.fill)
+            outline = self._border or (
+                mix_color(self.fill, "#ffffff", 0.14) if fill_lum < 0.32
+                else mix_color(self.fill, self._panel_bg, 0.10))
             self.canvas.create_polygon(
                 self._rounded_points(x1, y1, x2, y2, r),
                 smooth=True, splinesteps=26, fill=self.fill,
@@ -1957,7 +2001,7 @@ class SoftPanel(tk.Frame):
                 self.canvas.create_line(
                     x1 + r * 0.6, y1 + 1.1, x2 - r * 0.6, y1 + 1.1,
                     fill=mix_color(self.fill, "#ffffff", 0.55
-                                   if color_luminance(self.fill) > 0.45 else 0.16),
+                                   if fill_lum > 0.45 else 0.16),
                     width=1)
         except Exception:
             pass
@@ -2679,7 +2723,7 @@ class PreviewPane:
 
         # ---- 预览下方：先选操作，再执行（用户 2026-10-20 的方案）----
         # 不再并排三个按钮；点箭头从下往上列出两个操作，选中项整行填充，
-        # 未选中项白底，状态一眼可辨。结束整树仍留在右键菜单 / 进程树页。
+        # 未选中项用页面底色，状态一眼可辨。结束整树仍留在右键菜单 / 进程树页。
         self.action = PREVIEW_ACTION_DEFAULT
         self._action_popup: tk.Toplevel | None = None
         self._action_rows: dict[str, tuple] = {}
@@ -6383,16 +6427,17 @@ _GUIDE_CONTENT = {
             ("h", "设置与颜色"),
             ("p", "「设置…」里同时有常规、AI 用量和使用说明；主界面不再单独放"
                   "「AI 用量」和「说明」。"),
-            ("p", "颜色可选普通（白底）或深色（黑底）；保存后立即生效。"
-                  "深色模式下媒体行、AI 卡会换成同色系的深色高亮，不会刺眼。"),
+            ("p", "颜色可选普通（克莱因蓝玻璃）或深色（午夜蓝玻璃）；保存后立即生效。"
+                  "整窗是深蓝底，高亮卡比页面亮一档；媒体卡和媒体键是蓝紫色，"
+                  "不再使用绿色。"),
             ("p", "「设置 → 常规 → 界面透明度」默认 100%，最低 45%：只淡到仍能看见"
                   "窗口边缘，不会整窗消失。主界面、设置/历史/AI 窗口、右键菜单、"
                   "搜索建议、操作下拉和媒体多选会一起变化；高亮卡和播放时的媒体拟光"
                   "也一起变。系统原生的下拉列表不归 WinMon 绘制，不在承诺范围内。"),
             ("h", "按键手感与拟光"),
             ("p", "主界面的圆角按钮按下时会轻微压扁、下移，松手后用阻尼回弹（会"
-                  "过冲一点再收住），像按到有弹性的键帽。顶部高光和底部投影是"
-                  "Canvas 当场画的 3D 效果，不是图片。"),
+                  "过冲一点再收住），像按到有弹性的键帽。顶部高光、下沉阴影和"
+                  "玻璃边缘是 Canvas 当场画的分层效果，不是图片。"),
             ("p", "媒体栏真的开始播放后，卡片边缘会出现一圈由淡到深的拟光；"
                   "暂停或停止播放后慢慢收回。它只表示“正在播放”，不表示音量或进度。"),
             ("h", "媒体这一行"),
@@ -7852,11 +7897,10 @@ class WinMonApp:
         except tk.TclError:
             pass
         try:
-            set_dark_title_bar(root, self.theme_resolved == THEME_DARK)
+            set_dark_title_bar(root)
             set_rounded_window_corners(root)
             # 窗口刚创建时可能还没映射，DWM 属性要等消息循环跑起来再设一次。
-            root.after(80, lambda: set_dark_title_bar(
-                root, self.theme_resolved == THEME_DARK))
+            root.after(80, lambda: set_dark_title_bar(root))
             root.after(90, lambda: set_rounded_window_corners(root))
         except Exception:
             pass
@@ -8126,7 +8170,7 @@ class WinMonApp:
         self.history_days = tk.IntVar(value=HISTORY_DAYS_DEFAULT)
         #: 界面语言：zh / en（默认中文；切换后主界面与 AI 窗口立即重译）
         self.language = tk.StringVar(value=i18n.get_language())
-        #: 界面颜色：普通（白底）/ 深色（黑底）。存 slug，显示当前语言标签。
+        #: 界面颜色：普通（克莱因蓝）/ 深色（午夜蓝）。存 slug，显示当前语言标签。
         self.theme_mode = tk.StringVar(
             value=theme_display(getattr(self, "theme_pref", THEME_DEFAULT)))
         #: 整窗透明度（45–100，默认 100）；改设置时同步给所有 Toplevel。
@@ -8351,7 +8395,7 @@ class WinMonApp:
                   lightcolor=[("active", UI_ACCENT_DARK)],
                   darkcolor=[("active", UI_ACCENT_DARK)])
         self._install_check_indicators(style)
-        # 主界面里还有少量 tk.Label/tk.Frame 没有显式背景；统一成白底黑字。
+        # 主界面里还有少量 tk.Label/tk.Frame 没有显式背景；统一成品牌蓝底浅字。
         # 高亮卡片都显式设置了 bg/fg，不会被这些默认值覆盖。
         try:
             for pattern, value in (
@@ -8662,8 +8706,8 @@ class WinMonApp:
             # 圆角胶囊 + 大范围低透明阴影；没有外描边，悬停才浮起半档。
             btn = RoundedButton(
                 rail, text=label, command=command, kind="rail",
-                bg=rail_bg, height=32, radius=16, anchor="w", padx=13,
-                lead=tone, font=UI_FONT)
+                bg=rail_bg, height=36, radius=18, anchor="w", padx=13,
+                lead=tone, shadow_room=6, font=UI_FONT)
             btn.pack(fill="x", padx=0, pady=2)
             self._rail_buttons.append(btn)
 
@@ -8712,6 +8756,10 @@ class WinMonApp:
             for lbl in self._rail_groups:
                 lbl.pack_configure(pady=(2, 0) if compact else (6, 1))
             for btn in self._rail_buttons:
+                # 12 号字 + 最小窗口时把栏内按钮收回 32px，保证「设置…」不被
+                # 挤出可视区；常规字号保留更高的 36px，让阴影有真实空间。
+                btn.configure(height=32 if compact else 36)
+                btn._shadow_room = 5 if compact else 6
                 btn.pack_configure(pady=0 if compact else 2)
         except Exception:
             pass

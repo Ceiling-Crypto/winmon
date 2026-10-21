@@ -293,8 +293,10 @@ class TestConnectWindowHierarchy(unittest.TestCase):
             key = labels[i18n.t("connect.key")]
             self.assertIn("bold", str(mcp.cget("font")))
             self.assertIn("bold", str(key.cget("font")))
-            self.assertEqual(str(mcp.cget("fg")), "#1f6f9e")
-            self.assertEqual(str(key.cget("fg")), "#a86b00")
+            self.assertEqual(str(mcp.cget("fg")),
+                             self.winmon.UI_CARDS["mcp"]["accent"])
+            self.assertEqual(str(key.cget("fg")),
+                             self.winmon.UI_CARDS["key"]["accent"])
             self.assertFalse(win.mcp_disclosure.open)
             self.assertFalse(win.key_advanced.open,
                              "直连 key 默认收在高级里，不该和 MCP 抢注意力")

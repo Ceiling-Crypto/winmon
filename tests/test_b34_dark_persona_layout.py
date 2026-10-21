@@ -175,22 +175,24 @@ class TestLightThemeAndPreviewFirst(unittest.TestCase):
         h.destroy_root(cls.root)
         cls.winmon.apply_theme("light")
 
-    def test_pure_white_theme_but_highlight_cards_stay_colored(self):
+    def test_klein_glass_theme_but_highlight_cards_stay_colored(self):
         self.assertEqual(str(self.root.cget("background")), self.winmon.UI_BG)
-        self.assertEqual(self.winmon.UI_BG, "#ffffff")
-        self.assertNotEqual(self.winmon.UI_INK, "#ffffff",
-                            "白底必须配深色字，否则什么都看不见")
+        self.assertEqual(self.winmon.UI_BG, "#04122f")
+        self.assertNotEqual(self.winmon.UI_BG, "#ffffff",
+                            "默认主题是克莱因蓝玻璃，不再保留纯白页")
+        self.assertGreater(self.winmon.color_luminance(self.winmon.UI_INK), 0.5,
+                           "深蓝底必须配浅色字")
         self.assertNotEqual(str(self.app.media_label.cget("bg")),
                             str(self.root.cget("background")),
-                            "媒体高亮卡片不能被白色主题吃掉")
+                            "媒体高亮卡片不能被背景吃掉")
         self.assertNotEqual(str(self.app.ai_state_label.cget("bg")),
                             str(self.root.cget("background")),
-                            "AI 高亮卡片不能被白色主题吃掉")
+                            "AI 高亮卡片不能被背景吃掉")
         from tkinter import ttk
         style = ttk.Style(self.root)
         button_bg = str(style.lookup("TButton", "background"))
         self.assertNotIn(button_bg, ("#000000", self.winmon.UI_BG),
-                         "按钮要和纯白页面区分开")
+                         "按钮要和深蓝页面区分开")
 
     def test_checkbox_indicator_is_a_filled_circle(self):
         from tkinter import ttk

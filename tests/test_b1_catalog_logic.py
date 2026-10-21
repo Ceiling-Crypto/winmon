@@ -436,5 +436,57 @@ class TestIsProgramRunningUsesFullPath(unittest.TestCase):
         self.assertTrue(core.is_program_running("dup.exe", procs))
 
 
+class TestBackgroundProcessStillOpens(unittest.TestCase):
+    """
+    Edge 的“启动预加载 / 后台扩展”会留下 msedge.exe 进程，但 MainWindowHandle=0。
+
+    旧 `launch_item()` 只要看到进程在跑就 return“已在运行，已尝试切到前台”，
+    根本没调用 ShellExecute —— 用户在程序目录点 Edge 看起来完全没反应。
+    没有可见窗口不等于“已经打开”，这里必须继续请求一个窗口。
+    """
+
+    def _fake_shell(self):
+        shell = mock.MagicMock()
+        shell.ShellExecuteW.return_value = 42
+        return shell
+
+    def test_background_process_without_window_requests_a_window(self):
+        target = sys.executable
+        item = core.ProgramItem(name="Edge 背景测试", target=target)
+        shell = self._fake_shell()
+        with mock.patch.object(core, "snapshot_processes",
+                               return_value={321: {"name": "msedge.exe",
+                                                   "path": target}}), \
+                mock.patch.object(core, "is_program_running", return_value=True), \
+                mock.patch.object(core, "_find_window_for_target", return_value=0), \
+                mock.patch.object(core, "_wait_window_for_target",
+                                  return_value=123456), \
+                mock.patch.object(core, "start_via_shell",
+                                  return_value=(True, "ok")), \
+                mock.patch.object(core.ctypes, "WinDLL", return_value=shell):
+            ok, msg = core.launch_item(item)
+        self.assertTrue(ok, msg)
+        self.assertIn("后台运行", msg)
+        self.assertIn("打开窗口", msg)
+        shell.ShellExecuteW.assert_called_once()
+
+    def test_visible_window_uses_activation_without_relaunch(self):
+        target = sys.executable
+        item = core.ProgramItem(name="Edge 可见测试", target=target)
+        shell = self._fake_shell()
+        with mock.patch.object(core, "snapshot_processes",
+                               return_value={321: {"name": "msedge.exe",
+                                                   "path": target}}), \
+                mock.patch.object(core, "is_program_running", return_value=True), \
+                mock.patch.object(core, "_find_window_for_target", return_value=777), \
+                mock.patch.object(core, "start_via_shell",
+                                  return_value=(True, "ok")), \
+                mock.patch.object(core.ctypes, "WinDLL", return_value=shell):
+            ok, msg = core.launch_item(item)
+        self.assertTrue(ok, msg)
+        self.assertIn("切到前台", msg)
+        shell.ShellExecuteW.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)
