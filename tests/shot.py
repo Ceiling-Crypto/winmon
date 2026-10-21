@@ -51,7 +51,7 @@ def encode_png_rgb(rgb: bytes, width: int, height: int) -> bytes:
             + chunk(b"IEND", b""))
 
 
-def build_app(width: int, height: int):
+def build_app(width: int, height: int, video: bool = False):
     """
     只构建界面（`_build_ui`），不启动采集线程与定时器 —— 截图不需要它们，
     而且没有后台线程时脚本更容易干净退出。
@@ -89,6 +89,7 @@ def build_app(width: int, height: int):
     app.status_text = tk.StringVar(value="WinMon 就绪（截图用）")
     app.overview_text = tk.StringVar(value="窗口 3 · 程序 3 · 进程 285")
     app._init_video_vars()          # 视频联动 / 媒体 / 关闭行为等变量统一在这里创建
+    app.video_link_visible.set(bool(video))
     app.video_close_mode.set("smart")
     app._build_ui()
     root.update_idletasks()
@@ -111,6 +112,8 @@ def main() -> int:
                     help="标签页序号：0 实时预览 / 1 实时总览 / 2 进程树 / 3 程序目录")
     ap.add_argument("--catalog", action="store_true",
                     help="截图前真正构建一次程序目录（让目录页有内容）")
+    ap.add_argument("--video", action="store_true",
+                    help="打开主界面的视频联动行（默认收起）")
     ap.add_argument("--out", default="", help="输出 PNG 路径")
     args = ap.parse_args()
 
@@ -123,7 +126,7 @@ def main() -> int:
     winmon.apply_theme(args.theme)
     if args.font:
         winmon.set_font_size(args.font)
-    root, app = build_app(args.width, args.height)
+    root, app = build_app(args.width, args.height, video=args.video)
     if args.tab:
         app.notebook.select(args.tab)
         root.update()

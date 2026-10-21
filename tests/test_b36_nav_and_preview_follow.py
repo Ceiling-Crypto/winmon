@@ -64,15 +64,14 @@ class TestNavigationAndAiWorkspace(unittest.TestCase):
         h.destroy_root(cls.root)
         cls.winmon.apply_theme("light")
 
-    def test_rail_is_grouped_by_four_mental_models(self):
-        groups = [str(w.cget("text")) for w in self.app._rail_groups]
-        self.assertEqual(groups, ["监控", "工作台", "AI", "设置"])
-        buttons = [str(w.cget("text")) for w in self.app._rail_buttons]
-        for label in ("加入总览", "移除总览", "操作历史…",
-                      "清理程序文件…", "AI 工作区…", "设置…"):
-            self.assertIn(label, buttons)
-        self.assertNotIn("AI 助手…", buttons)
-        self.assertNotIn("接入…", buttons)
+    def test_navigation_is_consolidated_into_top_right_and_ai_card(self):
+        """2026-10-21：左栏撤掉；设置=齿轮，搜索=放大镜，AI 工作区在 AI 卡里。"""
+        self.assertFalse(hasattr(self.app, "action_rail"))
+        self.assertEqual(str(self.app.settings_button.cget("text")), "⚙")
+        self.assertEqual(self.app.ai_workspace_btn.cget("text"), "AI 工作区")
+        self.assertEqual(str(self.app.gallery.remove_btn.cget("text")),
+                         "移除总览")
+        self.assertTrue(self.app.search_entry.winfo_exists())
 
     def test_ai_workspace_is_a_tab_and_contains_the_three_entries(self):
         nb = self.app.notebook

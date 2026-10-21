@@ -201,7 +201,8 @@ class TestUnifiedSearchUi(unittest.TestCase):
         self.assertEqual(self.app.media_play_btn.cget("text"), "▶")
         self.assertEqual(self.app.media_next_btn.cget("text"), "▶▶")
         parent = self.app.media_play_btn.master
-        labels = [w.cget("text") for w in parent.pack_slaves()
+        slaves = sorted(parent.grid_slaves(), key=lambda w: int(w.grid_info()["column"]))
+        labels = [w.cget("text") for w in slaves
                   if hasattr(w, "cget") and w.winfo_class() == "Button"
                   and w.cget("text") in ("◀◀", "▶", "⏸", "▶▶")]
         self.assertEqual(labels, ["◀◀", "▶", "▶▶"],

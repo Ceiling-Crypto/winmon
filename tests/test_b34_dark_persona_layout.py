@@ -230,36 +230,15 @@ class TestLightThemeAndPreviewFirst(unittest.TestCase):
             f"{self.app.tree.winfo_width()}px，状态列会被裁掉")
         self.assertEqual(self.app.notebook.index("current"), 0)
 
-    def test_preview_toolbar_has_two_actions_and_fill_state(self):
+    def test_preview_operation_bar_is_replaced_by_whitespace(self):
+        """2026-10-21：预览下方的「操作 / 执行」整块删掉，画面区多出一行。"""
         pane = self.app.preview
-        self.addCleanup(pane.close_actions)
-        self.assertEqual([key for key, _label in self.winmon.PREVIEW_ACTIONS],
-                         ["close", "terminate"])
-        self.assertEqual(pane.action, "close")
-        pane.open_actions()
-        self.assertIsNotNone(pane._action_popup)
-        row, _box, _txt, _detail, _col = pane._action_rows["close"]
-        other, _box2, _txt2, _detail2, _col2 = pane._action_rows["terminate"]
-        self.assertEqual(str(row.cget("bg")), self.winmon.UI_ACCENT,
-                         "当前操作必须整行填充，用户一眼知道选了哪个")
-        self.assertEqual(str(other.cget("bg")), self.winmon.UI_BG,
-                         "未选中的操作保持白底")
-        pane.choose_action("terminate")
-        self.assertEqual(pane.action, "terminate")
-        self.assertIn("强制结束", str(pane.action_button.cget("text")))
-        self.assertIsNone(pane._action_popup)
-        texts = [str(w.cget("text")) for w in walk(pane.frame)
-                 if w.winfo_class() in ("TButton", "Button")]
-        self.assertNotIn("结束整树", texts,
-                         "预览工具条只留两个不可逆动作，整树在右键菜单里")
-
-        calls = []
-        with mock.patch.object(self.app, "action_close_window",
-                               side_effect=lambda: calls.append("close")), \
-                mock.patch.object(self.app, "action_terminate",
-                                  side_effect=lambda: calls.append("terminate")):
-            pane.run_action()
-        self.assertEqual(calls, ["terminate"])
+        self.assertFalse(hasattr(pane, "action_button"),
+                         "预览下方不应再有操作选择按钮")
+        self.assertFalse(hasattr(pane, "run_button"))
+        self.assertTrue(pane.hint.winfo_exists(),
+                        "捕获失败时仍要有一行状态说明")
+        self.assertGreater(pane.canvas.winfo_height(), 300)
 
     def test_preview_capture_size_follows_the_canvas(self):
         self.root.update()

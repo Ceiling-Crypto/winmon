@@ -37,9 +37,9 @@ _STRINGS = {
         "settings.language": "语言 / Language",
         "settings.language_hint": "切换后主界面与 AI 窗口立即生效；详细说明在「使用说明」标签页。",
         "settings.theme": "界面颜色",
-        "settings.theme_hint": "9 套设计主题：钴蓝电青、霓虹粉青、石墨信号、青柠白昼、"
-                               "晴日天绿、暖阳橙绿、落日珊瑚、云白天蓝、山雪梅染。"
-                               "保存后立即生效；只换颜色，不改按键手感。"
+        "settings.theme_hint": "九套设计主题：钴蓝电青、霓虹粉青、石墨信号、青柠白昼、"
+                               "晴日天绿、暖阳橙绿、落日珊瑚、云白天蓝、山雪梅染。\n"
+                               "保存后立即生效；只换颜色，不改按键手感。\n"
                                "配色参考：鹰角网络《明日方舟》/ 塞壬唱片专辑封面"
                                "（仅作色彩研究，不代表官方合作）。",
         "assistant.title": "winmon1.0 AI 助手",
@@ -170,8 +170,9 @@ _STRINGS = {
         "settings.theme": "Color",
         "settings.theme_hint": "9 design themes: Cobalt Current, Neon Pink, Graphite Signal, "
                                "Lime Noon, Sunlit Verdant, Amber Meadow, Sunset Coral, "
-                               "Cloud & Sky, Snow & Plum Dye. Applies immediately; "
-                               "colors only, controls keep their jelly feel. "
+                               "Cloud & Sky, Snow & Plum Dye.\n"
+                               "Applies immediately; colors only, controls keep their "
+                               "jelly feel.\n"
                                "Palette reference: Hypergryph / Monster Siren album art "
                                "(color study only; no official affiliation).",
         "assistant.title": "winmon1.0 AI Assistant",
@@ -402,6 +403,17 @@ _STATIC_EN = {
     "结束选中进程及子树": "End subtree",
     "仅可启动": "Launchable only",
     "仅显示有窗口": "Windowed only",
+    "显示运行窗口": "Show running windows",
+    "窗口列表": "Window list",
+    "主界面内容": "Main window content",
+    "启动与关闭": "Startup and close",
+    "维护": "Maintenance",
+    "界面": "Interface",
+    "在主界面显示视频联动": "Show video link on main window",
+    "右键刷新": "right-click to refresh",
+    "搜索程序": "Search programs",
+    "跟随选择（右侧列表选中谁就预览谁）":
+        "Follow selection (preview whatever is selected)",
     "进程（父 → 子）": "Process (parent → child)",
     "进程树": "Process tree",
     "开机自启动（登录后自动运行 WinMon）":

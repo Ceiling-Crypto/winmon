@@ -46,6 +46,7 @@ import queue
 import re
 import shutil
 import sys
+import textwrap
 import threading
 import time
 import tkinter as tk
@@ -831,15 +832,6 @@ PREVIEW_ACTION_DETAILS = {
     "terminate": ("强制终止进程，未保存内容会丢失",
                   "Force-stop the process; unsaved work is lost"),
 }
-
-
-#: 英文标签；中文标签仍在 PREVIEW_ACTIONS 里（测试与设置文件都以它为准）。
-PREVIEW_ACTION_LABELS_EN = {"close": "Request close", "terminate": "Force end"}
-
-
-def preview_action_label(key: str) -> str:
-    return i18n.pick(dict(PREVIEW_ACTIONS).get(key, ""),
-                     PREVIEW_ACTION_LABELS_EN.get(key, ""))
 
 
 def preview_action_detail(key: str) -> str:
@@ -2089,6 +2081,118 @@ class RoundedBadge(tk.Canvas):
         self._draw()
 
 
+class SearchField(tk.Canvas):
+    """右上角的胶囊搜索框：手绘放大镜 + 无边框输入 + 占位文案。"""
+
+    def __init__(self, parent, textvariable, *, width: int = 250,
+                 height: int = 32, placeholder: str = "搜索程序") -> None:
+        self._panel_bg = _container_bg(parent)
+        self._field_w = max(150, int(width))
+        self._field_h = max(26, int(height))
+        self._fill = mix_color(UI_BG, UI_SURFACE_ALT, 0.72)
+        self._line = mix_color(UI_LINE, UI_BG, 0.42)
+        self._placeholder = str(placeholder)
+        self._focused = False
+        self._var = textvariable
+        super().__init__(parent, width=self._field_w, height=self._field_h,
+                         bg=self._panel_bg, bd=0, highlightthickness=0)
+        self.entry = tk.Entry(
+            self, textvariable=textvariable, font=UI_FONT,
+            bg=self._fill, fg=UI_INK, insertbackground=UI_INK,
+            disabledbackground=self._fill, disabledforeground=UI_MUTED,
+            relief="flat", bd=0, highlightthickness=0)
+        self.entry.place(x=34, y=5, width=max(40, self._field_w - 44),
+                         height=max(16, self._field_h - 10))
+        #: 占位文案用一层 Label 盖在 Entry 上：Entry 是不透明的，
+        #: Canvas 上的文字会被它自己盖住（实机截图确认过）。
+        self._placeholder_label = tk.Label(
+            self, text=self._placeholder, font=UI_FONT, bg=self._fill,
+            fg=UI_MUTED, anchor="w")
+        self._placeholder_label.bind(
+            "<Button-1>", lambda _e: self.entry.focus_set(), add="+")
+        self._trace = self._var.trace_add("write", self._on_text_changed)
+        self.bind("<Configure>", self._on_configure, add="+")
+        self.bind("<Button-1>", lambda _e: self.entry.focus_set(), add="+")
+        self.bind("<Destroy>", self._on_destroy, add="+")
+        self.entry.bind("<FocusIn>", self._on_focus, add="+")
+        self.entry.bind("<FocusOut>", self._on_blur, add="+")
+        self._redraw()
+
+    def focus_set(self) -> None:
+        self.entry.focus_set()
+
+    def set_placeholder(self, text: str) -> None:
+        self._placeholder = str(text or "")
+        self._redraw()
+
+    def sync_placeholder(self) -> None:
+        self._redraw()
+
+    def _on_configure(self, _event=None) -> None:
+        self._field_w = max(150, int(self.winfo_width()))
+        self._field_h = max(26, int(self.winfo_height()))
+        self.entry.place_configure(x=34, y=5,
+                                   width=max(40, self._field_w - 44),
+                                   height=max(16, self._field_h - 10))
+        self._redraw()
+
+    def _on_focus(self, _event=None) -> None:
+        self._focused = True
+        self._redraw()
+
+    def _on_blur(self, _event=None) -> None:
+        self._focused = False
+        self._redraw()
+
+    def _on_text_changed(self, *_args) -> None:
+        try:
+            if self.winfo_exists():
+                self._redraw()
+        except Exception:
+            pass
+
+    def _on_destroy(self, event=None) -> None:
+        if event is not None and getattr(event, "widget", None) is not self:
+            return
+        try:
+            self._var.trace_remove("write", self._trace)
+        except Exception:
+            pass
+
+    def _redraw(self) -> None:
+        try:
+            if not self.winfo_exists():
+                return
+            w = max(2, int(self.winfo_width() or self._field_w))
+            h = max(2, int(self.winfo_height() or self._field_h))
+            self.delete("all")
+            radius = min(h / 2.0, 16.0)
+            self.create_polygon(
+                RoundedButton._rounded_points(self, 1, 1, w - 1, h - 1, radius),
+                smooth=True, splinesteps=26, fill=self._fill,
+                outline=self._line, width=1)
+            cy = h / 2.0 - 1
+            self.create_oval(12, cy - 6, 23, cy + 5,
+                             outline=UI_MUTED, width=1.5)
+            self.create_line(22, cy + 4, 27, cy + 9, fill=UI_MUTED,
+                             width=1.7, capstyle="round")
+            try:
+                text = str(self._var.get())
+            except Exception:
+                text = ""
+            if not text and not self._focused:
+                self._placeholder_label.configure(
+                    text=self._placeholder, bg=self._fill, fg=UI_MUTED)
+                self._placeholder_label.place(
+                    x=34, y=5, width=max(40, self._field_w - 44),
+                    height=max(16, self._field_h - 10))
+                self._placeholder_label.lift()
+            else:
+                self._placeholder_label.place_forget()
+        except Exception:
+            pass
+
+
 # ============================================================================
 # 二之二、主界面标签栏（自绘胶囊，替掉 ttk 的直角 + 虚线焦点框）
 # ============================================================================
@@ -2160,25 +2264,32 @@ class TabStrip(tk.Canvas):
             self._labels = [str(x) for x in labels]
             self._redraw()
 
+    def _display_label(self, index: int) -> str:
+        """前两个标签各加一枚图形锚点，让预览/总览一眼看出是两个按键。"""
+        label = self._labels[index] if 0 <= index < len(self._labels) else ""
+        glyph = {0: "▷", 1: "▦"}.get(index, "")
+        return f"{glyph}  {label}" if glyph else label
+
     def _layout(self):
         width = max(1, int(self.winfo_width()))
         height = max(2, int(self.winfo_height()))
         lane_h = max(24, height - 6)
         n = max(1, len(self._labels))
-        gap = 6
-        padx = 18
+        gap = 8
+        padx = 16
         #: 右边留 4px，最后一项不能画到 Canvas 外面；旧版只缩一次 padding，
         #: 12 号字 + 英文 + 最小窗口时 total 仍可能大于 width，末项文字被裁掉。
         limit = max(40, width - 6)
+        shown = [self._display_label(i) for i in range(len(self._labels))]
         widths = [max(64, self._bold.measure(label) + padx * 2)
-                  for label in self._labels]
+                  for label in shown]
         total = sum(widths) + gap * max(0, n - 1)
         if total > limit and n:
             # 先做一轮自然收缩（保留标签本身的可读宽度）。
-            gap = max(3, gap - 2)
-            padx = max(8, padx - 8)
+            gap = max(3, gap - 3)
+            padx = max(8, padx - 7)
             widths = [max(48, self._bold.measure(label) + padx * 2)
-                      for label in self._labels]
+                      for label in shown]
             total = sum(widths) + gap * max(0, n - 1)
         if total > limit and n:
             # 仍放不下就按可用宽度等分；文字在 _draw() 里用省略号收尾，
@@ -2191,7 +2302,7 @@ class TabStrip(tk.Canvas):
         x = 2.0
         y = (height - lane_h) / 2.0
         rects = []
-        for label, w in zip(self._labels, widths):
+        for label, w in zip(shown, widths):
             rects.append((x, y, x + w, y + lane_h, label))
             x += w + gap
         return rects, min(total, float(width - 2))
@@ -2219,41 +2330,37 @@ class TabStrip(tk.Canvas):
             if not rects:
                 return
             height = int(self.winfo_height())
-            lane_y = rects[0][1]
-            lane_h = rects[0][3] - rects[0][1]
-            self.create_polygon(
-                RoundedButton._rounded_points(
-                    self, 1, lane_y, total + 3, lane_y + lane_h,
-                    lane_h / 2.0),
-                smooth=True, splinesteps=24, fill=UI_SURFACE_ALT, outline="")
+            # 每个标签各画一枚独立胶囊：未选中的也有近白底与淡描边，
+            # 这样它们看起来是并排的按键，而不是一串普通文字。行为不变。
+            idle_fill = mix_color(UI_BG, UI_SURFACE_ALT, 0.86)
+            idle_line = mix_color(UI_LINE, UI_BG, 0.48)
             for i, (x1, y1, x2, y2, label) in enumerate(rects):
                 selected = i == self._selected
                 hover = i == self._hover and not selected
                 if selected:
-                    # 选中胶囊浮起来：先一层低透明蓝影，再画主色。
                     self.create_polygon(
                         RoundedButton._rounded_points(
                             self, x1 + 1, y1 + 2, x2 + 1, y2 + 2,
                             (y2 - y1) / 2.0),
                         smooth=True, splinesteps=20,
-                        fill=mix_color(UI_SURFACE_ALT, UI_ACCENT, 0.24),
+                        fill=mix_color(UI_BG, UI_ACCENT, 0.22),
                         outline="")
-                    fill = UI_ACCENT
+                    fill, outline = UI_ACCENT, UI_ACCENT
                     fg = UI_ON_ACCENT
                     font = self._bold
                 elif hover:
-                    fill = UI_HOVER_BG
+                    fill, outline = UI_HOVER_BG, UI_ACCENT
                     fg = UI_INK
                     font = self._font
                 else:
-                    fill = ""
-                    fg = UI_MUTED
+                    fill, outline = idle_fill, idle_line
+                    fg = UI_INK
                     font = self._font
-                if fill:
-                    self.create_polygon(
-                        RoundedButton._rounded_points(
-                            self, x1, y1, x2, y2, (y2 - y1) / 2.0),
-                        smooth=True, splinesteps=24, fill=fill, outline="")
+                self.create_polygon(
+                    RoundedButton._rounded_points(
+                        self, x1, y1, x2, y2, (y2 - y1) / 2.0),
+                    smooth=True, splinesteps=24, fill=fill,
+                    outline=outline, width=1)
                 shown = self._fit_label(label, int(x2 - x1) - 10, selected)
                 self.create_text((x1 + x2) / 2.0, (y1 + y2) / 2.0,
                                  text=shown, fill=fg, font=font)
@@ -2796,31 +2903,11 @@ class PreviewPane:
                   "· 双击画面 = 最小化/还原该程序（与列表一致）\n"
                   "· 列表里单击只选中；Enter / 中键切到前台"))
 
-        # ---- 预览下方：先选操作，再执行（用户 2026-10-20 的方案）----
-        # 不再并排三个按钮；点箭头从下往上列出两个操作，选中项整行填充，
-        # 未选中项用页面底色，状态一眼可辨。结束整树仍留在右键菜单 / 进程树页。
-        self.action = PREVIEW_ACTION_DEFAULT
-        self._action_popup: tk.Toplevel | None = None
-        self._action_rows: dict[str, tuple] = {}
-        self._action_root_bind = None
-        bar = ttk.Frame(self.frame)
-        bar.grid(row=2, column=0, sticky="ew", padx=6, pady=(2, 0))
-        ttk.Label(bar, text="操作", font=SMALL_BOLD_FONT,
-                  foreground=UI_MUTED).pack(side="left", padx=(0, 4))
-        self.action_button = RoundedButton(
-            bar, text=self._action_label() + "  ▾", command=self.open_actions,
-            kind="ghost", bg=UI_BG, height=30, radius=15)
-        self.action_button.pack(side="left")
-        self.run_button = RoundedButton(
-            bar, text="执行", command=self.run_action, kind="accent",
-            bg=UI_BG, height=30, radius=15)
-        self.run_button.pack(side="left", padx=(6, 0))
-        self.action_hint = ttk.Label(bar, text=self._action_hint_text(),
-                                     font=SMALL_FONT, foreground=UI_MUTED)
-        self.action_hint.pack(side="left", padx=(8, 0))
-
-        self.hint = ttk.Label(self.frame, text="", font=UI_FONT, foreground=UI_MUTED, anchor="w")
-        self.hint.grid(row=3, column=0, sticky="ew", padx=8, pady=(2, 6))
+        # 用户 2026-10-21：预览下方的「操作 / 执行」整块删掉，改为留白。
+        # 关闭和结束仍走右键菜单，画面区因此多出一整行高度给实时预览。
+        self.hint = ttk.Label(self.frame, text="", font=SMALL_FONT,
+                              foreground=UI_MUTED, anchor="w")
+        self.hint.grid(row=2, column=0, sticky="ew", padx=8, pady=(0, 8))
 
     # -- 画面显示 --
     # 显示链路：按画布尺寸抓取 → 编码 PNG → Tk 在 C 层解码上屏。
@@ -2917,7 +3004,6 @@ class PreviewPane:
         self._place_image()
 
     def clear(self, text: str = "") -> None:
-        self.close_actions()
         self.photo = None
         self.base_photo = None
         self.base_w = self.base_h = 0
@@ -2928,139 +3014,6 @@ class PreviewPane:
         if text:
             self.canvas.itemconfigure(self.placeholder, text=text, state="normal")
             self.canvas.coords(self.placeholder, 14, 14)
-
-    # -- 操作选择（先选，再执行） --
-    def _action_label(self) -> str:
-        return preview_action_label(self.action)
-
-    def _action_hint_text(self) -> str:
-        """一行说清当前选择的后果；弹层里还会逐条写更完整的说明。"""
-        return f"{self._action_label()}：{preview_action_detail(self.action)}"
-
-    def open_actions(self) -> None:
-        """在操作按钮**上方**展开两个操作；选中项整行填充。"""
-        if self._action_popup is not None:
-            self.close_actions()
-            return
-        pop = tk.Toplevel(self.frame)
-        pop.overrideredirect(True)
-        pop.attributes("-topmost", True)
-        pop.configure(bg=UI_LINE)
-        self._action_popup = pop
-        self._action_rows = {}
-        outer = tk.Frame(pop, bg=UI_BG, padx=1, pady=1)
-        outer.pack(fill="both", expand=True)
-        for key, _label in PREVIEW_ACTIONS:
-            selected = (key == self.action)
-            row_bg = UI_ACCENT if selected else UI_BG
-            row = tk.Frame(outer, bg=row_bg, cursor="hand2")
-            row.pack(fill="x")
-            # 整格填充的小方块：选中 = 实心，未选 = 空心灰框。
-            box = tk.Frame(row, width=14, height=14, bg=(
-                UI_ON_ACCENT if selected else UI_BG),
-                highlightthickness=1,
-                highlightbackground=(UI_ON_ACCENT if selected else UI_MUTED))
-            box.pack_propagate(False)
-            box.pack(side="left", padx=(9, 7), pady=7)
-            text_col = tk.Frame(row, bg=row_bg, cursor="hand2")
-            text_col.pack(side="left", fill="x", expand=True, padx=(0, 12), pady=4)
-            txt = tk.Label(text_col, text=preview_action_label(key), font=UI_FONT,
-                           anchor="w", bg=row_bg,
-                           fg=(UI_ON_ACCENT if selected else UI_INK),
-                           padx=2, cursor="hand2")
-            txt.pack(fill="x")
-            detail = tk.Label(
-                text_col, text=preview_action_detail(key), font=SMALL_FONT,
-                anchor="w", justify="left", bg=row_bg,
-                fg=(UI_ON_ACCENT if selected else UI_MUTED),
-                padx=2, wraplength=300, cursor="hand2")
-            detail.pack(fill="x")
-            self._action_rows[key] = (row, box, txt, detail, text_col)
-
-            def paint(k, bg, fg, detail_fg):
-                r, b, t, d, c = self._action_rows[k]
-                for widget in (r, c, t, d):
-                    widget.configure(bg=bg)
-                t.configure(fg=fg)
-                d.configure(fg=detail_fg)
-                b.configure(bg=(UI_ON_ACCENT if k == self.action else UI_BG),
-                            highlightbackground=(
-                                UI_ON_ACCENT if k == self.action else UI_MUTED))
-
-            for widget in (row, box, text_col, txt, detail):
-                widget.bind("<Button-1>", lambda _e, k=key: self.choose_action(k))
-                if not selected:
-                    widget.bind("<Enter>", lambda _e, k=key: paint(
-                        k, UI_HOVER_BG, UI_INK, UI_MUTED))
-                    widget.bind("<Leave>", lambda _e, k=key: paint(
-                        k, UI_BG, UI_INK, UI_MUTED))
-        pop.update_idletasks()
-        w = max(300, self.action_button.winfo_width())
-        h = pop.winfo_reqheight()
-        x = self.action_button.winfo_rootx()
-        y = self.action_button.winfo_rooty() - h - 3
-        if y < 0:                                  # 顶部空间不够时才向下
-            y = self.action_button.winfo_rooty() + self.action_button.winfo_height() + 3
-        pop.geometry(f"{w}x{h}+{x}+{y}")
-        pop.bind("<Escape>", lambda _e: self.close_actions())
-        # 不用 <FocusOut> 自动收：overrideredirect 弹层在 Windows 上会立刻
-        # 收到 FocusOut，表现为“点了箭头但菜单一闪就没”。改成全局点一下
-        # 关掉；弹层内部的点击不会触发根窗口的绑定。
-        try:
-            self._action_root_bind = self.app.root.bind(
-                "<Button-1>", self._on_root_click_for_actions, add="+")
-        except Exception:
-            self._action_root_bind = None
-        try:
-            pop.focus_force()
-        except tk.TclError:
-            pass
-
-    def choose_action(self, key: str) -> None:
-        if key not in dict(PREVIEW_ACTIONS):
-            return
-        self.action = key
-        self.action_button.configure(text=self._action_label() + "  ▾")
-        self.action_hint.configure(text=self._action_hint_text())
-        self.close_actions()
-        try:
-            self.run_button.focus_set()
-        except tk.TclError:
-            pass
-
-    def run_action(self) -> None:
-        self.close_actions()
-        if self.action == "terminate":
-            self.app.action_terminate()
-        else:
-            self.app.action_close_window()
-
-    def close_actions(self) -> None:
-        bind_id, self._action_root_bind = self._action_root_bind, None
-        if bind_id is not None:
-            try:
-                self.app.root.unbind("<Button-1>", bind_id)
-            except Exception:
-                pass
-        pop, self._action_popup = self._action_popup, None
-        if pop is None:
-            return
-        try:
-            pop.destroy()
-        except tk.TclError:
-            pass
-        self._action_rows = {}
-
-    def _on_root_click_for_actions(self, event) -> None:
-        """点主窗口任何地方都收起弹层；操作按钮自己交给命令去切换。"""
-        if self._action_popup is None:
-            return
-        try:
-            if str(event.widget) == str(self.action_button):
-                return
-        except Exception:
-            pass
-        self.close_actions()
 
     def set_title(self, text: str) -> None:
         # 标题单行显示：太长时先自己收 `…`，避免把右侧的暂停/FPS 挤出网格。
@@ -3087,13 +3040,25 @@ class GalleryPane:
     def __init__(self, parent: tk.Widget, app: "WinMonApp") -> None:
         self.app = app
         self.frame = ttk.Frame(parent)
-        self.frame.rowconfigure(0, weight=1)
+        self.frame.rowconfigure(1, weight=1)
         self.frame.columnconfigure(0, weight=1)
 
+        # ---- 顶部工具条：移除动作只在这里，主界面不再挂「移除总览」----
+        tool = ttk.Frame(self.frame, padding=(8, 6, 8, 2))
+        tool.grid(row=0, column=0, columnspan=2, sticky="ew")
+        self.summary_text = tk.StringVar(value="")
+        tk.Label(tool, textvariable=self.summary_text, font=SMALL_FONT,
+                 fg=UI_MUTED, bg=UI_BG, anchor="w").pack(side="left")
+        self.remove_btn = RoundedButton(
+            tool, text=i18n.pick("移除总览", "Remove"), kind="ghost",
+            bg=UI_BG, height=28, radius=14,
+            command=self.app.gallery_remove_selected)
+        self.remove_btn.pack(side="right")
+
         self.canvas = tk.Canvas(self.frame, bg=UI_SURFACE_ALT, highlightthickness=0)
-        self.canvas.grid(row=0, column=0, sticky="nsew")
+        self.canvas.grid(row=1, column=0, sticky="nsew")
         bar = ttk.Scrollbar(self.frame, orient="vertical", command=self.canvas.yview)
-        bar.grid(row=0, column=1, sticky="ns")
+        bar.grid(row=1, column=1, sticky="ns")
         self.canvas.configure(yscrollcommand=bar.set)
 
         self.inner = ttk.Frame(self.canvas)
@@ -3103,17 +3068,20 @@ class GalleryPane:
         self.canvas.bind_all("<MouseWheel>", self._on_wheel)
 
         self.tiles: dict = {}
+        #: 当前点选的格子（「移除总览」按它来删；和右侧窗口列表的选中互不干扰）
+        self.selected_key = None
         #: 拖拽排序（B.3）用：正在拖的那一格 / 悬停在哪一格
         self._drag_key = None
         self._drag_hover = None
         self.empty_label = ttk.Label(
             self.inner, font=UI_FONT, foreground=UI_MUTED, justify="left",
-            wraplength=310,
+            wraplength=520,
             text=("实时总览为空\n\n"
-                  "在右侧窗口列表中按住 Ctrl 或 Shift 多选程序，\n"
-                  "然后点左侧「加入总览」即可把它们同时显示在这里。"))
-        self.empty_label.pack(padx=16, pady=16, anchor="w")
+                  "在右侧窗口列表右键「加入实时总览」，或用 Ctrl / Shift 多选后\n"
+                  "再右键加入。固定到这里之后，点「移除总览」即可撤回。"))
+        self.empty_label.pack(padx=18, pady=18, anchor="w")
         self._cols = 0
+        self._update_summary()
 
     def _on_wheel(self, event) -> None:
         if self.app.notebook.index("current") != 1:
@@ -3125,31 +3093,62 @@ class GalleryPane:
 
     def _on_canvas_configure(self, event) -> None:
         self.canvas.itemconfigure("inner", width=event.width)
+        try:
+            self.empty_label.configure(wraplength=max(360, int(event.width) - 48))
+        except Exception:
+            pass
         cols = max(1, event.width // (TILE_W + 12))
         if cols != self._cols:
             self._cols = cols
             self.relayout()
 
+    def _update_summary(self) -> None:
+        n = len(self.tiles)
+        self.summary_text.set(i18n.pick(
+            f"已固定 {n} 个窗口 · 单击选中，拖拽排序" if n else
+            "还没有固定窗口 · 右键右侧列表加入",
+            f"{n} pinned · click to select, drag to reorder" if n else
+            "Nothing pinned · right-click a window to add"))
+
+    def _paint_selection(self, hover=None) -> None:
+        for key, tile in self.tiles.items():
+            cell = tile["cell"]
+            if key == self.selected_key or key == hover:
+                cell.configure(highlightbackground=UI_ACCENT, highlightthickness=2)
+            else:
+                cell.configure(highlightbackground=UI_LINE, highlightthickness=1)
+
+    def select(self, key) -> None:
+        if key not in self.tiles:
+            return
+        self.selected_key = key
+        self._paint_selection()
+        title = str(self.tiles[key].get("title") or "")
+        self.app._set_status(i18n.pick(
+            f"已选中总览格子：{title}（点「移除总览」撤回）",
+            f"Selected overview tile: {title} (use Remove to unpin)"))
+
     def add(self, key, title: str, meta: str = "") -> None:
         if key in self.tiles:
             return
-        cell = ttk.Frame(self.inner, relief="solid", borderwidth=1)
+        cell = tk.Frame(self.inner, bg=UI_BG, bd=0,
+                        highlightthickness=1, highlightbackground=UI_LINE)
         head = ttk.Label(cell, text=title, font=UI_FONT, anchor="w", width=26)
-        head.pack(fill="x", padx=2)
+        head.pack(fill="x", padx=4, pady=(3, 0))
         holder = tk.Frame(cell, bg="#000", width=TILE_W, height=TILE_H - 40)
-        holder.pack(padx=2)
+        holder.pack(padx=3)
         holder.pack_propagate(False)
         lbl = tk.Label(holder, bg="#000", text="等待画面…", fg="#8a949c", font=UI_FONT)
         lbl.pack(fill="both", expand=True)
         foot = ttk.Label(cell, text=meta, font=SMALL_FONT,
                          foreground=UI_MUTED, anchor="w")
-        foot.pack(fill="x", padx=2)
+        foot.pack(fill="x", padx=4, pady=(0, 2))
         self.tiles[key] = {"cell": cell, "photo": None, "label": lbl,
                            "foot": foot, "w": 0, "h": 0, "title": title}
         # **拖拽排序**（B.3）：任何一处（标题/画面/说明行）按下都能拖，
         # 松手落在哪一格就排到那一格前面。
         for widget in (cell, head, holder, lbl, foot):
-            widget.bind("<Button-1>", lambda e, k=key: self._drag_start(k))
+            widget.bind("<Button-1>", lambda e, k=key: self._on_tile_press(k))
             # **移动/松手必须跟"按下"绑在同一批控件上**（2026-10-13 修的真 bug）：
             # Tk 会给收到 Button-1 的那个控件一个**隐式 grab**，后续的 B1-Motion /
             # ButtonRelease 只发给它 —— 只绑在 cell 上的话，从标题/画面/说明行按下
@@ -3159,8 +3158,14 @@ class GalleryPane:
             widget.bind("<ButtonRelease-1>", self._drag_drop)
         cell.configure(cursor="hand2")
         self.empty_label.pack_forget()
+        self._update_summary()
         self.relayout()
         self._on_inner_configure()
+
+    def _on_tile_press(self, key) -> None:
+        """单击先选中（给「移除总览」用），同时仍可继续拖拽排序。"""
+        self.select(key)
+        self._drag_start(key)
 
     # ---- 拖拽排序（B.3）----
 
@@ -3188,24 +3193,19 @@ class GalleryPane:
             return
         target = self._tile_at(event.x_root, event.y_root)
         if target != getattr(self, "_drag_hover", None):
-            # 把上一次的高亮清掉，给新的目标描个蓝边（拖拽反馈）
-            old = getattr(self, "_drag_hover", None)
-            if old is not None and old in self.tiles:
-                self.tiles[old]["cell"].configure(relief="solid", borderwidth=1)
             self._drag_hover = target
-            if target is not None and target in self.tiles:
-                self.tiles[target]["cell"].configure(relief="solid", borderwidth=2)
+            self._paint_selection(hover=target)
 
     def _drag_drop(self, event) -> None:
         src = getattr(self, "_drag_key", None)
         target = self._tile_at(event.x_root, event.y_root)
         self._drag_key = None
-        for k in list(self.tiles):
-            self.tiles[k]["cell"].configure(relief="solid", borderwidth=1)
         self._drag_hover = None
         if src is None or target is None or src == target:
+            self._paint_selection()
             return
         if src not in self.tiles or target not in self.tiles:
+            self._paint_selection()
             return
         keys = list(self.tiles)
         keys.remove(src)
@@ -3213,6 +3213,7 @@ class GalleryPane:
         self.tiles = {k: self.tiles[k] for k in keys}      # 重排顺序 = 重排字典
         self.relayout()
         self._on_inner_configure()
+        self._paint_selection()
         # 告诉主程序：顺序变了，请记住（B.3 的"布局保存"）
         try:
             self.app.on_gallery_reordered(list(self.tiles))
@@ -3223,9 +3224,13 @@ class GalleryPane:
         tile = self.tiles.pop(key, None)
         if tile:
             tile["cell"].destroy()
+        if self.selected_key == key:
+            self.selected_key = None
         if not self.tiles:
-            self.empty_label.pack(padx=16, pady=16, anchor="w")
+            self.empty_label.pack(padx=18, pady=18, anchor="w")
+        self._update_summary()
         self.relayout()
+        self._paint_selection()
         self._on_inner_configure()
 
     def clear(self) -> None:
@@ -3390,8 +3395,12 @@ class WorkspacePane:
         tv.bind("<Double-1>", lambda _e: self.action_apply())
 
         self.info = ttk.Label(self.frame, text="", font=UI_FONT, foreground=UI_MUTED,
-                              anchor="w", justify="left", wraplength=330)
-        self.info.grid(row=4, column=0, columnspan=2, sticky="ew", padx=8, pady=(0, 8))
+                              anchor="w", justify="left", wraplength=620)
+        self.info.grid(row=4, column=0, columnspan=2, sticky="ew", padx=8, pady=(0, 10))
+        self.frame.bind(
+            "<Configure>",
+            lambda e: self.info.configure(wraplength=max(420, int(e.width) - 40)),
+            add="+")
         self._detail_ids: list[str] = []
 
         empty = ("还没有保存过工作区。\n\n"
@@ -4834,9 +4843,13 @@ class _SettingsWindow:
                  language: str = "zh",
                  font_size: int = UI_FONT_SIZE,
                  theme: str = THEME_DEFAULT,
-                 opacity: int = UI_OPACITY_DEFAULT) -> None:
+                 opacity: int = UI_OPACITY_DEFAULT,
+                 prefs: dict | None = None) -> None:
         self.app = app
         self.result: dict | None = None
+        #: 主界面偏好（窗口过滤 / 跟随选择 / 视频联动 / 闲置提醒）。
+        #: 用快照传进来，保存时一次性回给主窗口；取消则原样不动。
+        self._prefs = dict(prefs or {})
         #: 透明度滑杆要能预览到主窗口和所有已打开浮层；测试里的 FakeApp
         #: 不一定有 `root`，所以退回构造参数 parent。
         self._root = getattr(app, "root", parent)
@@ -4853,6 +4866,8 @@ class _SettingsWindow:
         # 2026-10-21 新增「界面透明度」后，常规页比原来长了一截；
         # 740 的旧高度在 150% 下会把最后一行说明压到滚动区域外。
         win_h = min(int(840 * scale), int(sh * 0.90))
+        #: 小字说明的换行宽度：跟随窗口与 DPI，不再用固定 640 把句子切碎。
+        self._hint_wrap = max(420, int(min(760 * scale, win_w - 90)))
         top.geometry(f"{win_w}x{win_h}")
         top.minsize(min(int(860 * scale), win_w), min(int(600 * scale), win_h))
         # 点 × 必须走 _cancel：取消 AI 用量面板的定时器，并按“未保存”返回。
@@ -4915,7 +4930,7 @@ class _SettingsWindow:
                     lambda e: canvas.itemconfigure(win_id, width=e.width))
         self._build_general(wrap, close_mode, tray_available, start_minimized,
                             history_days, language, font_size, theme,
-                            self._opacity_before)
+                            self._opacity_before, self._prefs)
 
         self.usage = _AiUsagePanel(self.nb, app)
         self.nb.add(self.usage.frame, text=i18n.pick("AI 用量", "AI usage"))
@@ -4947,118 +4962,129 @@ class _SettingsWindow:
             pass
         top.focus_force()
 
+    def _section(self, parent, text: str, *, first: bool = False) -> None:
+        """设置页的分组标题；组与组之间留 16px，不靠一堆空行分隔。"""
+        tk.Label(parent, text=text, font=BOLD_FONT, bg=UI_BG, fg=UI_INK,
+                 anchor="w").pack(anchor="w", fill="x",
+                                  pady=(0 if first else 16, 1))
+
+    def _manual_wrap(self, text: str, pixel_width: int | None = None) -> str:
+        """
+        按当前小字字号手工断行，再关掉 Tk 的自动换行。
+
+        为什么不用 `wraplength`：Tk 的 Label 在 Canvas 里第一次布局时宽度可能
+        只有 1px，自动换行会把“九套设计主题…”断成「九」+ 下一行，且窗口变宽后
+        不重排（用户反馈的“不连续断开”就是这个）。手工按像素宽度折算成字符数，
+        再把每行用 `\\n` 固定下来，宽度变化时由 `_rewrap_hints()` 重建。
+        """
+        try:
+            font = tkfont.Font(root=self.top, font=SMALL_FONT)
+            char_w = max(1, font.measure("中"))
+            width = int(pixel_width or self._hint_wrap)
+            limit = max(16, int(width / char_w))
+        except Exception:
+            limit = 52
+        out: list[str] = []
+        for para in str(text or "").split("\n"):
+            if not para:
+                out.append("")
+                continue
+            out.extend(textwrap.wrap(
+                para, width=limit, break_long_words=True,
+                break_on_hyphens=False, replace_whitespace=False) or [""])
+        return "\n".join(out)
+
+    def _hint(self, parent, text: str, *, indent: int = 18) -> tk.Label:
+        """
+        小字说明：只做“解释”，不抢主设置的视觉。
+
+        换行宽度跟窗口/DPI 走（`self._hint_wrap`），不再固定 640；
+        也不在文字前塞四个全角空格 —— 那会把首行顶出奇怪缩进，
+        窄窗口下看起来像“断了一截”。
+        """
+        lbl = tk.Label(parent, text=self._manual_wrap(text), font=SMALL_FONT,
+                       bg=UI_BG, fg=UI_MUTED, anchor="w", justify="left",
+                       wraplength=0)
+        lbl.pack(anchor="w", fill="x", padx=(indent, 0), pady=(2, 0))
+        try:
+            self._hint_sources.append((lbl, str(text)))
+        except Exception:
+            pass
+        return lbl
+
+    def _rewrap_hints(self, event) -> None:
+        """父容器变宽/变窄时重建小字断行，避免首行只剩一个字。"""
+        width = max(320, int(getattr(event, "width", 0) or 0) - 30)
+        for lbl, source in list(getattr(self, "_hint_sources", [])):
+            try:
+                want = self._manual_wrap(source, width)
+                if str(lbl.cget("text")) != want:
+                    lbl.configure(text=want)
+            except Exception:
+                continue
+
     def _build_general(self, wrap, close_mode, tray_available, start_minimized,
                        history_days, language, font_size, theme,
-                       opacity=UI_OPACITY_DEFAULT) -> None:
-        """常规页：所有会写盘 / 写注册表的设置。"""
-        # ---- 1) 开机自启动 ----
-        self.autostart = tk.BooleanVar(value=bool(core.get_autostart()))
-        ttk.Checkbutton(wrap, text="开机自启动（登录后自动运行 WinMon）",
-                        variable=self.autostart).pack(
-            anchor="w", fill="x", pady=(2, 0))
-        tk.Label(wrap, text=f"　　写入 HKCU 的 Run 项，不需要管理员权限；"
-                            f"命令：{core.autostart_command()[:70]}…",
-                 font=SMALL_FONT, bg=UI_BG, fg=UI_MUTED,
-                 anchor="w", justify="left", wraplength=640).pack(anchor="w", fill="x")
+                       opacity=UI_OPACITY_DEFAULT, prefs: dict | None = None) -> None:
+        """常规页：界面、窗口列表、主界面内容、启动关闭、维护。"""
+        prefs = dict(prefs or {})
+        self._hint_sources = []
+        #: 设置页的滚动区第一次布局时宽度可能只有 1px；只靠固定 wraplength
+        #: 会把第一行压成一个字（实机截图出现过「九」单独一行）。这里跟着
+        #: 父容器的真实宽度重新设置换行宽度，强制 Tk 重排。
+        wrap.bind("<Configure>", self._rewrap_hints, add="+")
+        self._build_interface_section(wrap, language, font_size, theme, opacity)
+        self._build_window_list_section(wrap, prefs)
+        self._build_content_section(wrap, prefs)
+        self._build_startup_section(wrap, close_mode, tray_available,
+                                    start_minimized)
+        self._build_maintenance_section(wrap, history_days)
 
-        # ---- 2) 关闭按钮行为 ----
-        tk.Label(wrap, text="点右上角的 × 时：", font=UI_FONT, bg=UI_BG,
-                 fg=UI_INK, anchor="w").pack(anchor="w", pady=(14, 2))
-        self.close_mode = tk.StringVar(value=close_mode)
-        tk.Radiobutton(wrap, text="隐藏到托盘（推荐：音乐继续放、监控继续跑）",
-                       variable=self.close_mode, value="tray", font=UI_FONT,
-                       bg=UI_BG, fg=UI_INK, selectcolor=UI_SURFACE_ALT,
-                       activebackground=UI_BG, activeforeground=UI_INK,
-                       anchor="w").pack(anchor="w", fill="x")
-        tk.Radiobutton(wrap, text="结束进程（真的退出，托盘图标一起清掉）",
-                       variable=self.close_mode, value="exit", font=UI_FONT,
-                       bg=UI_BG, fg=UI_INK, selectcolor=UI_SURFACE_ALT,
-                       activebackground=UI_BG, activeforeground=UI_INK,
-                       anchor="w").pack(anchor="w", fill="x")
-        if not tray_available:
-            tk.Label(wrap, text="　（本机托盘不可用，选「隐藏到托盘」会自动退回结束进程）",
-                     font=SMALL_FONT, bg=UI_BG, fg=UI_WARN,
-                     anchor="w").pack(anchor="w", fill="x")
-
-        # ---- 3) 启动时直接收进托盘 ----
-        self.start_minimized = tk.BooleanVar(value=bool(start_minimized))
-        ttk.Checkbutton(wrap, text="启动时直接收进托盘（界面不弹出来，双击托盘图标再看）",
-                        variable=self.start_minimized).pack(
-            anchor="w", fill="x", pady=(12, 0))
-        if not tray_available:
-            tk.Label(wrap, text="　（托盘不可用时这一项不生效，界面照常显示）",
-                     font=SMALL_FONT, bg=UI_BG, fg=UI_MUTED,
-                     anchor="w").pack(anchor="w", fill="x")
-
-        # ---- 4) 操作历史保留天数 ----
-        tk.Label(wrap, text="操作历史日志保留：", font=UI_FONT, bg=UI_BG,
-                 fg=UI_INK, anchor="w").pack(anchor="w", pady=(14, 0))
-        row = tk.Frame(wrap, bg=UI_BG)
-        row.pack(anchor="w", fill="x", pady=(2, 0))
-        self.history_days = tk.StringVar(value=str(int(history_days)))
-        ttk.Combobox(row, textvariable=self.history_days, state="readonly",
-                     width=6, font=UI_FONT,
-                     values=[str(days) for days, _label in HISTORY_DAYS_CHOICES]
-                     ).pack(side="left")
-        tk.Label(row, text="天", font=UI_FONT, bg=UI_BG, fg=UI_INK,
-                 anchor="w").pack(side="left", padx=(4, 0))
-        tk.Label(wrap, text=f"　　启动时自动删掉超过这个天数的记录（默认 "
-                            f"{HISTORY_DAYS_DEFAULT} 天）。"
-                            f"清理前会把原文件另存一份 .bak，删错了还能找回来。",
-                 font=SMALL_FONT, bg=UI_BG, fg=UI_MUTED,
-                 anchor="w", justify="left", wraplength=640).pack(anchor="w", fill="x")
-
-        # ---- 5) 界面颜色（普通 / 深色）----
+    def _build_interface_section(self, wrap, language, font_size, theme,
+                                 opacity) -> None:
+        """界面：颜色 / 语言 / 字号 / 透明度。"""
+        self._section(wrap, i18n.pick("界面", "Interface"), first=True)
         tk.Label(wrap, text=i18n.t("settings.theme"), font=UI_FONT, bg=UI_BG,
-                 fg=UI_INK, anchor="w").pack(anchor="w", pady=(14, 0))
+                 fg=UI_INK, anchor="w").pack(anchor="w", pady=(4, 0))
         self._theme_by_label = {label: slug for slug, label in theme_choices()}
         self.theme = tk.StringVar(value=theme_display(theme))
-        theme_combo = ttk.Combobox(
+        ttk.Combobox(
             wrap, textvariable=self.theme, state="readonly", width=20,
-            font=UI_FONT, values=list(self._theme_by_label.keys()))
-        theme_combo.pack(anchor="w", pady=(2, 0))
-        tk.Label(wrap, text="　　" + i18n.t("settings.theme_hint"),
-                 font=SMALL_FONT, bg=UI_BG, fg=UI_MUTED,
-                 anchor="w", justify="left", wraplength=640).pack(anchor="w", fill="x")
+            font=UI_FONT, values=list(self._theme_by_label.keys())).pack(
+            anchor="w", pady=(2, 0))
+        self._hint(wrap, i18n.t("settings.theme_hint"))
 
-        # ---- 6) 语言（中文 / English）----
         tk.Label(wrap, text=i18n.t("settings.language"), font=UI_FONT, bg=UI_BG,
-                 fg=UI_INK, anchor="w").pack(anchor="w", pady=(14, 0))
+                 fg=UI_INK, anchor="w").pack(anchor="w", pady=(12, 0))
         self._lang_by_label = {v: k for k, v in i18n.LANGUAGES.items()}
         self.language = tk.StringVar(value=i18n.language_label(language))
-        combo = ttk.Combobox(wrap, textvariable=self.language, state="readonly",
-                             width=14, font=UI_FONT,
-                             values=list(i18n.LANGUAGES.values()))
-        combo.pack(anchor="w", pady=(2, 0))
-        tk.Label(wrap, text="　　" + i18n.t("settings.language_hint"),
-                 font=SMALL_FONT, bg=UI_BG, fg=UI_MUTED,
-                 anchor="w", justify="left", wraplength=640).pack(anchor="w", fill="x")
+        ttk.Combobox(wrap, textvariable=self.language, state="readonly",
+                     width=14, font=UI_FONT,
+                     values=list(i18n.LANGUAGES.values())).pack(
+            anchor="w", pady=(2, 0))
+        self._hint(wrap, i18n.t("settings.language_hint"))
 
-        # ---- 7) 字号大小（主界面 + 所有 WinMon 窗口一起变）----
         tk.Label(wrap, text=i18n.pick("字号大小", "Text size"),
                  font=UI_FONT, bg=UI_BG, fg=UI_INK,
-                 anchor="w").pack(anchor="w", pady=(14, 0))
+                 anchor="w").pack(anchor="w", pady=(12, 0))
         self._font_by_label = {label: value for value, label in FONT_SIZE_CHOICES}
         current_label = next((label for label, value in self._font_by_label.items()
                               if value == font_size), str(FONT_SIZE_DEFAULT))
         self.font_size = tk.StringVar(value=current_label)
-        font_combo = ttk.Combobox(
+        ttk.Combobox(
             wrap, textvariable=self.font_size, state="readonly", width=14,
-            font=UI_FONT, values=list(self._font_by_label.keys()))
-        font_combo.pack(anchor="w", pady=(2, 0))
-        tk.Label(wrap, text="　　" + i18n.pick(
-                     "可选 9–12；12 是界面允许的最大字号。保存后主界面、AI 助手、"
-                     "接入和弹窗一起变；不用重启。",
-                     "9–12; 12 is the largest size the layout supports. Applies "
-                     "to the main window, AI windows, and dialogs immediately; "
-                     "no restart."),
-                 font=SMALL_FONT, bg=UI_BG, fg=UI_MUTED,
-                 anchor="w", justify="left", wraplength=640).pack(anchor="w", fill="x")
+            font=UI_FONT, values=list(self._font_by_label.keys())).pack(
+            anchor="w", pady=(2, 0))
+        self._hint(wrap, i18n.pick(
+            "可选 9–12；12 是界面允许的最大字号。保存后主界面、AI 助手、"
+            "接入和弹窗一起变；不用重启。",
+            "9–12; 12 is the largest size the layout supports. Applies "
+            "to the main window, AI windows, and dialogs immediately; "
+            "no restart."))
 
-        # ---- 8) 界面透明度（整窗，含二级浮层）----
         tk.Label(wrap, text=i18n.pick("界面透明度", "Window opacity"),
                  font=UI_FONT, bg=UI_BG, fg=UI_INK,
-                 anchor="w").pack(anchor="w", pady=(14, 0))
+                 anchor="w").pack(anchor="w", pady=(12, 0))
         opacity_row = tk.Frame(wrap, bg=UI_BG)
         opacity_row.pack(anchor="w", fill="x", pady=(2, 0))
         self.opacity = tk.IntVar(value=normalize_opacity(opacity))
@@ -5074,24 +5100,207 @@ class _SettingsWindow:
         ttk.Button(opacity_row, text="恢复 100%", width=10,
                    command=lambda: self._set_opacity_value(UI_OPACITY_MAX)
                    ).pack(side="left")
-        tk.Label(wrap, text=i18n.pick(
-                     "默认 100%；最低 45%，只淡到仍能看见窗口边缘，不会整窗消失。"
-                     "主界面、设置/历史/AI 窗口、右键菜单、搜索建议、操作下拉和"
-                     "媒体多选会一起变化；高亮卡（含播放时的媒体拟光）也一起。"
-                     "系统原生的下拉列表不归 WinMon 绘制，不在承诺范围内。",
-                     "Default 100%; the minimum is 45%, where the window edge is "
-                     "still visible and the app cannot vanish. The main window, "
-                     "settings/history/AI windows, context menus, search results, "
-                     "action popups, and media picker all follow it — including "
-                     "highlight cards and the media glow. Native system dropdowns "
-                     "are not owned by WinMon and are not covered."),
-                 font=SMALL_FONT, bg=UI_BG, fg=UI_MUTED,
-                 anchor="w", justify="left",
-                 wraplength=int(760 * max(1.0, float(getattr(
-                     self, "_scale", 1.0) or 1.0)))).pack(
-            anchor="w", fill="x")
+        self._hint(wrap, i18n.pick(
+            "默认 100%；最低 45%，只淡到仍能看见窗口边缘，不会整窗消失。"
+            "主界面、设置/历史/AI 窗口、右键菜单、搜索建议、操作下拉和"
+            "媒体多选会一起变化；高亮卡（含播放时的媒体拟光）也一起。"
+            "系统原生的下拉列表不归 WinMon 绘制，不在承诺范围内。",
+            "Default 100%; the minimum is 45%, where the window edge is "
+            "still visible and the app cannot vanish. The main window, "
+            "settings/history/AI windows, context menus, search results, "
+            "action popups, and media picker all follow it — including "
+            "highlight cards and the media glow. Native system dropdowns "
+            "are not owned by WinMon and are not covered."))
 
-        # 状态行在窗口底部（三个标签页共用），由 `__init__` 统一创建。
+    def _build_window_list_section(self, wrap, prefs: dict) -> None:
+        """窗口列表：原先挤在主界面顶部的过滤/跟随选项。"""
+        self._section(wrap, i18n.pick("窗口列表", "Window list"))
+        self.only_windowed = tk.BooleanVar(
+            value=bool(prefs.get("only_windowed", True)))
+        self.show_hidden = tk.BooleanVar(
+            value=bool(prefs.get("show_hidden", False)))
+        self.show_no_window = tk.BooleanVar(
+            value=bool(prefs.get("show_no_window", False)))
+        self.follow_selection = tk.BooleanVar(
+            value=bool(prefs.get("follow_selection", True)))
+        self.live_gallery = tk.BooleanVar(
+            value=bool(prefs.get("live_gallery", True)))
+        ttk.Checkbutton(wrap, text="显示运行窗口",
+                        variable=self.only_windowed).pack(
+            anchor="w", fill="x", pady=(2, 0))
+        ttk.Checkbutton(wrap, text="显示隐藏窗口",
+                        variable=self.show_hidden).pack(anchor="w", fill="x")
+        ttk.Checkbutton(wrap, text="显示无窗口进程",
+                        variable=self.show_no_window).pack(anchor="w", fill="x")
+        ttk.Checkbutton(wrap, text="跟随选择（右侧列表选中谁就预览谁）",
+                        variable=self.follow_selection).pack(
+            anchor="w", fill="x", pady=(8, 0))
+        ttk.Checkbutton(wrap, text="总览实时刷新",
+                        variable=self.live_gallery).pack(anchor="w", fill="x")
+        self._hint(wrap, i18n.pick(
+            "这些选项以前常驻在主界面第一行；现在收进设置，保存后立即生效。"
+            "「显示运行窗口」只列出真正有窗口的程序，不显示纯后台进程。",
+            "These used to sit above the main list. They now live here and "
+            "apply immediately on save. “Show running windows” hides "
+            "background processes that have no window."))
+
+    def _build_content_section(self, wrap, prefs: dict) -> None:
+        """主界面内容：视频联动整行 + 闲置提醒。"""
+        self._section(wrap, i18n.pick("主界面内容", "Main window content"))
+        self.video_link_visible = tk.BooleanVar(
+            value=bool(prefs.get("video_link_visible", False)))
+        ttk.Checkbutton(wrap, text="在主界面显示视频联动",
+                        variable=self.video_link_visible).pack(
+            anchor="w", fill="x", pady=(2, 0))
+        self._hint(wrap, i18n.pick(
+            "默认不显示；打开后主界面才会出现「监视当前窗口 / 停止监视 / "
+            "直接关闭视频」这一行。关闭时媒体行仍保留。",
+            "Off by default. When on, the video-link row appears above the "
+            "media card; the media card itself always stays."))
+
+        self.idle_alert = tk.BooleanVar(
+            value=bool(prefs.get("idle_alert", False)))
+        self.idle_choice = tk.StringVar(
+            value=str(prefs.get("idle_choice")
+                      or core.idle_threshold_label(core.IDLE_DEFAULT_SECONDS)))
+        self.idle_snooze_choice = tk.StringVar(
+            value=str(prefs.get("idle_snooze")
+                      or core.idle_snooze_label(core.IDLE_SNOOZE_DEFAULT)))
+        idle_row = tk.Frame(wrap, bg=UI_BG)
+        idle_row.pack(anchor="w", fill="x", pady=(10, 0))
+        ttk.Checkbutton(idle_row, text="闲置提醒",
+                        variable=self.idle_alert).pack(side="left")
+        ttk.Combobox(idle_row, textvariable=self.idle_choice, state="readonly",
+                     width=7, font=UI_FONT,
+                     values=[label for label, _s in core.IDLE_CHECK_CHOICES]
+                     ).pack(side="left", padx=(6, 2))
+        RoundedButton(idle_row, text="清单", kind="ghost", bg=UI_BG,
+                      height=28, radius=14,
+                      command=self._open_idle_list).pack(side="right")
+        idle_row2 = tk.Frame(wrap, bg=UI_BG)
+        idle_row2.pack(anchor="w", fill="x", pady=(4, 0))
+        tk.Label(idle_row2, text="提醒间隔", font=SMALL_FONT,
+                 foreground=UI_MUTED, bg=UI_BG).pack(side="left", padx=(0, 4))
+        ttk.Combobox(idle_row2, textvariable=self.idle_snooze_choice,
+                     state="readonly", width=15, font=UI_FONT,
+                     values=[label for label, _s in core.IDLE_SNOOZE_CHOICES]
+                     ).pack(side="left")
+        self._hint(wrap, i18n.pick(
+            "到点后只列清单提醒，不会自动关程序；「清单」随时可手动打开。",
+            "When due it only lists candidates; it never closes programs "
+            "by itself. “List” opens the list at any time."))
+
+    def _build_startup_section(self, wrap, close_mode, tray_available,
+                               start_minimized) -> None:
+        """启动与关闭：自启动 / 托盘 / 关闭行为。"""
+        self._section(wrap, i18n.pick("启动与关闭", "Startup and close"))
+        self.autostart = tk.BooleanVar(value=bool(core.get_autostart()))
+        ttk.Checkbutton(wrap, text="开机自启动（登录后自动运行 WinMon）",
+                        variable=self.autostart).pack(
+            anchor="w", fill="x", pady=(2, 0))
+        self._hint(wrap, "写入 HKCU 的 Run 项，不需要管理员权限；"
+                         "命令太长不在这里展开，使用说明里有完整写法。")
+
+        tk.Label(wrap, text="点右上角的 × 时：", font=UI_FONT, bg=UI_BG,
+                 fg=UI_INK, anchor="w").pack(anchor="w", pady=(10, 2))
+        self.close_mode = tk.StringVar(value=close_mode)
+        tk.Radiobutton(wrap, text="隐藏到托盘（推荐：音乐继续放、监控继续跑）",
+                       variable=self.close_mode, value="tray", font=UI_FONT,
+                       bg=UI_BG, fg=UI_INK, selectcolor=UI_SURFACE_ALT,
+                       activebackground=UI_BG, activeforeground=UI_INK,
+                       anchor="w").pack(anchor="w", fill="x")
+        tk.Radiobutton(wrap, text="结束进程（真的退出，托盘图标一起清掉）",
+                       variable=self.close_mode, value="exit", font=UI_FONT,
+                       bg=UI_BG, fg=UI_INK, selectcolor=UI_SURFACE_ALT,
+                       activebackground=UI_BG, activeforeground=UI_INK,
+                       anchor="w").pack(anchor="w", fill="x")
+        if not tray_available:
+            self._hint(wrap, "本机托盘不可用，选「隐藏到托盘」会自动退回结束进程。",
+                       indent=0)
+
+        self.start_minimized = tk.BooleanVar(value=bool(start_minimized))
+        ttk.Checkbutton(wrap, text="启动时直接收进托盘（界面不弹出来，双击托盘图标再看）",
+                        variable=self.start_minimized).pack(
+            anchor="w", fill="x", pady=(10, 0))
+        if not tray_available:
+            self._hint(wrap, "托盘不可用时这一项不生效，界面照常显示。", indent=0)
+
+    def _build_maintenance_section(self, wrap, history_days) -> None:
+        """维护：操作历史保留天数 + 两个维护入口。"""
+        self._section(wrap, i18n.pick("维护", "Maintenance"))
+        tk.Label(wrap, text="操作历史日志保留：", font=UI_FONT, bg=UI_BG,
+                 fg=UI_INK, anchor="w").pack(anchor="w", pady=(2, 0))
+        row = tk.Frame(wrap, bg=UI_BG)
+        row.pack(anchor="w", fill="x", pady=(2, 0))
+        self.history_days = tk.StringVar(value=str(int(history_days)))
+        ttk.Combobox(row, textvariable=self.history_days, state="readonly",
+                     width=6, font=UI_FONT,
+                     values=[str(days) for days, _label in HISTORY_DAYS_CHOICES]
+                     ).pack(side="left")
+        tk.Label(row, text="天", font=UI_FONT, bg=UI_BG, fg=UI_INK,
+                 anchor="w").pack(side="left", padx=(4, 0))
+        self._hint(wrap, f"启动时自动删掉超过这个天数的记录（默认 "
+                         f"{HISTORY_DAYS_DEFAULT} 天）。"
+                         f"清理前会把原文件另存一份 .bak，删错了还能找回来。")
+
+        tools = tk.Frame(wrap, bg=UI_BG)
+        tools.pack(anchor="w", fill="x", pady=(10, 0))
+        ttk.Button(tools, text="操作历史…", width=13,
+                   command=self._open_history).pack(side="left")
+        ttk.Button(tools, text="清理程序文件…", width=15,
+                   command=self._open_cleanup).pack(side="left", padx=(8, 0))
+        self._hint(wrap, i18n.pick(
+            "操作历史和清理面板都从这里打开；主界面不再显示这两个入口。",
+            "History and cleanup open from here; the main window no longer "
+            "shows either entry."))
+
+    def _without_modal_grab(self, action) -> None:
+        """设置窗口是 grab 的；打开它的子窗口前先让出，关闭后再拿回来。"""
+        try:
+            self.top.grab_release()
+        except Exception:
+            pass
+        try:
+            action()
+        finally:
+            try:
+                self.top.grab_set()
+            except Exception:
+                pass
+
+    def _open_history(self) -> None:
+        action = getattr(self.app, "action_history", None)
+        if not callable(action):
+            return
+        try:
+            self.top.grab_release()
+        except Exception:
+            pass
+        try:
+            action()
+            win = getattr(self.app, "_history_window", None)
+            if win is not None:
+                try:
+                    win.top.transient(self.top)
+                    win.top.grab_set()
+                    win.top.wait_window()
+                except Exception:
+                    pass
+        finally:
+            try:
+                self.top.grab_set()
+            except Exception:
+                pass
+
+    def _open_cleanup(self) -> None:
+        action = getattr(self.app, "action_clean_files", None)
+        if callable(action):
+            self._without_modal_grab(action)
+
+    def _open_idle_list(self) -> None:
+        action = getattr(self.app, "action_idle_dialog", None)
+        if callable(action):
+            self._without_modal_grab(action)
 
     def _on_opacity_change(self, _value=None) -> None:
         """拖动时立刻预览；不写设置，取消会恢复打开设置前的透明度。"""
@@ -5159,7 +5368,18 @@ class _SettingsWindow:
                        "theme": self._theme_by_label.get(
                            self.theme.get(), THEME_DEFAULT),
                        "ui_opacity": normalize_opacity(
-                           round(float(self.opacity.get())))}
+                           round(float(self.opacity.get()))),
+                       "window_prefs": {
+                           "only_windowed": bool(self.only_windowed.get()),
+                           "show_hidden": bool(self.show_hidden.get()),
+                           "show_no_window": bool(self.show_no_window.get()),
+                           "follow_selection": bool(self.follow_selection.get()),
+                           "live_gallery": bool(self.live_gallery.get()),
+                       },
+                       "video_link_visible": bool(self.video_link_visible.get()),
+                       "idle_alert": bool(self.idle_alert.get()),
+                       "idle_choice": self.idle_choice.get(),
+                       "idle_snooze": self.idle_snooze_choice.get()}
         self._close_panels()
         try:
             self.top.destroy()
@@ -8173,6 +8393,8 @@ class WinMonApp:
         self._install_opacity_watcher()
         apply_opacity_to_windows(root, self.ui_opacity.get())
         self.load_settings()
+        # 视频联动默认收起；设置文件里若打开了，读完设置后再把这一行放出来。
+        self._apply_video_visibility()
         # 英文启动：控件是按中文文案建的，读完设置后统一重译一次
         if i18n.get_language() != "zh":
             try:
@@ -8267,6 +8489,8 @@ class WinMonApp:
         #: 操作历史日志保留天数（**默认 30 天**，另有 7 / 90 天）——
         #: 启动时按这个把过期记录从日志里删掉，见 `core.prune_history_log()`
         self.history_days = tk.IntVar(value=HISTORY_DAYS_DEFAULT)
+        #: 是否在主界面显示「视频联动」一整行。默认收起，只有设置里明确打开才显示。
+        self.video_link_visible = tk.BooleanVar(value=False)
         #: 界面语言：zh / en（默认中文；切换后主界面与 AI 窗口立即重译）
         self.language = tk.StringVar(value=i18n.get_language())
         #: 界面颜色：9 套设计主题之一。存 slug，显示当前语言标签。
@@ -8581,19 +8805,37 @@ class WinMonApp:
     def _build_ui(self) -> None:
         self._configure_style()
 
-        # ---- 顶部工具栏（只剩搜索 + 显示过滤；动作都在左侧竖栏） ----
+        # ---- 第一行：刷新速度在左；搜索镜 + 齿轮贴右上（紧挨原生最小化下方）----
         #
-        # 布局踩过的坑（实测）：把 12 个控件全塞进一行时，这一行的自然宽度会超过
-        # 窗口宽度。Tk 不会把控件推出屏幕，而是**压缩**它们，结果「移除选中总览」
-        # 被压成「移除」、「加入总览」被压到 1px 彻底看不见 —— 而它们的右边缘仍在
-        # 窗口内，所以"越界"类检查完全发现不了。现在动作收进 `_build_action_rail`，
-        # 顶部只留搜索和过滤；`test_a5` 的 `_squeezed()` 守这条约定。
-        bar = ttk.Frame(self.root, padding=(10, 6))
+        # 用户 2026-10-21 的三条要求合并后：
+        #   · 标题栏下第一行是「刷新速度」；
+        #   · 搜索改成放大镜，设置改成齿轮，两者在最小化按钮左侧依次排列；
+        #   · 窗口过滤/跟随选择/总览刷新都收进设置，主界面不再铺一排勾选框。
+        bar = ttk.Frame(self.root, padding=(12, 7, 10, 3))
         bar.pack(fill="x")
-        ttk.Label(bar, text="搜索程序", font=UI_FONT,
+        ttk.Label(bar, text=i18n.pick("刷新速度", "Refresh"), font=UI_FONT,
                   foreground=UI_MUTED).pack(side="left", padx=(0, 4))
-        ent = ttk.Entry(bar, textvariable=self.search_text, width=26, font=UI_FONT)
-        ent.pack(side="left", padx=(0, 8))
+        ttk.Combobox(bar, textvariable=self.fps_choice, state="readonly", width=14,
+                     values=[f[0] for f in FPS_CHOICES], font=UI_FONT).pack(
+            side="left", padx=2)
+
+        ui_scale = max(float(getattr(self, "dpi_scale", 1.0) or 1.0),
+                       UI_FONT_SIZE / 9.0)
+        gear = RoundedButton(
+            bar, text="⚙", command=self.action_settings, kind="ghost",
+            bg=UI_BG, width=max(32, int(round(34 * ui_scale))),
+            height=max(28, int(round(30 * ui_scale))),
+            radius=max(14, int(round(15 * ui_scale))), padx=0,
+            font=(UI_FONT_FAMILY, UI_FONT_SIZE + 2))
+        gear.pack(side="right", padx=(6, 0), pady=(1, 0))
+        self.settings_button = gear
+        self.search_field = SearchField(
+            bar, self.search_text,
+            width=max(200, int(round(238 * ui_scale))),
+            height=max(28, int(round(32 * ui_scale))),
+            placeholder=i18n.pick("搜索程序", "Search programs"))
+        self.search_field.pack(side="right", padx=(4, 0), pady=(1, 0))
+        ent = self.search_field.entry
         self.search_entry = ent
         ent.bind("<KeyRelease>", self._on_search_text_changed)
         ent.bind("<Return>", self._on_search_submit)
@@ -8603,37 +8845,6 @@ class WinMonApp:
         ent.bind("<FocusIn>", lambda _e: (
             self._show_search_results()
             if self.search_text.get().strip() else None))
-        ttk.Separator(bar, orient="vertical").pack(side="left", fill="y",
-                                                  padx=(0, 6))
-
-        ttk.Checkbutton(bar, text="仅显示有窗口", variable=self.only_windowed,
-                        command=self.refresh_windows).pack(side="left", padx=2)
-        ttk.Checkbutton(bar, text="显示隐藏窗口", variable=self.show_hidden,
-                        command=self.refresh_windows).pack(side="left", padx=2)
-        ttk.Checkbutton(bar, text="显示无窗口进程", variable=self.show_no_window,
-                        command=self.refresh_windows).pack(side="left", padx=2)
-        #: 总览 / AI / 工具动作都移到左侧竖栏（`_build_action_rail`）：
-        #: 顶部只留“搜索 + 过滤”，主体（窗口列表 + 预览）才是第一眼看到的东西。
-
-        # ---- 顶部工具栏（第二行：刷新速度 / 跟随选择 / 总览刷新）----
-        #
-        # 长解释不再常驻：用户 2026-10-19 的意见是“太像技术文档”。这些设置还在，
-        # 但“只影响预览、越低越省电”收进「设置 → 使用说明」，这一行只留控件。
-        #
-        # 2026-10-20 删掉「预览大小」：它实际只是抓取分辨率，画面仍由画布
-        # 缩放，导致选“小”反而被放大成一张巨图。现在抓取尺寸自动跟随面板。
-        bar2 = ttk.Frame(self.root, padding=(10, 0, 10, 4))
-        bar2.pack(fill="x")
-        ttk.Label(bar2, text="刷新速度", font=UI_FONT,
-                  foreground=UI_MUTED).pack(side="left", padx=(0, 4))
-        ttk.Combobox(bar2, textvariable=self.fps_choice, state="readonly", width=14,
-                     values=[f[0] for f in FPS_CHOICES], font=UI_FONT).pack(side="left", padx=2)
-        ttk.Separator(bar2, orient="vertical").pack(side="left", fill="y",
-                                                   padx=(8, 6))
-        ttk.Checkbutton(bar2, text="跟随选择", variable=self.follow_selection).pack(
-            side="left", padx=(2, 2))
-        ttk.Checkbutton(bar2, text="总览实时刷新", variable=self.live_gallery).pack(
-            side="left", padx=2)
 
         # ---- 视频联动 + 媒体（合成工具栏里的一行；拆成独立方法，免得 _build_ui 过长）----
         self._build_video_bars()
@@ -8647,29 +8858,27 @@ class WinMonApp:
                         self.follow_selection, self.live_gallery, self.fps_choice):
                 var.trace_add("write", self._schedule_save_settings)
             for var in (self.video_close_mode, self.media_app_pin, self.media_auto_wake,
-                        self.close_mode, self.start_minimized, self.history_days):
+                        self.close_mode, self.start_minimized, self.history_days,
+                        self.video_link_visible):
                 var.trace_add("write", self._schedule_save_settings)
 
         # ---- 主体：实时预览为主体，窗口列表收成右侧紧凑侧栏 ----
-        # 用户 2026-10-19：主界面主体应该是实时预览，而不是进程/窗口读取。
-        # 因此 Panedwindow 的第一块（占 68%）是预览，右侧 32% 只做“选窗口”的
-        # 紧凑列表；CPU/内存/PID 等明细仍可悬停查看，完整进程树在独立标签页。
+        # 用户 2026-10-21：动作竖栏整个撤掉后，主体拿到全部横向空间。
+        # 预览默认占比从 68% 调到 70%，右侧仍保留足够宽的四列列表；
+        # 底部留 8px 空白，状态栏不再贴着内容区。
         body_holder = ttk.Frame(self.root)
-        body_holder.pack(fill="both", expand=True)
+        body_holder.pack(fill="both", expand=True, padx=10, pady=(0, 8))
         body_holder.rowconfigure(0, weight=1)
-        body_holder.columnconfigure(1, weight=1)
-        #: 左侧竖栏：把“加入总览 / AI 助手 / 设置”等动作从顶部挪走。
-        #: 固定宽度，不参与 Panedwindow 拖拽；主体仍然可以左右分栏。
-        self._build_action_rail(body_holder)
+        body_holder.columnconfigure(0, weight=1)
         body = ttk.Panedwindow(body_holder, orient="horizontal")
-        body.grid(row=0, column=1, sticky="nsew", padx=(0, 8), pady=(0, 4))
+        body.grid(row=0, column=0, sticky="nsew")
         self._body_holder = body_holder
         self._body = body
         self._body_sash_ready = False
 
         def _set_body_sash(_event=None) -> None:
             # Tk 的 Panedwindow 会按两个 pane 的“请求宽度”分，不按 weight；
-            # 只在**第一次映射**时设一次 68%。不绑 Configure（否则 sashpos ->
+            # 只在**第一次映射**时设一次 70%。不绑 Configure（否则 sashpos ->
             # Configure -> sashpos 会形成事件风暴，把 after 定时器饿死），
             # 也不用 after（窗口刚建好就关闭时，残留的 after 命令会让
             # root.destroy 报“can't delete Tcl command”）。
@@ -8679,7 +8888,7 @@ class WinMonApp:
                 width = body.winfo_width()
                 if width < 300:
                     return
-                body.sashpos(0, int(width * 0.68))
+                body.sashpos(0, int(width * 0.70))
                 self._body_sash_ready = True
             except Exception:
                 pass
@@ -8717,9 +8926,11 @@ class WinMonApp:
         body.add(side, weight=3)
         self._build_left_pane(side)
 
-        # ---- 底部状态栏 ----
-        bottom = ttk.Frame(self.root, padding=(8, 3))
-        bottom.pack(fill="x")
+        # ---- 底部状态栏（只留一行；操作历史的常驻提示也已移走）----
+        bottom = ttk.Frame(self.root, padding=(10, 2))
+        #: 必须在主体**之前**占位：主体（expand=True）的请求高度较大，
+        #: 先 pack 主体会把状态栏挤成 0 高（实机截图里状态栏整条消失）。
+        bottom.pack(fill="x", side="bottom", pady=(0, 6), before=body_holder)
         ttk.Label(bottom, textvariable=self.status_text, font=UI_FONT, anchor="w").pack(
             side="left", fill="x", expand=True)
         #: 关闭超时后才出现；平时不占位置（pack_forget）。
@@ -8730,14 +8941,14 @@ class WinMonApp:
         ttk.Label(bottom, textvariable=self.overview_text, font=MONO_FONT,
                   foreground=UI_MUTED).pack(side="right")
 
-        # ---- 操作历史：**独立窗口**（约定），主界面不再有折叠面板 ----
+        # ---- 操作历史：**独立窗口**（约定），入口收进设置；主界面不再有常驻提示 ----
         self._history_window = None
         self.history_hint = tk.StringVar(value="")
-        ttk.Label(self.root, textvariable=self.history_hint, font=SMALL_FONT,
-                  foreground=UI_MUTED, anchor="w").pack(fill="x", padx=10)
 
         # ---- 右键菜单 ----
         self.menu = PopupMenu(self.root, font=UI_FONT)
+        #: 用户 2026-10-21：主界面不再有「刷新列表」按钮，改为右键窗口列表刷新。
+        self.menu.add_command(label="刷新列表", command=self.refresh_all)
         self.menu.add_command(label="显示实时画面", command=self.action_show_preview)
         self.menu.add_command(label="加入实时总览", command=self.gallery_add_selected)
         self.menu.add_separator()
@@ -8759,109 +8970,10 @@ class WinMonApp:
         self.menu.add_separator()
         self.menu.add_command(label="打开文件所在位置", command=self.action_reveal)
         self.menu.add_separator()
-        self.menu.add_command(label="闲置程序清理…", command=self.action_idle_dialog)
-        self.menu.add_command(label="清理程序文件…", command=self.action_clean_files)
         self.menu.add_command(label="复制 PID",
                               command=lambda: self._copy(str(self.selected_pid or "")))
         self.menu.add_command(label="复制窗口标题", command=self._copy_selected_title)
         self.menu.add_command(label="复制程序路径", command=self._copy_selected_path)
-
-    def _build_action_rail(self, parent) -> None:
-        """
-        左侧动作竖栏（用户 2026-10-19 的方案）：顶部不再摆一排按钮。
-
-        用户 2026-10-21 又要求这些按钮“轻盈、现代、边框改成大范围低透明阴影”：
-        现在整列是一块带柔光阴影的圆角浮片，每个动作是独立的近白胶囊，
-        左侧的小色条只用来分组，不再用直角灰块和硬边框。
-        """
-        rail_bg = mix_color(UI_BG, UI_SURFACE_ALT, 0.72)
-        # 固定宽度也要跟着 DPI / 字号放大；否则 150% 下 124px 只够放四个汉字，
-        # “清理程序文件…”会被自己的按钮裁成省略号（实机截图确认过）。
-        rail_scale = max(float(getattr(self, "dpi_scale", 1.0) or 1.0),
-                         UI_FONT_SIZE / 9.0)
-        rail_w = max(132, int(round(132 * rail_scale)))
-        panel = SoftPanel(parent, rail_bg, radius=20, shadow=4, pad=9,
-                          width=rail_w)
-        panel.grid(row=0, column=0, sticky="ns", padx=(8, 6), pady=(0, 4))
-        panel.grid_propagate(False)
-        self._action_rail_panel = panel
-        rail = panel.content
-        rail.configure(bg=rail_bg)
-        self.action_rail = rail
-        self._rail_title = tk.Label(rail, text=i18n.pick("操作", "Actions"),
-                                    font=SMALL_BOLD_FONT,
-                                    bg=rail_bg, fg=UI_MUTED, anchor="w")
-        self._rail_title.pack(fill="x", padx=4, pady=(6, 3))
-        self._rail_groups: list[tk.Label] = []
-        self._rail_buttons: list[tk.Button] = []
-
-        def group(title):
-            lbl = tk.Label(rail, text=title, font=SMALL_BOLD_FONT,
-                           bg=rail_bg, fg=UI_MUTED, anchor="w")
-            lbl.pack(fill="x", padx=4, pady=(8, 2))
-            self._rail_groups.append(lbl)
-
-        def action(label, command, tone=UI_ACCENT):
-            # 圆角胶囊 + 大范围低透明阴影；没有外描边，悬停才浮起半档。
-            btn = RoundedButton(
-                rail, text=label, command=command, kind="rail",
-                bg=rail_bg, height=36, radius=18, anchor="w", padx=13,
-                lead=tone, shadow_room=6, font=UI_FONT)
-            btn.pack(fill="x", padx=0, pady=2)
-            self._rail_buttons.append(btn)
-
-        group(i18n.pick("监控", "Monitor"))
-        action("加入总览", self.gallery_add_selected, UI_ACCENT)
-        action("移除总览", self.gallery_remove_selected, UI_ACCENT)
-        action("刷新列表", self.refresh_all, UI_ACCENT)
-
-        group(i18n.pick("工作台", "Workbench"))
-        action("操作历史…", self.action_history, UI_MEDIA_BTN_BG)
-        action("清理程序文件…", self.action_clean_files, UI_MEDIA_BTN_BG)
-
-        group("AI")
-        #: 助手 / 接入 / 用量都收进「AI 工作区」；左栏不再并列两个入口。
-        action("AI 工作区…", self.action_show_ai_workspace, UI_PURPLE)
-
-        group(i18n.pick("设置", "Settings"))
-        #: 设置、AI 用量、使用说明三者合并：主界面只留一个「设置…」入口。
-        action("设置…", self.action_settings, UI_MUTED)
-        self._sync_action_rail_spacing()
-
-    def _sync_action_rail_spacing(self) -> None:
-        """
-        字号变大时收紧左侧竖栏的行距，保证 12 号字 + 最小窗口仍看得到「设置…」。
-
-        为什么不能只把按钮字体改大：`apply_font_size_live()` 只改字体，不会动
-        pack 的 pady；9 号字下的行距在 12 号字时会把最后一个动作挤出可视区。
-        """
-        compact = UI_FONT_SIZE >= 11
-        # 字号变大而轨道宽度不变时，按钮文字会被自己的圆角框裁掉；
-        # 这里同步宽度（DPI 已经在创建时算过一次，字号变化也要跟着走）。
-        try:
-            rail_scale = max(float(getattr(self, "dpi_scale", 1.0) or 1.0),
-                             UI_FONT_SIZE / 9.0)
-            panel = getattr(self, "_action_rail_panel", None)
-            if panel is not None:
-                panel.configure(width=max(132, int(round(132 * rail_scale))))
-            else:
-                self.action_rail.configure(
-                    width=max(132, int(round(132 * rail_scale))))
-        except Exception:
-            pass
-        try:
-            self._rail_title.pack_configure(
-                pady=(2, 0) if compact else (6, 3))
-            for lbl in self._rail_groups:
-                lbl.pack_configure(pady=(2, 0) if compact else (6, 1))
-            for btn in self._rail_buttons:
-                # 12 号字 + 最小窗口时把栏内按钮收回 32px，保证「设置…」不被
-                # 挤出可视区；常规字号保留更高的 36px，让阴影有真实空间。
-                btn.configure(height=32 if compact else 36)
-                btn._shadow_room = 5 if compact else 6
-                btn.pack_configure(pady=0 if compact else 2)
-        except Exception:
-            pass
 
     def _build_left_pane(self, left: tk.Misc) -> None:
         """
@@ -8871,9 +8983,17 @@ class WinMonApp:
         保留完整的数据列（PID / 内存 / CPU 仍在 values 里、悬停可见），
         但界面只显示图标、程序、标题、状态四列，宽度让给实时预览。
         """
-        tk.Label(left, text="运行中的窗口", font=BOLD_FONT, fg=UI_INK,
-                 bg=UI_BG, anchor="w").grid(row=0, column=0, sticky="ew",
-                                            padx=2, pady=(0, 2))
+        head = ttk.Frame(left)
+        head.grid(row=0, column=0, columnspan=2, sticky="ew", padx=2, pady=(0, 2))
+        self.window_header = tk.Label(
+            head, text="运行中的窗口", font=BOLD_FONT, fg=UI_INK,
+            bg=UI_BG, anchor="w", cursor="hand2")
+        self.window_header.pack(side="left")
+        tk.Label(head, text=i18n.pick("右键刷新", "right-click to refresh"),
+                 font=SMALL_FONT, fg=UI_MUTED, bg=UI_BG,
+                 anchor="e").pack(side="right")
+        #: 用户 2026-10-21：主界面不再有「刷新列表」按钮 —— 右键窗口列表标题/表头刷新。
+        self.window_header.bind("<Button-3>", self._show_window_header_menu)
         columns = ("act", "app", "title", "pid", "mem", "cpu", "state")
         tv = ttk.Treeview(left, columns=columns, show="tree headings",
                           selectmode="extended",
@@ -8918,7 +9038,6 @@ class WinMonApp:
         vs.grid(row=1, column=1, sticky="ns")
         left.rowconfigure(1, weight=1)
         left.columnconfigure(0, weight=1)
-        self._build_left_extras(left)
 
         tv.tag_configure("noresp", foreground=UI_DANGER)
         tv.tag_configure("minimized", foreground=UI_MUTED)
@@ -8929,41 +9048,22 @@ class WinMonApp:
                          foreground=UI_SELECT_FG)          # 前台窗口高亮
         tv.tag_configure("fg_hidden", background=UI_SURFACE_ALT, foreground=UI_MUTED)
 
-    def _build_left_extras(self, left: tk.Misc) -> None:
-        """
-        侧栏底部：手势说明 + 闲置程序开关。
-
-        侧栏比原来的主列表窄，提示缩成两行；低频的“闲置”仍留在这里，
-        因为它是“窗口怎么用”的一部分，而不是主界面的主任务。
-        """
-        tk.Label(left, text="单击选中并在上方预览\n双击最小化/还原 · Enter 切到最前",
-                 font=SMALL_FONT, fg=UI_MUTED, bg=UI_BG, anchor="w",
-                 justify="left").grid(row=3, column=0, columnspan=2, sticky="ew",
-                                      pady=(2, 0))
-
-        # ---- 闲置程序开关（**默认关闭**；本工具的职责是"看着"，不是"替你动手"）----
-        idle_bar = ttk.Frame(left)
-        idle_bar.grid(row=4, column=0, columnspan=2, sticky="ew", pady=(3, 0))
-        line1 = ttk.Frame(idle_bar)
-        line1.pack(fill="x")
-        ttk.Checkbutton(line1, text="闲置提醒", variable=self.idle_alert,
-                        command=self._on_idle_toggle).pack(side="left")
-        ttk.Combobox(line1, textvariable=self.idle_choice, state="readonly", width=7,
-                     font=UI_FONT,
-                     values=[label for label, _s in core.IDLE_CHECK_CHOICES]).pack(
-            side="left", padx=(4, 2))
-        RoundedButton(line1, text="清单", kind="ghost", bg=UI_BG,
-                      height=28, radius=14,
-                      command=self.action_idle_dialog).pack(side="right")
-        line2 = ttk.Frame(idle_bar)
-        line2.pack(fill="x", pady=(3, 0))
-        #: 提醒节流：提醒过一次之后隔多久才允许**自动**再弹窗（手动点清单不受限制）。
-        ttk.Label(line2, text="提醒间隔", font=SMALL_FONT,
-                  foreground=UI_MUTED).pack(side="left", padx=(0, 2))
-        ttk.Combobox(line2, textvariable=self.idle_snooze_choice, state="readonly",
-                     width=15, font=UI_FONT,
-                     values=[label for label, _s in core.IDLE_SNOOZE_CHOICES]).pack(
-            side="left")
+    def _show_window_header_menu(self, event) -> None:
+        """右键「运行中的窗口」标题：刷新列表（主界面不再放刷新按钮）。"""
+        menu = tk.Menu(self.root, tearoff=0, font=UI_FONT)
+        menu.add_command(label=i18n.pick("刷新列表", "Refresh"),
+                         command=self.refresh_all)
+        try:
+            menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            try:
+                menu.grab_release()
+            except Exception:
+                pass
+            try:
+                menu.destroy()
+            except Exception:
+                pass
 
     def _build_video_bars(self) -> None:
         """
@@ -8988,8 +9088,12 @@ class WinMonApp:
         所以不需要再摆一排"全局媒体键"和一个单独的"启动/唤醒"—— 一条路走到底，
         状态栏会说明这一步实际用了哪一种。上一首/下一首用「◀◀ / ▶▶」（同样按上面的顺序）。
         """
-        vbar = ttk.Frame(self.root, padding=(8, 2))
-        vbar.pack(fill="x")
+        vbar = ttk.Frame(self.root, padding=(12, 2))
+        #: 只有设置里的开关打开才 pack；关闭时保留控件（以后切换不用重建界面），
+        #: 但主界面完全不占这一行。
+        self.video_bar = vbar
+        if self.video_link_visible.get():
+            vbar.pack(fill="x")
         ttk.Label(vbar, text="视频联动：", font=BOLD_FONT).pack(side="left")
         # 主按钮：**监视当前窗口** —— 不依赖任何特定 App，也不需要"打开"什么，
         # 直接判断列表里选中的那个窗口是不是在放视频（见 _monitor_current_window）。
@@ -9014,33 +9118,53 @@ class WinMonApp:
         #: 媒体卡的“拟光”外框：没有媒体播放时它只是 3px 的卡片边，
         #: 一旦真的在播，边缘从浅到深亮起（由 `_sync_media_ambience()` 驱动）。
         self.media_glow = AmbientGlowFrame(self.root, media)
-        self.media_glow.pack(fill="x", padx=8, pady=(0, 4))
+        self.media_glow.pack(fill="x", padx=10, pady=(0, 5))
         mbar = tk.Frame(self.media_glow.content, bg=media["bg"],
-                        padx=8, pady=3)
+                        padx=9, pady=1)
         mbar.pack(fill="x")
+        #: 用户 2026-10-21：媒体行缩短、媒体键紧靠标题。用 grid 分三段：
+        #: 左（标签 + 标题 + 三枚媒体键）｜中（弹性空白）｜右（播放器 + 自动启动）。
+        #: 标题列**不再吃掉整行**，所以媒体键不会再被甩到最右边。
+        mbar.columnconfigure(5, weight=1)
         RoundedBadge(mbar, text="媒体", fill=media["tag_bg"],
                      fg=media["tag_fg"], bg=media["bg"],
-                     font=SMALL_BOLD_FONT, padx=9, height=20).pack(
-            side="left", padx=(0, 8))
+                     font=SMALL_BOLD_FONT, padx=8, height=18).grid(
+            row=0, column=0, padx=(0, 7))
         #: 当前在放什么（曲名 · 歌手 · 状态）。**没有进度** —— 用户已放弃识别进度。
         self.media_text = tk.StringVar(value="（还没读取）")
         #: 这一行的宽度（**字符**单位）。装不下的部分由 `fit_media_text()` 用 `…` 收尾，
-        #: 绝不静默切断（理由见那个函数）。字号越大，字符宽度越占地方，
-        #: 所以按“标准 10 号 = 62 字符”反比缩放，保证 12 号时媒体行不挤。
+        #: 绝不静默切断（理由见那个函数）。从 62 收到 40：媒体行明显变短，
+        #: 但 9 号字下仍能放下“应用：曲名 · 歌手 · 正在播放”。
         self.MEDIA_TEXT_WIDTH = self._media_text_width()
         self.media_label = tk.Label(
             mbar, textvariable=self.media_text,
             font=(UI_FONT_FAMILY, UI_FONT_SIZE, "bold"), anchor="w",
             fg=media["fg"], bg=media["bg"], width=self.MEDIA_TEXT_WIDTH)
-        self.media_label.pack(side="left", padx=(0, 8))
-        # 右边的控件按"从左到右"的视觉顺序 pack（都是 side="left"，不会互相挤）
+        self.media_label.grid(row=0, column=1, sticky="w")
+        # 顺序按媒体播放器的通用布局：上一首 → 播放/暂停 → 下一首，紧接标题。
+        self.media_prev_btn = RoundedButton(
+            mbar, text="◀◀", kind="media", bg=media["bg"],
+            height=26, radius=13, padx=9, style="Media.TButton",
+            command=lambda: self.media_prev_next("previous"))
+        self.media_play_btn = RoundedButton(
+            mbar, text="▶", kind="media", bg=media["bg"],
+            height=26, radius=13, padx=9, style="Media.TButton",
+            command=self.media_toggle_play)
+        self.media_next_btn = RoundedButton(
+            mbar, text="▶▶", kind="media", bg=media["bg"],
+            height=26, radius=13, padx=9, style="Media.TButton",
+            command=lambda: self.media_prev_next("next"))
+        self.media_prev_btn.grid(row=0, column=2, padx=(8, 1))
+        self.media_play_btn.grid(row=0, column=3, padx=1)
+        self.media_next_btn.grid(row=0, column=4, padx=(1, 0))
         tk.Label(mbar, text="播放器：", font=SMALL_FONT,
-                 bg=media["bg"], fg=media["muted"]).pack(side="left")
+                 bg=media["bg"], fg=media["muted"]).grid(
+            row=0, column=6, padx=(6, 2))
         self.media_app_combo = ttk.Combobox(mbar, textvariable=self.media_app_pin,
                                            state="readonly",
                                            width=self._media_combo_width(), font=UI_FONT,
                                            values=[MEDIA_APP_ANY])
-        self.media_app_combo.pack(side="left", padx=(0, 4))
+        self.media_app_combo.grid(row=0, column=7, padx=(0, 6))
         # 点下拉框 = 出**多选**面板（tkinter 的 Combobox 只能单选，见
         # `_edit_media_app_multi`）。这里必须由实例绑定返回 "break"：
         # 只用 postcommand 的话，原生单选下拉仍会跟着弹出，用户会看到
@@ -9049,27 +9173,28 @@ class WinMonApp:
                          "<space>", "<Return>"):
             self.media_app_combo.bind(sequence, self._open_media_app_picker)
         ttk.Checkbutton(mbar, text="自动启动", variable=self.media_auto_wake,
-                        style="MediaCard.TCheckbutton").pack(
-            side="left", padx=(0, 4))
-        # 顺序按媒体播放器的通用布局：上一首 → 播放/暂停 → 下一首。
-        # 播放按钮用三角/暂停符号（▶ / ⏸），不再写「播放」两个汉字。
-        self.media_prev_btn = RoundedButton(
-            mbar, text="◀◀", kind="media", bg=media["bg"],
-            height=30, radius=15, padx=15, style="Media.TButton",
-            command=lambda: self.media_prev_next("previous"))
-        self.media_play_btn = RoundedButton(
-            mbar, text="▶", kind="media", bg=media["bg"],
-            height=30, radius=15, padx=15, style="Media.TButton",
-            command=self.media_toggle_play)
-        self.media_next_btn = RoundedButton(
-            mbar, text="▶▶", kind="media", bg=media["bg"],
-            height=30, radius=15, padx=15, style="Media.TButton",
-            command=lambda: self.media_prev_next("next"))
-        self.media_prev_btn.pack(side="left", padx=(0, 2))
-        self.media_play_btn.pack(side="left", padx=1)
-        self.media_next_btn.pack(side="left", padx=1)
+                        style="MediaCard.TCheckbutton").grid(
+            row=0, column=8, padx=(2, 0))
         # 清单要等控件建好才能填（`_reload_media_app_list` 会 configure 这个下拉框）
         self._reload_media_app_list()
+
+    def _apply_video_visibility(self) -> None:
+        """按设置开关显示/收起主界面的视频联动行（不动媒体行）。"""
+        bar = getattr(self, "video_bar", None)
+        media = getattr(self, "media_glow", None)
+        if bar is None:
+            return
+        try:
+            if self.video_link_visible.get():
+                if not bar.winfo_manager():
+                    if media is not None:
+                        bar.pack(fill="x", before=media)
+                    else:
+                        bar.pack(fill="x")
+            else:
+                bar.pack_forget()
+        except Exception:
+            pass
 
     def _build_ai_bar(self) -> None:
         """
@@ -9088,13 +9213,13 @@ class WinMonApp:
         card = UI_CARDS["ai"]
         bg = card["bg"]
         panel = SoftPanel(self.root, bg, radius=18, shadow=4, pad=4)
-        panel.pack(fill="x", padx=8, pady=(0, 5))
-        bar = tk.Frame(panel.content, bg=bg, padx=10, pady=5)
+        panel.pack(fill="x", padx=10, pady=(0, 5))
+        bar = tk.Frame(panel.content, bg=bg, padx=10, pady=4)
         bar.pack(fill="both", expand=True)
         bar.columnconfigure(1, weight=1)
         RoundedBadge(bar, text="AI", fill=card["tag_bg"], fg=card["tag_fg"],
                      bg=bg, font=SMALL_BOLD_FONT, padx=9, height=22).grid(
-            row=0, column=0, sticky="nw", padx=(0, 8))
+            row=0, column=0, rowspan=2, sticky="nw", padx=(0, 8))
         body = tk.Frame(bar, bg=bg)
         body.grid(row=0, column=1, sticky="ew")
         body.columnconfigure(0, weight=1)
@@ -9114,10 +9239,18 @@ class WinMonApp:
             anchor="w", justify="left", padx=6, pady=0)
         self.ai_state_label.grid(row=1, column=0, sticky="w", pady=(2, 0))
         self.ai_usage_text = tk.StringVar(value="")
-        tk.Label(body, textvariable=self.ai_usage_text,
-                 font=SMALL_FONT, bg=bg, fg=card["muted"],
-                 anchor="w").grid(row=2, column=0, sticky="ew", pady=(2, 0))
-        #: 动作按钮在左侧竖栏，AI 卡只负责“是谁 / 接没接上 / 用了多少”。
+        self.ai_usage_label = tk.Label(
+            body, textvariable=self.ai_usage_text,
+            font=SMALL_FONT, bg=bg, fg=card["muted"],
+            anchor="w", justify="left")
+        self.ai_usage_label.grid(row=2, column=0, sticky="ew", pady=(1, 0))
+        #: 用户 2026-10-21：「AI 工作区同步在 AI 栏目」—— 入口放进 AI 卡右侧。
+        self.ai_workspace_btn = RoundedButton(
+            bar, text=i18n.pick("AI 工作区", "AI workspace"), kind="ghost",
+            bg=bg, height=26, radius=13,
+            command=self.action_show_ai_workspace)
+        self.ai_workspace_btn.grid(row=0, column=2, rowspan=2, sticky="ne",
+                                   padx=(8, 0), pady=(1, 0))
 
 
     def _app_has_session(self, app_key: str) -> bool:
@@ -9395,8 +9528,10 @@ class WinMonApp:
         旧值 12 号时仍有 42 字符；1080×660 下曲名标签会占掉 426px，
         播放器下拉框只剩 174px，中文自动项被截成「（自动：正在放的那个」。
         收到 32 字符后，下拉框能完整显示。
+        2026-10-21 再把基准从 62 收到 40：媒体键紧贴标题，整行明显变短；
+        12 号字仍保留 25 字符，不会把播放器控件挤坏。
         """
-        return max(30, 62 - max(0, UI_FONT_SIZE - 9) * 10)
+        return max(24, 40 - max(0, UI_FONT_SIZE - 9) * 5)
 
     @staticmethod
     def _media_combo_width() -> int:
@@ -9695,6 +9830,12 @@ class WinMonApp:
             self.root.bind("<F1>", lambda _e: self.action_guide())
         except (AttributeError, tk.TclError):
             pass
+        #: 常见搜索快捷键：Ctrl+F 直接落到右上角的搜索镜里。
+        try:
+            self.root.bind("<Control-f>", lambda _e: self.search_entry.focus_set())
+            self.root.bind("<Control-F>", lambda _e: self.search_entry.focus_set())
+        except (AttributeError, tk.TclError):
+            pass
         # 点主界面别处时收起搜索建议；点搜索框/建议列表本身不收起。
         try:
             self.root.bind("<Button-1>", self._on_root_click_hide_search, add="+")
@@ -9928,6 +10069,10 @@ class WinMonApp:
                     var.set(bool(data[key]))
             if data.get("fps_choice") in [f[0] for f in FPS_CHOICES]:
                 self.fps_choice.set(data["fps_choice"])
+            # 视频联动整行是否显示（默认关；旧配置没有这个键时保持收起）
+            if hasattr(self, "video_link_visible"):
+                self.video_link_visible.set(bool(
+                    data.get("video_link_visible", False)))
             # 关闭方式：设置里存的是 slug（含老版本的 "smart" 等），界面显示中文
             if data.get("video_close_mode"):
                 self.video_close_mode.set(_close_mode_label(
@@ -10008,6 +10153,10 @@ class WinMonApp:
                 "follow_selection": self.follow_selection.get(),
                 "live_gallery": self.live_gallery.get(),
                 "fps_choice": self.fps_choice.get(),
+                # 视频联动整行是否在主界面显示（默认关，设置里打开）
+                "video_link_visible": bool(
+                    self.video_link_visible.get()
+                    if hasattr(self, "video_link_visible") else False),
                 # 存 slug（不是界面上的中文），这样设置文件跨版本都认得住
                 "video_close_mode": _close_mode_slug(self.video_close_mode.get()),
                 # 操作历史保留天数（7 / 30 / 90）
@@ -10197,6 +10346,10 @@ class WinMonApp:
         if event is not None and getattr(event, "keysym", "") in (
                 "Return", "KP_Enter", "Down", "Up", "Escape"):
             return
+        try:
+            self.search_field.sync_placeholder()
+        except Exception:
+            pass
         self._cancel_search_debounce()
         try:
             self._search_after = self.root.after(180, self._apply_search_ui)
@@ -11085,9 +11238,11 @@ class WinMonApp:
             # 不再显示模式、跟随对象和前台计时，也不再放任何“复制现场”按钮。
             self.ai_state_text.set(parts["connection"] or i18n.pick(
                 "未接入 · 纯本地", "not connected · local only"))
-            self.ai_usage_text.set(parts["usage"])
             card = UI_CARDS["ai"]
             connected = parts["status_kind"] in ("mcp", "direct")
+            #: 用户 2026-10-21：本地未接入 AI 时不要再写「真实 0 · 精确 0 · 估算 0」，
+            #: 这一行留白即可；接上 MCP/API 后才显示真实用量。
+            self.ai_usage_text.set(parts["usage"] if connected else "")
             if connected:
                 self.ai_state_label.configure(
                     bg=card["state_ok_bg"], fg=card["state_ok_fg"])
@@ -12675,17 +12830,41 @@ class WinMonApp:
             self._sync_gallery_requests()
             self.notebook.select(1)
 
-    def gallery_remove_selected(self) -> None:
-        sel = [s for s in self.tree.selection() if self.row_info.get(s, ("",))[0] == "window"]
+    def gallery_remove_selected(self, hwnd=None) -> None:
+        """
+        从实时总览撤回格子。
+
+        入口已经收进「实时总览」自己的工具条，所以优先删**总览里点选的格子**；
+        没有点选时再退回旧行为（右侧窗口列表的多选），保证右键菜单/测试兼容。
+        """
+        targets: list[int] = []
+        if hwnd is not None:
+            targets = [int(hwnd)]
+        else:
+            picked = getattr(self.gallery, "selected_key", None)
+            if picked is not None:
+                targets = [int(picked)]
+            else:
+                sel = [s for s in self.tree.selection()
+                       if self.row_info.get(s, ("",))[0] == "window"]
+                targets = [int(self.row_info[item][2]) for item in sel
+                           if self.row_info[item][2]]
+        if not targets:
+            self._set_status(i18n.pick(
+                "请先在实时总览里点选一个格子，再点「移除总览」",
+                "Select a tile in the live overview first, then Remove"))
+            return
         removed = 0
-        for item in sel:
-            _kind, _pid, hwnd = self.row_info[item]
-            if hwnd in self.gallery_keys:
-                self.gallery_keys.pop(hwnd, None)
-                if hwnd in self.gallery_order:
-                    self.gallery_order.remove(hwnd)
-                self.gallery.remove(hwnd)
-                self.worker.forget(("tile", hwnd))
+        for key in targets:
+            if key in self.gallery_keys:
+                self.gallery_keys.pop(key, None)
+                if key in self.gallery_order:
+                    self.gallery_order.remove(key)
+                self.gallery.remove(key)
+                try:
+                    self.worker.forget(("tile", key))
+                except Exception:
+                    pass
                 removed += 1
         if removed:
             self._set_status(f"已从总览移除 {removed} 个程序")
@@ -13389,6 +13568,10 @@ class WinMonApp:
                 self.menu.tk_popup(event.x_root, event.y_root)
             finally:
                 self.menu.grab_release()
+            return
+        # 右键表头/空白处：只弹「刷新列表」，不把关闭/结束这类动作
+        # 放在没有选中目标的时候（会误以为已选中某个窗口）。
+        self._show_window_header_menu(event)
 
     def on_close(self) -> None:
         """
@@ -13648,6 +13831,11 @@ class WinMonApp:
         except Exception:
             pass
         try:
+            self.search_field.set_placeholder(
+                i18n.pick("搜索程序", "Search programs"))
+        except Exception:
+            pass
+        try:
             i18n.translate_menu(self.menu)
         except Exception:
             pass
@@ -13776,12 +13964,53 @@ class WinMonApp:
                 text="继续刷新" if self.paused else "暂停刷新")
             self._sync_media_play_button()
             self._sync_media_ambience(animate=False)
-            self._sync_action_rail_spacing()
         except Exception:
             pass
         target = getattr(self, "_escalate_target", None)
         if target is not None:
             self._show_escalation(*target)
+
+    def _apply_settings_prefs(self, got: dict) -> None:
+        """把设置窗口里的窗口过滤 / 视频联动 / 闲置提醒同步到主界面。"""
+        prefs = got.get("window_prefs") or {}
+        changed = False
+        for key, var in (("only_windowed", self.only_windowed),
+                         ("show_hidden", self.show_hidden),
+                         ("show_no_window", self.show_no_window),
+                         ("follow_selection", self.follow_selection),
+                         ("live_gallery", self.live_gallery)):
+            if key not in prefs:
+                continue
+            want = bool(prefs[key])
+            if bool(var.get()) != want:
+                changed = True
+                var.set(want)
+        if changed:
+            try:
+                self.refresh_windows()
+            except Exception:
+                pass
+        if "video_link_visible" in got:
+            self.video_link_visible.set(bool(got["video_link_visible"]))
+            self._apply_video_visibility()
+        idle_changed = False
+        for key, var in (("idle_alert", self.idle_alert),
+                         ("idle_choice", self.idle_choice),
+                         ("idle_snooze", self.idle_snooze_choice)):
+            if key not in got:
+                continue
+            if str(var.get()) != str(got[key]):
+                idle_changed = True
+                var.set(got[key])
+        if idle_changed:
+            self.idle_watch.reset()
+            self._idle_ticks = 0
+        try:
+            self.idle_watch.set_threshold(_idle_seconds_of(self.idle_choice.get()))
+            self.idle_watch.set_snooze(
+                core.idle_snooze_seconds_of(self.idle_snooze_choice.get()))
+        except Exception:
+            pass
 
     def action_settings(self, section: str = "general",
                         guide_section: str = "main") -> None:
@@ -13807,10 +14036,21 @@ class WinMonApp:
             tab_index = 0
         try:
             old_opacity = normalize_opacity(self.ui_opacity.get())
+            prefs = {
+                "only_windowed": bool(self.only_windowed.get()),
+                "show_hidden": bool(self.show_hidden.get()),
+                "show_no_window": bool(self.show_no_window.get()),
+                "follow_selection": bool(self.follow_selection.get()),
+                "live_gallery": bool(self.live_gallery.get()),
+                "video_link_visible": bool(self.video_link_visible.get()),
+                "idle_alert": bool(self.idle_alert.get()),
+                "idle_choice": self.idle_choice.get(),
+                "idle_snooze": self.idle_snooze_choice.get(),
+            }
             dlg = _SettingsWindow(
                 self.root, self, self.close_mode.get(), self._tray_available(),
                 bool(self.start_minimized.get()), int(self.history_days.get()),
-                old_lang, old_font, old_theme, old_opacity)
+                old_lang, old_font, old_theme, old_opacity, prefs)
         except Exception as exc:
             self._set_status(f"打不开设置：{type(exc).__name__}: {exc}")
             return
@@ -13849,11 +14089,11 @@ class WinMonApp:
                 apply_font_size_live(self.root, new_font)
                 try:
                     self._sync_media_width()
-                    self._sync_action_rail_spacing()
                 except Exception:
                     pass
             if new_lang != old_lang:
                 self.retranslate()
+        self._apply_settings_prefs(got)
         self._schedule_save_settings()
         try:
             self.save_settings_now()

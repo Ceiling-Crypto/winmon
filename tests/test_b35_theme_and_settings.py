@@ -294,18 +294,14 @@ class TestThemeMainWindow(unittest.TestCase):
                     self.app.media_next_btn):
             self.assertEqual(str(btn.cget("style")), "Media.TButton")
 
-    def test_checkbox_and_action_popup_are_visible_on_light(self):
+    def test_checkbox_and_top_right_controls_are_visible_on_light(self):
         normal = self.root._winmon_check_images["normal"]
         self.assertNotEqual(tuple(normal.get(7, 7)), (0, 0, 0),
                             "未选框不能和纯黑背景糊成一块")
-        pane = self.app.preview
-        self.addCleanup(pane.close_actions)
-        pane.open_actions()
-        close_row, _box, close_txt, _detail, _col = pane._action_rows["close"]
-        end_row = pane._action_rows["terminate"][0]
-        self.assertEqual(str(close_row.cget("bg")), self.winmon.UI_ACCENT)
-        self.assertEqual(str(close_txt.cget("fg")), self.winmon.UI_ON_ACCENT)
-        self.assertEqual(str(end_row.cget("bg")), self.winmon.UI_BG)
+        self.assertTrue(self.app.search_field.winfo_exists())
+        self.assertEqual(str(self.app.settings_button.cget("text")), "⚙")
+        self.assertFalse(hasattr(self.app.preview, "action_button"),
+                         "预览下方的操作条已经按用户要求删除")
 
     def test_z_live_theme_rebuild_restores_the_checkbox_and_buttons(self):
         self.winmon.apply_theme("cloud")
@@ -321,7 +317,8 @@ class TestThemeMainWindow(unittest.TestCase):
                              self.winmon.UI_BG)
             self.assertEqual(str(self.app.media_play_btn.cget("style")),
                              "Media.TButton")
-            self.assertTrue(self.app.action_rail.winfo_exists())
+            self.assertTrue(self.app.search_field.winfo_exists())
+            self.assertTrue(self.app.settings_button.winfo_exists())
         finally:
             # 这个类共用一套控件；把状态还回默认，避免依赖测试执行顺序。
             self.winmon.apply_theme("sunlit")

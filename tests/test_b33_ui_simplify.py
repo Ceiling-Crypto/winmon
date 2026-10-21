@@ -146,25 +146,21 @@ class TestMainUiHierarchy(unittest.TestCase):
         self.assertNotEqual(str(self.app.ai_state_label.cget("bg")),
                             str(self.root.cget("background")))
 
-    def test_actions_live_in_the_left_rail(self):
-        labels = [str(w.cget("text")) for w in walk(self.app.action_rail)
+    def test_actions_are_no_longer_a_permanent_left_rail(self):
+        """2026-10-21：左栏撤掉，搜索/设置收进右上角，加入总览只在右键菜单。"""
+        self.assertFalse(hasattr(self.app, "action_rail"),
+                         "主界面不应再有常驻动作竖栏")
+        labels = [str(w.cget("text")) for w in walk(self.root)
                   if w.winfo_class() in ("Button", "TButton")]
-        for label in ("加入总览", "移除总览", "操作历史…", "清理程序文件…",
-                      "AI 工作区…", "设置…"):
-            self.assertIn(label, labels)
-        self.assertNotIn("AI 助手…", labels,
-                         "AI 助手入口已经收进 AI 工作区")
-        self.assertNotIn("接入…", labels,
-                         "接入入口已经收进 AI 工作区")
-        self.assertNotIn("AI 用量…", labels,
-                         "AI 用量已经并进设置，左侧不再单独列入")
-        self.assertNotIn("说明…", labels,
-                         "使用说明已经并进设置，左侧不再单独列入")
-        self.assertGreater(self.app.action_rail.winfo_reqwidth(), 50)
-        # 顶部不再重复这些动作（否则又回到“一排白按钮”的老路）。
-        top_texts = [str(w.cget("text")) for w in walk(self.root)
-                     if w.winfo_class() in ("Button", "TButton")]
-        self.assertEqual(top_texts.count("加入总览"), 1)
+        self.assertNotIn("加入总览", labels,
+                         "加入总览应只在窗口列表右键菜单里")
+        self.assertNotIn("刷新列表", labels,
+                         "刷新列表应改为右键窗口列表")
+        self.assertEqual(str(self.app.settings_button.cget("text")), "⚙")
+        self.assertTrue(self.app.search_field.winfo_exists())
+        self.assertTrue(self.app.ai_workspace_btn.winfo_exists())
+        self.assertEqual(str(self.app.gallery.remove_btn.cget("text")),
+                         "移除总览")
 
     def test_default_window_is_compact(self):
         self.assertEqual((self.winmon.APP_W, self.winmon.APP_H), (1160, 730))
@@ -203,6 +199,8 @@ class TestMainUiHierarchy(unittest.TestCase):
                          "AI 卡不应再有复制现场按钮")
         self.assertIn("未接入 · 纯本地", self.app.ai_state_text.get())
         self.assertNotIn("可复制", self.app.ai_state_text.get())
+        self.assertEqual(self.app.ai_usage_text.get(), "",
+                         "本地未接入时不要显示「真实 0」这一行，留白即可")
 
         self.app._ai_connection_snapshot = lambda: {
             "kind": "mcp", "client": "Claude Desktop"}

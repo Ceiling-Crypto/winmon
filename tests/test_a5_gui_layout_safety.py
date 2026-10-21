@@ -170,24 +170,18 @@ class TestMainWindowLayout(unittest.TestCase):
         def restore():
             winmon.apply_font_size_live(self.root, old)
             self.app._sync_media_width()
-            self.app._sync_action_rail_spacing()
 
         self.addCleanup(restore)
         self.addCleanup(self.root.geometry, f"{APP_W}x{APP_H}")
         winmon.apply_font_size_live(self.root, winmon.FONT_SIZE_MAX)
         self.app._sync_media_width()
-        self.app._sync_action_rail_spacing()
         self.root.geometry(f"{MIN_W}x{MIN_H}")
         self.root.update()
         bad = self._squeezed(geometry=f"{MIN_W}x{MIN_H}")
         self.assertEqual(bad[:5], [],
                          f"字号 {winmon.FONT_SIZE_MAX} 在 {MIN_W}×{MIN_H} 下挤坏了：{bad[:5]}")
-        rail = self.app.action_rail
-        last = rail.winfo_children()[-1]
-        self.assertEqual(str(last.cget("text")), "设置…")
-        self.assertLessEqual(last.winfo_y() + last.winfo_height(),
-                             rail.winfo_height() + 1,
-                             "字号 12 时左侧竖栏最后一个动作被挤出可视区")
+        self.assertTrue(self.app.search_field.winfo_exists())
+        self.assertEqual(str(self.app.settings_button.cget("text")), "⚙")
 
     def test_all_tabs_do_not_overflow(self):
         """逐个标签页检查（隐藏的标签页不会创建真实控件树，必须切过去）。"""
@@ -260,7 +254,9 @@ class TestMainWindowLayout(unittest.TestCase):
         self.assertEqual(bad[:3], [], f"长曲名把这一行挤坏了：{bad[:3]}")
         shown = self.app.media_text.get()
         self.assertTrue(shown.endswith("…"), f"装不下应当用 … 收尾：{shown!r}")
-        self.assertIn("还有 2 个在放", shown)
+        #: 2026-10-21 媒体行收短（62 → 40 字符）后，多会话长句会被省略；
+        #: 这里只要求“不挤坏、有省略号”，不再要求整句都塞得下。
+        self.assertLessEqual(len(shown), 41)
 
     def test_window_scales_with_dpi(self):
         """
@@ -376,9 +372,9 @@ class TestMainWindowLayout(unittest.TestCase):
         self.assertEqual(texts, ["实时预览", "实时总览", "进程树",
                                  "程序目录", "工作区", "AI 工作区"])
 
-    def test_idle_snooze_choices_fit_in_their_combobox(self):
+    def test_idle_snooze_choices_fit_in_their_settings_combobox(self):
         """
-        下拉框的 `width` 必须容得下**最长的那条**选项，否则显示出来是截断的。
+        闲置提醒已从主界面收进设置；下拉框宽度仍要容得下最长选项。
 
         为什么单独钉这一条：`width` 是"字符数"，而中文一个字符占两个字符宽 ——
         实测 `Microsoft YaHei UI 9` 下 width=12 只有 107px，
@@ -387,8 +383,12 @@ class TestMainWindowLayout(unittest.TestCase):
         """
         from tkinter import font as tkfont
         want = [label for label, _s in core.IDLE_SNOOZE_CHOICES]
+        with mock.patch.object(self.winmon.core, "get_autostart", return_value=False):
+            dlg = self.winmon._SettingsWindow(
+                self.root, self.app, "exit", False, False, 30, "zh", 9, "sunlit")
+        self.addCleanup(dlg._cancel)
         box = None
-        for w in walk(self.root):
+        for w in walk(dlg.top):
             if w.winfo_class() != "TCombobox":
                 continue
             try:
@@ -397,7 +397,7 @@ class TestMainWindowLayout(unittest.TestCase):
                     break
             except Exception:
                 continue
-        self.assertIsNotNone(box, "没找到闲置「提醒间隔」下拉框")
+        self.assertIsNotNone(box, "设置里没找到闲置「提醒间隔」下拉框")
         f = tkfont.Font(font=self.winmon.UI_FONT)
         widest = max(want, key=f.measure)
         need, got = f.measure(widest), box.winfo_reqwidth()
