@@ -5076,11 +5076,10 @@ class _SettingsWindow:
             font=UI_FONT, values=list(self._font_by_label.keys())).pack(
             anchor="w", pady=(2, 0))
         self._hint(wrap, i18n.pick(
-            "可选 9–12；12 是界面允许的最大字号。保存后主界面、AI 助手、"
-            "接入和弹窗一起变；不用重启。",
-            "9–12; 12 is the largest size the layout supports. Applies "
-            "to the main window, AI windows, and dialogs immediately; "
-            "no restart."))
+            "可选 9–12；12 是界面允许的最大字号。\n"
+            "保存后主界面、AI 助手、接入和弹窗一起变；不用重启。",
+            "9–12; 12 is the largest size the layout supports.\n"
+            "Applies to the main window, AI windows, and dialogs immediately."))
 
         tk.Label(wrap, text=i18n.pick("界面透明度", "Window opacity"),
                  font=UI_FONT, bg=UI_BG, fg=UI_INK,
@@ -5101,16 +5100,16 @@ class _SettingsWindow:
                    command=lambda: self._set_opacity_value(UI_OPACITY_MAX)
                    ).pack(side="left")
         self._hint(wrap, i18n.pick(
-            "默认 100%；最低 45%，只淡到仍能看见窗口边缘，不会整窗消失。"
+            "默认 100%；最低 45%，只淡到仍能看见窗口边缘，不会整窗消失。\n"
             "主界面、设置/历史/AI 窗口、右键菜单、搜索建议、操作下拉和"
-            "媒体多选会一起变化；高亮卡（含播放时的媒体拟光）也一起。"
+            "媒体多选会一起变化；高亮卡（含播放时的媒体拟光）也一起。\n"
             "系统原生的下拉列表不归 WinMon 绘制，不在承诺范围内。",
             "Default 100%; the minimum is 45%, where the window edge is "
-            "still visible and the app cannot vanish. The main window, "
-            "settings/history/AI windows, context menus, search results, "
-            "action popups, and media picker all follow it — including "
-            "highlight cards and the media glow. Native system dropdowns "
-            "are not owned by WinMon and are not covered."))
+            "still visible.\n"
+            "The main window, settings/history/AI windows, context menus, "
+            "search results, action popups, and media picker all follow it — "
+            "including highlight cards and the media glow.\n"
+            "Native system dropdowns are not owned by WinMon and are not covered."))
 
     def _build_window_list_section(self, wrap, prefs: dict) -> None:
         """窗口列表：原先挤在主界面顶部的过滤/跟随选项。"""
@@ -5138,11 +5137,10 @@ class _SettingsWindow:
         ttk.Checkbutton(wrap, text="总览实时刷新",
                         variable=self.live_gallery).pack(anchor="w", fill="x")
         self._hint(wrap, i18n.pick(
-            "这些选项以前常驻在主界面第一行；现在收进设置，保存后立即生效。"
+            "这些选项以前常驻在主界面第一行；现在收进设置，保存后立即生效。\n"
             "「显示运行窗口」只列出真正有窗口的程序，不显示纯后台进程。",
-            "These used to sit above the main list. They now live here and "
-            "apply immediately on save. “Show running windows” hides "
-            "background processes that have no window."))
+            "These used to sit above the main list; they apply immediately on save.\n"
+            "“Show running windows” hides background processes that have no window."))
 
     def _build_content_section(self, wrap, prefs: dict) -> None:
         """主界面内容：视频联动整行 + 闲置提醒。"""
@@ -5154,9 +5152,10 @@ class _SettingsWindow:
             anchor="w", fill="x", pady=(2, 0))
         self._hint(wrap, i18n.pick(
             "默认不显示；打开后主界面才会出现「监视当前窗口 / 停止监视 / "
-            "直接关闭视频」这一行。关闭时媒体行仍保留。",
-            "Off by default. When on, the video-link row appears above the "
-            "media card; the media card itself always stays."))
+            "直接关闭视频」这一行。\n"
+            "关闭时媒体行仍保留。",
+            "Off by default. When on, the video-link row appears above the media card.\n"
+            "The media card itself always stays."))
 
         self.idle_alert = tk.BooleanVar(
             value=bool(prefs.get("idle_alert", False)))
@@ -5240,7 +5239,7 @@ class _SettingsWindow:
         tk.Label(row, text="天", font=UI_FONT, bg=UI_BG, fg=UI_INK,
                  anchor="w").pack(side="left", padx=(4, 0))
         self._hint(wrap, f"启动时自动删掉超过这个天数的记录（默认 "
-                         f"{HISTORY_DAYS_DEFAULT} 天）。"
+                         f"{HISTORY_DAYS_DEFAULT} 天）。\n"
                          f"清理前会把原文件另存一份 .bak，删错了还能找回来。")
 
         tools = tk.Frame(wrap, bg=UI_BG)
