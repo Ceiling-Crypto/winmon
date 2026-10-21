@@ -62,8 +62,9 @@ class TestAiSummary(unittest.TestCase):
             {"enabled": True, "key_present": True, "model": "claude-3-5"},
             connection={"kind": "mcp", "client": "Claude Desktop"},
             mode="active")
-        for piece in ("Claude Desktop", "已接入 MCP", "主动", "真实 12", "估算 1"):
+        for piece in ("Claude Desktop", "已接入 · MCP", "真实 12", "估算 1"):
             self.assertIn(piece, text)
+        self.assertNotIn("主动 AI", text, "状态条只写接入方式，不再堆模式说明")
 
     def test_manual_direct_is_marked(self):
         text = ai.format_ai_bar(
@@ -71,7 +72,7 @@ class TestAiSummary(unittest.TestCase):
             {"provider_tokens": 5, "tokenizer_tokens": 0, "estimated_tokens": 0},
             {"enabled": True, "key_present": True, "model": "glm-5.3"},
             connection={"kind": "direct", "model": "glm-5.3", "manual": True})
-        self.assertIn("直连就绪（手动）", text)
+        self.assertIn("已接入 · API（手动 · glm-5.3）", text)
 
     def test_provider_profile_lookup_and_key_env(self):
         with tempfile.TemporaryDirectory(prefix="winmon-b33-prof-") as tmp:
@@ -178,15 +179,15 @@ class TestMainUiHierarchy(unittest.TestCase):
                                              "kind": "desktop",
                                              "proc": "claude.exe"}})
         self.assertIn("Claude Desktop", self.app.ai_identity_text.get())
-        self.assertIn("已接入 MCP", self.app.ai_state_text.get())
+        self.assertIn("已接入 · MCP", self.app.ai_state_text.get())
         self.assertIn("真实 10", self.app.ai_usage_text.get())
         self.assertEqual(str(self.app.ai_state_label.cget("bg")),
                          self.winmon.UI_CARDS["ai"]["state_ok_bg"])
         self.assertEqual(str(self.app.ai_workspace._state_label.cget("bg")),
                          self.winmon.UI_CARDS["ai"]["state_ok_bg"])
 
-    def test_clipboard_mode_shows_an_actionable_copy_button(self):
-        """“未接入”不是按键；真正的动作是旁边的「复制现场」。"""
+    def test_not_connected_has_no_copy_button(self):
+        """2026-10-21 用户要求：删掉「复制现场」按钮，未接入只显示纯本地。"""
         for name in ("_ai_status_snapshot", "_ai_provider_snapshot",
                      "_ai_connection_snapshot"):
             self.addCleanup(lambda n=name: self.app.__dict__.pop(n, None))
@@ -194,23 +195,21 @@ class TestMainUiHierarchy(unittest.TestCase):
             "provider_tokens": 0, "tokenizer_tokens": 0, "estimated_tokens": 0}
         self.app._ai_provider_snapshot = lambda: {"enabled": False}
         self.app._ai_connection_snapshot = lambda: {
-            "kind": "clipboard", "ai": "Claude Desktop"}
-        with mock.patch.object(self.app, "_ai_handoff") as handoff:
-            self.app._update_ai_bar({"primary": {
-                "name": "Claude Desktop", "kind": "desktop", "proc": "claude.exe"}})
-            self.root.update()
-            self.assertEqual(self.app.ai_copy_btn.winfo_manager(), "grid",
-                             "未接入时应出现「复制现场」")
-            self.app.ai_copy_btn.invoke()
-            handoff.assert_called_once_with()
+            "kind": "local", "ai": "Claude Desktop"}
+        self.app._update_ai_bar({"primary": {
+            "name": "Claude Desktop", "kind": "desktop", "proc": "claude.exe"}})
+        self.root.update()
+        self.assertFalse(hasattr(self.app, "ai_copy_btn"),
+                         "AI 卡不应再有复制现场按钮")
+        self.assertIn("未接入 · 纯本地", self.app.ai_state_text.get())
+        self.assertNotIn("可复制", self.app.ai_state_text.get())
 
         self.app._ai_connection_snapshot = lambda: {
             "kind": "mcp", "client": "Claude Desktop"}
         self.app._update_ai_bar({"primary": {
             "name": "Claude Desktop", "kind": "desktop", "proc": "claude.exe"}})
         self.root.update()
-        self.assertEqual(self.app.ai_copy_btn.winfo_manager(), "",
-                         "接上 MCP 后不该再显示复制按钮")
+        self.assertIn("已接入 · MCP", self.app.ai_state_text.get())
 
     def _settings_window(self):
         with mock.patch.object(self.winmon.core, "get_autostart", return_value=False):

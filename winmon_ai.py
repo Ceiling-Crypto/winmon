@@ -12,7 +12,6 @@ WinMon AI 工作伴侣 —— AI 会话识别 / 本地事件（Incident）/ 剧�
 
 主要对象：
     AiSession       一个"正在使用的 AI"（桌面客户端或网页标签）
-    AiTracker       前台时长累计器（GUI 每 700ms 喂一次）
     Incident        一条本地事件（症状 + 证据 + 剧本）
     IncidentStore   事件状态机 + 去重 + 落盘（%LOCALAPPDATA%\\WinMon）
     PLAYBOOKS       剧本库（症状 → 检查 → 处理步骤）
@@ -28,7 +27,6 @@ import subprocess
 import threading
 import time
 import uuid
-from collections import deque
 from dataclasses import dataclass, field
 
 import winmon_core as core
@@ -168,8 +166,6 @@ class AiSession:
     url: str = ""
     source: str = ""             # mcp_parent / process_table / window_title / user_pin
     confidence: float = 0.0
-    foreground_seconds: float = 0.0
-    activations: int = 0
     cpu_share: float = 0.0
     mem_share: float = 0.0
     score: float = 0.0
@@ -187,8 +183,6 @@ class AiSession:
             "title": title, "title_suspicious": suspicious, "url": self.url,
             "source": self.source,
             "confidence": round(self.confidence, 3),
-            "foreground_seconds_30m": round(self.foreground_seconds, 1),
-            "activations_30m": self.activations,
             "cpu_share": round(self.cpu_share, 4),
             "mem_share": round(self.mem_share, 4),
             "score": round(self.score, 1), "pinned": self.pinned,
@@ -259,101 +253,6 @@ def classify_window(proc: str, title: str, url: str = "") -> tuple:
     return ("", "", "", 0.0, "")
 
 
-def session_key_for_window(wi, procs: dict | None = None) -> str:
-    """
-    给 `AiTracker` 用的轻量 key（`kind:name`）。
-
-    只做分类，不做任何枚举/查询；窗口对象为 None 时返回空串。
-    """
-    if wi is None:
-        return ""
-    proc = getattr(wi, "proc", "") or ""
-    if not proc and procs:
-        proc = (procs.get(getattr(wi, "pid", 0), {}) or {}).get("name", "")
-    kind, name, _vendor, _conf, _src = classify_window(proc, getattr(wi, "title", ""))
-    return f"{kind}:{name}" if name else ""
-
-
-class AiTracker:
-    """
-    前台时长累计器（只记内存，不落盘），统计口径是**滚动 30 分钟**。
-
-    调用方（GUI）每 700ms 喂一次"当前前台窗口属于哪个 AI"即可。
-    命令行 / MCP 是**一次性**查询，没有历史，所以 `foreground_seconds` 为 0 ——
-    这不是错误，工具描述里会写清楚"累计时长需要 WinMon 界面在跑"。
-
-    为什么不是"总累计再截到 30 分钟"：那样用满 30 分钟后数字会永远卡在
-    "30 分 0 秒"，离开一段时间也不会回落，看起来就像"计时一会儿动一会儿不动"。
-    这里保存每段前台区间，`stats()` 只累加最近 30 分钟内的部分：
-      · AI 一直在前台的 30 分钟内，数字按秒增长；
-      · 切到 WinMon / 别的窗口时停止增长（前台口径本来就该如此）；
-      · 超过 30 分钟的旧区间自动过期，不会永久顶格。
-    """
-
-    def __init__(self, window_seconds: float = 1800.0) -> None:
-        self.window_seconds = float(window_seconds)
-        self._key = ""
-        self._since = 0.0
-        #: 已结束的前台区间 `(start, end, key)`，按时间有序。
-        self._segments: deque = deque()
-        #: 每次"切到某个 AI"的时间点，用于统计窗口内激活次数。
-        self._activation_times: dict[str, deque] = {}
-        self._last_seen: dict[str, float] = {}
-
-    def _prune(self, now: float) -> None:
-        cutoff = now - self.window_seconds
-        while self._segments and self._segments[0][1] <= cutoff:
-            self._segments.popleft()
-        for key in list(self._activation_times):
-            q = self._activation_times[key]
-            while q and q[0] < cutoff:
-                q.popleft()
-            if not q:
-                self._activation_times.pop(key, None)
-
-    def current_key(self) -> str:
-        """此刻正在计时的 AI key（空串 = 前台不是 AI）。"""
-        return self._key
-
-    def observe(self, now: float, key: str) -> None:
-        """喂一拍：`key` 为空表示前台不是 AI。"""
-        now = float(now)
-        if self._key and now > self._since:
-            self._segments.append((self._since, now, self._key))
-        key = key or ""
-        if key:
-            if key != self._key:
-                self._activation_times.setdefault(key, deque()).append(now)
-            self._last_seen[key] = now
-        self._key = key
-        self._since = now
-        self._prune(now)
-
-    def _seconds_for(self, key: str, now: float) -> float:
-        cutoff = now - self.window_seconds
-        total = 0.0
-        for start, end, seg_key in self._segments:
-            if seg_key != key or end <= cutoff:
-                continue
-            total += end - max(start, cutoff)
-        if self._key == key and now > self._since:
-            total += now - max(self._since, cutoff)
-        return min(self.window_seconds, max(0.0, total))
-
-    def stats(self, key: str, now: float) -> tuple:
-        """返回 `(最近 30 分钟前台秒数, 激活次数, 新鲜度 0~1)`。"""
-        now = float(now)
-        self._prune(now)
-        seconds = self._seconds_for(key, now)
-        acts = len(self._activation_times.get(key) or ())
-        last = self._last_seen.get(key, 0.0)
-        if not last:
-            fresh = 0.0
-        else:
-            fresh = max(0.0, 1.0 - (now - last) / max(60.0, self.window_seconds / 6.0))
-        return (seconds, acts, min(1.0, fresh))
-
-
 def _resource_shares(sessions: list, windows: list) -> None:
     """
     给每个会话算"资源占比"（只用于并列时打破平局）。
@@ -375,22 +274,23 @@ def _resource_shares(sessions: list, windows: list) -> None:
 
 
 def identify_ai_sessions(windows: list, procs: dict | None = None,
-                         tracker: AiTracker | None = None,
                          foreground_hwnd: int = 0, pin: str = "",
-                         connected: dict | None = None,
-                         now: float | None = None) -> dict:
+                         connected: dict | None = None) -> dict:
     """
     识别"现在有哪些 AI、主要在用的是哪个"。
 
     - `windows`：`WinInfo` 列表（`core.enum_windows` / `collect_desktop` 的结果）
-    - `tracker`：前台累计器；为 None 时前台时长按 0 算
+    - `foreground_hwnd`：当前前台窗口；只用来判断"是不是正在用"，**不计时**
     - `connected`：MCP 连接级识别结果（`detect_connected_client()`），最可靠
     - `pin`：用户指定的主 AI（显示名或进程名，大小写不敏感）
 
     返回 `{"primary": dict|None, "others": [...], "ambiguous": bool, "pinned": bool,
     "connected": dict|None, "note": str}`。
+
+    这里刻意**不再统计前台时长/激活次数**：用户 2026-10-21 明确要求删掉
+    “AI 运行时间”这项统计。主 AI 只按“是否在前台、识别置信度、资源占比、
+    是否通过 MCP 连接”当场判断，不保存历史。
     """
-    now = time.monotonic() if now is None else now
     procs = procs or {}
     grouped: dict[str, dict] = {}
 
@@ -418,25 +318,20 @@ def identify_ai_sessions(windows: list, procs: dict | None = None,
                        confidence=conf, source=source)
 
     sessions: list[AiSession] = []
-    fresh_by_key: dict[str, float] = {}
-    for key, cur in grouped.items():
+    for _key, cur in grouped.items():
         s = AiSession(kind=cur["kind"], name=cur["name"], vendor=cur["vendor"],
                       proc=cur["proc"], pid=cur["pid"], hwnd=cur["hwnd"],
                       title=cur["title"], source=cur["source"],
                       confidence=cur["confidence"])
-        if tracker is not None:
-            s.foreground_seconds, s.activations, fresh = tracker.stats(key, now)
-        else:
-            fresh = 1.0 if s.hwnd == foreground_hwnd else 0.0
-        fresh_by_key[key] = fresh
         sessions.append(s)
 
-    # 资源占比要先算出来再打分（否则 0.2 那一项永远是 0）
+    # 资源占比要先算出来再打分（否则资源那一项永远是 0）
     _resource_shares(sessions, windows)
     for s in sessions:
-        s.score = (3.0 * s.foreground_seconds / 60.0
-                   + 1.0 * s.activations
-                   + 1.5 * fresh_by_key.get(s.key, 0.0)
+        # 前台是当场状态（0/1），不是累计时长；连接状态在下面再加 100。
+        foreground = 1.0 if s.hwnd == foreground_hwnd else 0.0
+        s.score = (2.0 * foreground
+                   + 1.0 * max(0.0, min(1.0, s.confidence))
                    + 0.2 * (s.cpu_share + s.mem_share))
 
     pin_low = (pin or "").strip().lower()
@@ -483,9 +378,9 @@ def identify_ai_sessions(windows: list, procs: dict | None = None,
     elif primary is not None and primary.pinned:
         note = "按用户指定的主 AI"
     elif ambiguous:
-        note = "前两名分差很小，按前台时长暂时判给第一名；建议手动指定主 AI"
+        note = "前两名分差很小，按当前前台窗口暂时判给第一名；建议手动指定主 AI"
     else:
-        note = "按「连接状态 > 前台时长 > 交互新鲜度 > 资源占比」打分"
+        note = "按「连接状态 > 当前前台 > 识别置信度 > 资源占比」当场判断，不保存时长"
     return {
         "primary": primary.to_dict() if primary else None,
         "others": [s.to_dict() for s in others[:5]],
@@ -501,7 +396,8 @@ def collect_ai_sessions(pin: str = "", connected: dict | None = None) -> dict:
     wins = core.collect_desktop(include_cloaked=True, with_detail=True)
     procs = core.snapshot_processes()
     fg = core.get_foreground_hwnd()
-    return identify_ai_sessions(wins, procs, None, fg, pin=pin, connected=connected)
+    return identify_ai_sessions(wins, procs, foreground_hwnd=fg,
+                                pin=pin, connected=connected)
 
 
 def detect_connected_client(max_depth: int = 4) -> dict | None:
@@ -1227,19 +1123,6 @@ def format_usage_text(status: dict) -> str:
     return "\n".join(lines)
 
 
-def _format_seconds(seconds) -> str:
-    """把秒数写成"x 分 y 秒"这样的人话（只用于界面摘要）。"""
-    try:
-        total = int(max(0, float(seconds or 0)))
-    except (TypeError, ValueError):
-        total = 0
-    if total < 60:
-        return f"{total} 秒"
-    if total < 3600:
-        return f"{total // 60} 分 {total % 60} 秒"
-    return f"{total // 3600} 小时 {(total % 3600) // 60} 分"
-
-
 def format_ai_summary(primary: dict | None, status: dict | None,
                       provider_info: dict | None = None,
                       connection: dict | None = None,
@@ -1249,11 +1132,14 @@ def format_ai_summary(primary: dict | None, status: dict | None,
 
     返回值：
       · identity    识别到的 AI（不带「AI：」前缀）
-      · connection  是否真的接上（MCP / 直连 / 只能复制）
+      · connection  是否真的接上：已接入 MCP / 已接入 API / 未接入纯本地
       · mode        只读 / 本地 / 主动 AI
       · usage       真实 / 精确 / 估算三路 token
       · follow      跟随哪个 AI、模型是否就绪
-      · status_kind mcp / direct / clipboard / none（界面用它选颜色）
+      · status_kind mcp / direct / local（界面用它选颜色）
+
+    注意：**不再返回/显示任何运行时长**。前台计时已按用户要求整体删除，
+    这里只回答“识别到谁 + 有没有接上 + 这次用了多少 token”。
 
     为什么拆：一整行文本很难一眼看出「识别到谁」和「有没有接上」。
     主界面现在把 identity 加粗放大、connection 做成彩色状态，usage 放小字；
@@ -1274,10 +1160,6 @@ def format_ai_summary(primary: dict | None, status: dict | None,
         identity = name + p(f"（{kind}", f" ({kind}")
         identity += (f" · {proc}" if proc else "")
         identity += p("）", ")")
-        secs = primary.get("foreground_seconds_30m") or 0
-        if secs:
-            identity += p(f" · 近30分前台 {_format_seconds(secs)}",
-                          f" · 30m foreground {_format_seconds(secs)}")
     else:
         identity = p("未识别到外部 AI", "no external AI detected")
 
@@ -1287,26 +1169,27 @@ def format_ai_summary(primary: dict | None, status: dict | None,
     mode = mode or str(info.get("mode") or "")
     kind = str(connection.get("kind") or "")
     connection_text = ""
-    status_kind = "none"
+    status_kind = "local"
     if kind == "mcp":
         client = str(connection.get("client") or p("MCP 客户端", "MCP client"))[:18]
-        connection_text = p(f"已接入 MCP（{client}）", f"MCP connected ({client})")
-        stamp = str(connection.get("ts") or "")[11:16]
-        if stamp:
-            connection_text += f" {stamp}"
+        connection_text = p(f"已接入 · MCP（{client}）", f"Connected · MCP ({client})")
         status_kind = "mcp"
     elif kind == "direct":
         model = str(connection.get("model") or "")
-        connection_text = p("直连就绪", "direct ready")
+        details = []
         if connection.get("manual"):
-            connection_text += p("（手动）", " (manual)")
-        connection_text += (f" ({model})" if model else "")
+            details.append(p("手动", "manual"))
+        if model:
+            details.append(model)
+        connection_text = p("已接入 · API", "Connected · API")
+        if details:
+            connection_text += f"（{' · '.join(details)}）"
         status_kind = "direct"
-    elif kind == "clipboard":
-        # 这不是一个可以点的“按键”，只是接入状态：
-        # 没有 MCP、也没有直连，只能用剪贴板把现场交给当前 AI。
-        connection_text = p("未接入 · 可复制现场", "not connected · copy handoff")
-        status_kind = "clipboard"
+    else:
+        # 没有 MCP、也没有可用的直连 API：纯本地（只读、0 token）。
+        # 这不是一个可以点的按键；旧版的「复制现场」按钮已删除。
+        connection_text = p("未接入 · 纯本地", "Not connected · local only")
+        status_kind = "local"
 
     mode_text = ""
     if mode:
@@ -1351,14 +1234,14 @@ def format_ai_bar(primary: dict | None, status: dict | None,
     """
     主界面 AI 状态条的**一句话**（纯函数，方便单测）。
 
-    必须同时回答三件事：现在识别到的是谁、**AI 有没有真的接上**、
-    这个数字是谁的用量；模式（只读/本地/主动 AI）也要写出来。
+    只回答三件事：现在识别到的是谁、**AI 有没有真的接上（MCP/API/纯本地）**、
+    这次用了多少 token。运行时长与计时状态已整体删除。
     """
     summary = format_ai_summary(primary, status, provider_info, connection, mode, lang)
     en = summary["lang"] == "en"
     sep = " | " if en else " ｜ "
     text = ("AI: " if en else "AI：") + summary["identity"]
-    for key in ("connection", "mode", "usage", "follow"):
+    for key in ("connection", "usage"):
         if summary[key]:
             text += sep + summary[key]
     return text
@@ -1374,8 +1257,6 @@ def format_sessions_detail(res: dict | None) -> str:
     lines = [f"主 AI：{primary.get('name')}（{primary.get('kind')}，"
              f"置信度 {primary.get('confidence')}）",
              f"  进程：{primary.get('proc') or '?'}  PID {primary.get('pid')}",
-             f"  近30分前台：{_format_seconds(primary.get('foreground_seconds_30m'))}"
-             f" / 激活 {primary.get('activations_30m', 0)} 次",
              f"  依据：{primary.get('source') or '?'}"
              + ("（用户指定）" if primary.get("pinned") else "")]
     if res.get("note"):
@@ -1561,7 +1442,7 @@ def work_kind_of(proc: str, title: str = "") -> str:
 
 
 #: AI 助手的工作模式：
-#:   passive —— 只读：只识别窗口/记录事件，可复制现场，不自动调用、不提醒；
+#:   passive —— 只读：只识别窗口/记录事件，不自动调用、不提醒；
 #:   local   —— 本地：0 token，本地事件 + 把休息提醒交给接入的 AI；
 #:   active  —— 主动 AI：允许直连当前 AI（会花 token，必须显式选）。
 ASSIST_MODES = ("passive", "local", "active")
@@ -2865,8 +2746,8 @@ def format_sessions_text(res: dict) -> str:
     p = res.get("primary")
     if not p:
         return res.get("note") or "当前没有识别到 AI"
-    line = (f"主 AI：{p.get('name')}（{p.get('kind')}，置信度 {p.get('confidence')}，"
-            f"前台 {p.get('foreground_seconds_30m')} 秒 / 激活 {p.get('activations_30m')} 次）")
+    line = (f"主 AI：{p.get('name')}（{p.get('kind')}，"
+            f"置信度 {p.get('confidence')}）")
     if res.get("ambiguous"):
         line += "；注意：前两名分差很小"
     if res.get("pinned"):

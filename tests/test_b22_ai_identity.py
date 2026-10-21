@@ -81,37 +81,13 @@ class TestIdentifySessions(unittest.TestCase):
         res = ai.identify_ai_sessions(wins, foreground_hwnd=1)
         self.assertEqual(res["primary"]["name"], "Claude Desktop")
 
-    def test_tracker_accumulates_foreground_seconds(self):
-        tracker = ai.AiTracker()
-        key = "desktop:Claude Desktop"
-        tracker.observe(0.0, key)
-        tracker.observe(60.0, key)
+    def test_runtime_tracking_is_gone(self):
+        """用户 2026-10-21 明确要求删掉 AI 运行时间统计。"""
+        self.assertFalse(hasattr(ai, "AiTracker"))
         res = ai.identify_ai_sessions([win(1, 10, "Claude", "claude.exe")],
-                                      tracker=tracker, foreground_hwnd=1, now=60.0)
-        self.assertGreaterEqual(res["primary"]["foreground_seconds_30m"], 59.0)
-        self.assertEqual(res["primary"]["activations_30m"], 1)
-
-    def test_tracker_is_a_true_rolling_30_minute_window(self):
-        """旧实现会在 30 分处永久顶格；现在离开后旧时长要能过期。"""
-        tracker = ai.AiTracker(window_seconds=1800)
-        key = "desktop:Claude Desktop"
-        tracker.observe(0.0, key)
-        tracker.observe(600.0, key)
-        tracker.observe(600.0, "")          # 切走
-        tracker.observe(2401.0, "")         # 切走后已过 30 分钟
-        seconds, acts, _fresh = tracker.stats(key, 2401.0)
-        self.assertLess(seconds, 5.0, "30 分钟前的区间没有被滚掉")
-        self.assertEqual(acts, 0, "激活次数也应按同一 30 分钟窗口过期")
-
-    def test_tracker_activation_count_also_expires(self):
-        tracker = ai.AiTracker(window_seconds=1800)
-        key = "web:ChatGPT"
-        tracker.observe(0.0, key)
-        tracker.observe(100.0, "")
-        tracker.observe(200.0, key)
-        self.assertEqual(tracker.stats(key, 200.0)[1], 2)
-        self.assertEqual(tracker.stats(key, 2200.0)[1], 0,
-                         "30 分钟前的激活次数不应继续算")
+                                      foreground_hwnd=1)
+        self.assertNotIn("foreground_seconds_30m", res["primary"])
+        self.assertNotIn("activations_30m", res["primary"])
 
     def test_pin_overrides_scores(self):
         wins = [win(1, 10, "Claude", "claude.exe"),
@@ -143,14 +119,10 @@ class TestIdentifySessions(unittest.TestCase):
         self.assertTrue(res["primary"]["title_suspicious"])
 
     def test_close_scores_are_marked_ambiguous(self):
-        wins = [win(1, 10, "Claude", "claude.exe"),
-                win(2, 20, "Kimi - 智能助手", "kimi.exe")]
-        tracker = ai.AiTracker()
-        tracker.observe(0.0, "desktop:Claude Desktop")
-        tracker.observe(10.0, "desktop:Kimi")
-        tracker.observe(20.0, "")            # 收掉 Kimi 这一段（10 秒）
-        res = ai.identify_ai_sessions(wins, tracker=tracker, foreground_hwnd=0,
-                                      now=900.0)
+        # 两个同置信度的网页 AI、且都不在前台：分数相同，应提示分差过小。
+        wins = [win(1, 10, "ChatGPT - Microsoft Edge", "msedge.exe"),
+                win(2, 20, "Claude - Microsoft Edge", "msedge.exe")]
+        res = ai.identify_ai_sessions(wins)
         self.assertTrue(res["ambiguous"],
                         f"两条分数应当接近：{res['primary']} / {res['others']}")
 
@@ -201,9 +173,11 @@ class TestDefaultsAndText(unittest.TestCase):
         self.assertIn("没有识别到", ai.format_sessions_text({"primary": None}))
         text = ai.format_sessions_text({
             "primary": {"name": "Claude Desktop", "kind": "desktop",
-                        "confidence": 0.9, "foreground_seconds_30m": 12.0,
-                        "activations_30m": 1}, "ambiguous": False, "pinned": False})
+                        "confidence": 0.9},
+            "ambiguous": False, "pinned": False})
         self.assertIn("Claude Desktop", text)
+        self.assertNotIn("前台", text)
+        self.assertNotIn("激活", text)
 
 
 if __name__ == "__main__":

@@ -64,7 +64,8 @@ TOOLS = [
         "title": "识别正在使用的 AI",
         "description": (
             "返回当前主 AI（桌面客户端或网页端）、候选列表、置信度与打分依据。"
-            "判据：MCP 连接 > 前台时长 > 交互新鲜度 > 用户 pin > 资源占比。"
+            "判据：用户 pin > MCP 连接 > 当前前台 > 识别置信度 > 资源占比；"
+            "不统计运行时长。"
             "资源占比只用于并列时打破平局；网页端占比不可归因，恒为 0。"
             "同时返回 companion：当前本地时段、事实（前台应用类型、媒体/游戏应用名、"
             "浏览器标题）、用户选的人设卡，以及“新项目单独建工作区”的建议。"
@@ -756,7 +757,6 @@ def _fake_state() -> dict:
             "primary": {"kind": "desktop", "name": "Claude Desktop", "vendor": "Anthropic",
                         "proc": "claude.exe", "pid": 4321, "hwnd": 11, "title": "Claude",
                         "source": "mcp_parent", "confidence": 0.98,
-                        "foreground_seconds_30m": 412.0, "activations_30m": 9,
                         "cpu_share": 0.04, "mem_share": 0.06, "score": 1240.0,
                         "pinned": False},
             "others": [{"name": "Cursor", "score": 210.0}],

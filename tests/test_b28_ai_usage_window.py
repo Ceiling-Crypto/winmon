@@ -45,7 +45,6 @@ class TestAiUsageWindow(unittest.TestCase):
             "_ai_sessions": {
                 "primary": {"name": "智谱清言", "kind": "web", "confidence": 0.65,
                             "proc": "msedge.exe", "pid": 2676,
-                            "foreground_seconds_30m": 72, "activations_30m": 3,
                             "source": "window_title", "pinned": False},
                 "others": [{"name": "DeepSeek", "kind": "desktop", "score": 0.0}],
                 "note": "测试",

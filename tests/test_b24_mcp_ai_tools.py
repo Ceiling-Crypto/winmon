@@ -30,7 +30,6 @@ def fake_state():
             "primary": {"kind": "desktop", "name": "Claude Desktop",
                         "proc": "claude.exe", "pid": 1, "hwnd": 2,
                         "confidence": 0.98, "source": "mcp_parent",
-                        "foreground_seconds_30m": 60.0, "activations_30m": 3,
                         "cpu_share": 0.1, "mem_share": 0.2, "score": 9.0,
                         "pinned": False},
             "others": [{"name": "Cursor", "score": 1.0}],

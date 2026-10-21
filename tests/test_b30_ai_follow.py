@@ -107,25 +107,26 @@ class TestProfileMapping(unittest.TestCase):
 
 
 class TestBarFollowsAi(unittest.TestCase):
-    def test_bar_says_no_direct_config_instead_of_glm(self):
+    def test_bar_says_local_when_no_direct_config(self):
         text = ai.format_ai_bar(
             {"name": "DeepSeek", "kind": "desktop", "proc": "x.exe"},
             {"provider_tokens": 0, "tokenizer_tokens": 0, "estimated_tokens": 0},
             {"configured": False, "follow_ai": "DeepSeek"})
-        self.assertIn("跟随 DeepSeek", text)
-        self.assertIn("无直连", text)
+        self.assertIn("未接入 · 纯本地", text)
         self.assertNotIn("glm-5.3", text)
+        self.assertNotIn("跟随", text)
 
-    def test_bar_shows_followed_model(self):
+    def test_bar_does_not_show_model_readiness(self):
         text = ai.format_ai_bar(
             {"name": "智谱清言", "kind": "web", "proc": "msedge.exe"},
             {"provider_tokens": 441, "tokenizer_tokens": 0, "estimated_tokens": 0},
             {"configured": True, "follow_ai": "智谱清言", "model": "glm-5.3",
              "enabled": True, "key_present": True})
-        self.assertIn("跟随 智谱清言 → glm-5.3 就绪", text)
+        self.assertIn("未接入 · 纯本地", text)
         self.assertIn("真实 441", text)
+        self.assertNotIn("glm-5.3", text)
 
-    def test_bar_shows_mcp_connection_and_mode(self):
+    def test_bar_shows_mcp_connection_only(self):
         text = ai.format_ai_bar(
             {"name": "Claude Desktop", "kind": "desktop", "proc": "claude.exe"},
             {"provider_tokens": 20, "tokenizer_tokens": 30, "estimated_tokens": 0},
@@ -134,9 +135,9 @@ class TestBarFollowsAi(unittest.TestCase):
             connection={"kind": "mcp", "client": "Claude Desktop",
                         "ts": "2026-10-19T01:33:00", "calls": 3},
             mode="local")
-        self.assertIn("已接入 MCP（Claude Desktop）", text)
-        self.assertIn("01:33", text)
-        self.assertIn("本地", text)
+        self.assertIn("已接入 · MCP（Claude Desktop）", text)
+        self.assertNotIn("01:33", text)
+        self.assertNotIn("本地", text)
 
 
 class TestWorkAndBreak(unittest.TestCase):

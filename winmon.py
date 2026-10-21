@@ -11,7 +11,7 @@ WinMon —— Windows 桌面工具（图形界面 + 命令行）
 4. 「进程树」按父子层级展示，结束进程树前能看清到底会波及哪些进程
 5. 一键终止：优雅关闭（发关闭消息）/ 强制结束 / 结束整棵进程树
 6. 媒体会话控制、工作区快照、程序目录、可清理文件
-7. AI 工作伴侣：识别当前 AI、用量预算、MCP / 剪贴板 / 可选直连
+7. AI 工作伴侣：识别当前 AI、用量预算、MCP / API / 纯本地
 8. 操作历史：谁在什么时候被关闭/结束了，可复制、可导出
 9. 前台窗口实时高亮、置顶窗口标记、程序图标、隐藏窗口过滤
 10. 颜色可选普通（白底）/ 深色（黑底）；字号 9–12
@@ -48,7 +48,7 @@ import threading
 import time
 import tkinter as tk
 import zlib
-from tkinter import filedialog, messagebox, simpledialog, ttk
+from tkinter import filedialog, font as tkfont, messagebox, simpledialog, ttk
 
 import winmon_ai as ai
 import winmon_ai_provider as provider
@@ -999,7 +999,327 @@ class IconProvider:
 
 
 # ============================================================================
-# 二、实时预览面板
+# 二、主界面的圆角按钮（tk / ttk 原生按钮没有 border-radius）
+# ============================================================================
+
+class RoundedButton(tk.Canvas):
+    """
+    一个真正画出来的圆角按钮（Canvas + 平滑多边形），用于主界面的动作区。
+
+    为什么不用 `ttk.Button`：Windows 的 clam 主题按钮永远是直角，`padding`
+    和 `borderwidth` 都改不出圆角。Canvas 在纯色父容器上画圆角，既不用图片，
+    也能跟着主题/DPI/字号实时重画。
+
+    兼容一点点 Tk Button 的常用接口（`invoke` / `configure` / `cget` /
+    `winfo_class` 返回 "Button"），这样现有测试和布局代码不需要到处改。
+    """
+
+    def __init__(self, parent, text: str = "", command=None, *,
+                 kind: str = "secondary", bg: str | None = None,
+                 width: int | None = None, height: int | None = None,
+                 radius: int = 10, font=None, padx: int = 12,
+                 anchor: str = "center", style: str = "", **kw) -> None:
+        self._text = str(text)
+        self._command = command
+        self._kind = str(kind or "secondary")
+        self._style = str(style or "")
+        self._font = font or UI_FONT
+        self._padx = max(4, int(padx))
+        self._anchor = anchor if anchor in ("center", "w", "e") else "center"
+        self._state = str(kw.pop("state", "normal") or "normal")
+        self._hover = False
+        self._pressed = False
+        self._has_focus = False
+        self._radius = max(4, int(radius))
+        self._fixed_width = int(width) if width else None
+        self._req_height = int(height) if height else 0
+        self._bg = bg if bg is not None else self._parent_bg(parent)
+        super().__init__(parent, bg=self._bg, bd=0, highlightthickness=0,
+                         takefocus=1, cursor="hand2",
+                         width=self._fixed_width or 96,
+                         height=self._measure_height())
+        self._font_obj = tkfont.Font(root=self, font=self._font)
+        if not self._req_height:
+            super().configure(height=self._measure_height())
+        self._configure_palette()
+        self._draw()
+        self.bind("<Configure>", lambda _e: self._draw(), add="+")
+        self.bind("<Enter>", self._on_enter, add="+")
+        self.bind("<Leave>", self._on_leave, add="+")
+        self.bind("<ButtonPress-1>", self._on_press, add="+")
+        self.bind("<ButtonRelease-1>", self._on_release, add="+")
+        self.bind("<FocusIn>", self._on_focus_in, add="+")
+        self.bind("<FocusOut>", self._on_focus_out, add="+")
+        self.bind("<Return>", lambda _e: self._invoke_event(), add="+")
+        self.bind("<KP_Enter>", lambda _e: self._invoke_event(), add="+")
+        self.bind("<space>", lambda _e: self._invoke_event(), add="+")
+        if self._fixed_width is None:
+            super().configure(width=self._natural_width())
+
+    # -- 兼容 Tk Button 的一小部分接口 --
+    def winfo_class(self):
+        # 语义上它就是一个按钮；测试里的“找按钮”遍历依赖这一点。
+        return "Button"
+
+    @staticmethod
+    def _parent_bg(parent) -> str:
+        for key in ("bg", "background"):
+            try:
+                value = str(parent.cget(key))
+                if value:
+                    return value
+            except Exception:
+                continue
+        return UI_BG
+
+    def _measure_height(self) -> int:
+        try:
+            line = tkfont.Font(root=self, font=self._font).metrics("linespace")
+        except Exception:
+            line = 18
+        return max(self._req_height or 0, line + 12)
+
+    def _natural_width(self) -> int:
+        try:
+            text_w = self._font_obj.measure(self._text)
+        except Exception:
+            text_w = len(self._text) * 10
+        return max(44, text_w + self._padx * 2)
+
+    def _configure_palette(self) -> None:
+        kind = self._kind
+        if kind == "accent":
+            self._fill = UI_ACCENT
+            self._hover_fill = UI_ACCENT_DARK
+            self._pressed_fill = UI_ACCENT_DARK
+            self._fg = UI_ON_ACCENT
+            self._border = UI_ACCENT_DARK
+            self._disabled_fill = UI_SURFACE_ALT
+        elif kind == "media":
+            self._fill = UI_MEDIA_BTN_BG
+            self._hover_fill = UI_MEDIA_BTN_ACTIVE
+            self._pressed_fill = UI_MEDIA_BTN_ACTIVE
+            self._fg = UI_MEDIA_BTN_FG
+            self._border = UI_MEDIA_BTN_ACTIVE
+            self._disabled_fill = UI_LINE
+        elif kind == "ghost":
+            self._fill = self._bg
+            self._hover_fill = UI_HOVER_BG
+            self._pressed_fill = UI_SELECT_BG
+            self._fg = UI_INK
+            self._border = UI_LINE
+            self._disabled_fill = UI_SURFACE_ALT
+        else:
+            self._fill = UI_SURFACE_ALT
+            self._hover_fill = UI_HOVER_BG
+            self._pressed_fill = UI_SELECT_BG
+            self._fg = UI_INK
+            self._border = UI_LINE
+            self._disabled_fill = UI_SURFACE_ALT
+
+    def _rounded_points(self, x1, y1, x2, y2, r):
+        return [
+            x1 + r, y1, x2 - r, y1, x2, y1, x2, y1 + r,
+            x2, y2 - r, x2, y2, x2 - r, y2, x1 + r, y2,
+            x1, y2, x1, y2 - r, x1, y1 + r, x1, y1,
+        ]
+
+    def _draw(self) -> None:
+        try:
+            width = int(self.winfo_width() or 0)
+            height = int(self.winfo_height() or 0)
+            if width <= 1:
+                width = self._fixed_width or self._natural_width()
+            if height <= 1:
+                height = self._measure_height()
+            width = max(2, width)
+            height = max(2, height)
+            disabled = self._state == "disabled"
+            fill = self._disabled_fill if disabled else (
+                self._pressed_fill if self._pressed else
+                self._hover_fill if self._hover else self._fill)
+            fg = UI_MUTED if disabled else self._fg
+            border = UI_LINE if disabled else (
+                UI_ACCENT if self._has_focus else self._border)
+            self.delete("all")
+            r = min(self._radius, height / 2 - 1, width / 2 - 1)
+            self.create_polygon(
+                self._rounded_points(1, 1, width - 1, height - 1, max(1, r)),
+                smooth=True, splinesteps=24, fill=fill, outline=border,
+                width=2 if self._has_focus else 1)
+            text = self._display_text(max(8, width - self._padx * 2))
+            if self._anchor == "w":
+                x, anchor = self._padx, "w"
+            elif self._anchor == "e":
+                x, anchor = width - self._padx, "e"
+            else:
+                x, anchor = width / 2, "center"
+            self.create_text(x, height / 2, text=text, anchor=anchor,
+                             fill=fg, font=self._font)
+            self.configure(cursor="arrow" if disabled else "hand2")
+        except Exception:
+            pass
+
+    def _display_text(self, available: int) -> str:
+        text = self._text
+        if not text:
+            return ""
+        try:
+            if self._font_obj.measure(text) <= available:
+                return text
+            while text and self._font_obj.measure(text + "…") > available:
+                text = text[:-1]
+            return (text + "…") if text else "…"
+        except Exception:
+            return text
+
+    def _inside(self, event) -> bool:
+        try:
+            return 0 <= int(event.x) < self.winfo_width() and \
+                   0 <= int(event.y) < self.winfo_height()
+        except Exception:
+            return False
+
+    def _on_enter(self, _event=None) -> None:
+        if self._state == "disabled":
+            return
+        self._hover = True
+        self._draw()
+
+    def _on_leave(self, _event=None) -> None:
+        self._hover = False
+        self._pressed = False
+        self._draw()
+
+    def _on_press(self, event=None) -> None:
+        if self._state == "disabled":
+            return
+        try:
+            self.focus_set()
+        except Exception:
+            pass
+        self._pressed = True
+        self._draw()
+
+    def _on_release(self, event=None) -> None:
+        was_pressed = self._pressed
+        self._pressed = False
+        self._draw()
+        if was_pressed and self._state != "disabled" and (
+                event is None or self._inside(event)):
+            self.invoke()
+
+    def _on_focus_in(self, _event=None) -> None:
+        self._has_focus = True
+        self._draw()
+
+    def _on_focus_out(self, _event=None) -> None:
+        self._has_focus = False
+        self._draw()
+
+    def _invoke_event(self):
+        if self._state != "disabled":
+            self.invoke()
+        return "break"
+
+    def invoke(self):
+        if self._state == "disabled" or not callable(self._command):
+            return None
+        return self._command()
+
+    def configure(self, cnf=None, **kw):
+        if isinstance(cnf, str) and not kw:
+            return self.cget(cnf)
+        if isinstance(cnf, dict):
+            kw.update(cnf)
+        redraw = False
+        resize = False
+        for key, value in list(kw.items()):
+            if key == "text":
+                self._text = str(value)
+                redraw = True
+                if self._fixed_width is None:
+                    resize = True
+            elif key == "command":
+                self._command = value
+            elif key == "state":
+                self._state = str(value)
+                redraw = True
+            elif key == "font":
+                self._font = value
+                try:
+                    self._font_obj = tkfont.Font(root=self, font=self._font)
+                except Exception:
+                    pass
+                redraw = True
+                if self._fixed_width is None:
+                    resize = True
+                try:
+                    super().configure(height=self._measure_height())
+                except Exception:
+                    pass
+            elif key == "style":
+                self._style = str(value)
+            elif key == "bg":
+                self._bg = str(value)
+                super().configure(bg=self._bg)
+                redraw = True
+            elif key == "fill":
+                self._fill = str(value)
+                redraw = True
+            elif key == "fg":
+                self._fg = str(value)
+                redraw = True
+            elif key == "width":
+                try:
+                    self._fixed_width = int(value)
+                except (TypeError, ValueError):
+                    self._fixed_width = None
+                super().configure(width=value)
+                redraw = True
+            elif key == "height":
+                try:
+                    self._req_height = int(value)
+                except (TypeError, ValueError):
+                    self._req_height = 0
+                super().configure(height=value)
+                redraw = True
+            else:
+                super().configure(key, value)
+        if resize:
+            super().configure(width=self._natural_width())
+        if redraw:
+            self._draw()
+        return None
+
+    config = configure
+
+    def cget(self, key):
+        key = str(key)
+        if key == "text":
+            return self._text
+        if key == "command":
+            return self._command
+        if key == "state":
+            return self._state
+        if key == "font":
+            return self._font
+        if key == "style":
+            return self._style
+        if key == "width":
+            return self._fixed_width if self._fixed_width is not None else \
+                self.winfo_reqwidth()
+        if key == "height":
+            return self._req_height or self.winfo_reqheight()
+        if key == "fill":
+            return self._fill
+        if key == "fg":
+            return self._fg
+        return super().cget(key)
+
+
+# ============================================================================
+# 三、实时预览面板
 # ============================================================================
 
 class PreviewPane:
@@ -1030,8 +1350,9 @@ class PreviewPane:
         self.lbl_meta.grid(row=1, column=0, sticky="ew", pady=(1, 0))
         right_col = ttk.Frame(head)
         right_col.grid(row=0, column=1, sticky="ne", padx=(8, 0))
-        self.btn_pause = ttk.Button(right_col, text="暂停刷新", width=9,
-                                    command=self.app.toggle_pause)
+        self.btn_pause = RoundedButton(
+            right_col, text="暂停刷新", command=self.app.toggle_pause,
+            kind="ghost", bg=UI_BG, width=106, height=30, radius=9)
         self.btn_pause.pack(anchor="e")
         self.lbl_stats = ttk.Label(right_col, text="", font=MONO_FONT,
                                    foreground=UI_OK, anchor="e")
@@ -1074,12 +1395,13 @@ class PreviewPane:
         bar.grid(row=2, column=0, sticky="ew", padx=6, pady=(2, 0))
         ttk.Label(bar, text="操作", font=SMALL_BOLD_FONT,
                   foreground=UI_MUTED).pack(side="left", padx=(0, 4))
-        self.action_button = ttk.Button(
-            bar, text=self._action_label() + "  ▾", width=15,
-            command=self.open_actions)
+        self.action_button = RoundedButton(
+            bar, text=self._action_label() + "  ▾", command=self.open_actions,
+            kind="ghost", bg=UI_BG, width=132, height=30, radius=9)
         self.action_button.pack(side="left")
-        self.run_button = ttk.Button(bar, text="执行", style="Accent.TButton",
-                                     width=7, command=self.run_action)
+        self.run_button = RoundedButton(
+            bar, text="执行", command=self.run_action, kind="accent",
+            bg=UI_BG, width=68, height=30, radius=9)
         self.run_button.pack(side="left", padx=(6, 0))
         self.action_hint = ttk.Label(bar, text=self._action_hint_text(),
                                      font=SMALL_FONT, foreground=UI_MUTED)
@@ -1917,6 +2239,9 @@ class ProgramCatalogPane:
         self.category_row: dict[str, str] = {}          # 分组表头 iid -> 类别 key
         self._icon_cache: dict[str, tk.PhotoImage | None] = {}
         self._search_after = None
+        #: 目录正在后台构建（主界面搜索也会等它）；完成前的调用排队，不重复扫描。
+        self._loading = False
+        self._load_callbacks: list = []
         #: 批量启动后"过 1.5 秒重排一次"的 after id（销毁时要一起取消）
         self._apply_after = None
         #: 界面已销毁（后台线程里的收尾回调据此收手，别再往已销毁的 root 上排定时器）
@@ -2133,7 +2458,7 @@ class ProgramCatalogPane:
             pass
 
     # -- 数据 --
-    def load_async(self, on_done=None) -> None:
+    def load_async(self, on_done=None, quiet: bool = False) -> None:
         """
         在后台线程里构建目录，避免界面卡住。
 
@@ -2144,16 +2469,28 @@ class ProgramCatalogPane:
         """
         import threading
 
+        # 主界面搜索和「程序目录」页可能同时请求；只允许一个扫描线程，
+        # 其余调用排队等结果，避免两次完整扫描互相覆盖。
+        if self._loading:
+            if on_done:
+                self._load_callbacks.append(on_done)
+            return
+        self._loading = True
+        if on_done:
+            self._load_callbacks.append(on_done)
+
         def worker():
             try:
-                items = core.build_program_catalog(
-                    progress=lambda m: self.app._ui_call(
+                progress = None if quiet else (
+                    lambda m: self.app._ui_call(
                         lambda msg=m: self._progress(msg)))
+                items = core.build_program_catalog(progress=progress)
             except Exception as exc:
                 self.app._ui_call(lambda msg=str(exc): self._progress(
                     f"目录构建失败：{msg}"))
+                self.app._ui_call(lambda: self._on_load_failed())
                 return
-            self.app._ui_call(lambda: self._on_loaded(items, on_done))
+            self.app._ui_call(lambda: self._on_loaded(items))
 
         threading.Thread(target=worker, daemon=True, name="WinMon-Catalog").start()
 
@@ -2165,11 +2502,27 @@ class ProgramCatalogPane:
         except Exception:
             pass
 
-    def _on_loaded(self, items, on_done=None) -> None:
+    def _on_load_failed(self) -> None:
+        self._loading = False
+        callbacks = self._load_callbacks
+        self._load_callbacks = []
+        for callback in callbacks:
+            try:
+                callback([])
+            except Exception:
+                pass
+
+    def _on_loaded(self, items) -> None:
         self.items = items
+        self._loading = False
         self.apply_filter()
-        if on_done:
-            on_done(items)
+        callbacks = self._load_callbacks
+        self._load_callbacks = []
+        for callback in callbacks:
+            try:
+                callback(items)
+            except Exception:
+                pass
 
     # -- 收藏 / 分类（状态由 WinMonApp 持久化到 winmon_settings.json）--
     def prefs(self) -> core.CatalogPrefs:
@@ -2243,7 +2596,7 @@ class ProgramCatalogPane:
 
     def apply_filter(self) -> None:
         prefs = self.prefs()
-        kw = self.search_var.get().strip().lower()
+        kw = self.search_var.get().strip()
         only = self.only_runnable.get()
         want_cats = set(self.selected_categories)
         out = []
@@ -2257,10 +2610,10 @@ class ProgramCatalogPane:
             if want_cats and core.category_of_item(
                     it, prefs.category_override(it.target, it.name)) not in want_cats:
                 continue
-            if kw:
-                blob = f"{it.name} {it.target}".lower()
-                if kw not in blob:
-                    continue
+            # 与顶部搜索共用同一套归一化：网易云音乐 / cloudmusic / cloud music
+            # 都能命中同一条目录项（以前只比较 name+target 原文，中文名搜不到）。
+            if not core.program_matches_query(it, kw):
+                continue
             out.append(it)
         # 排序：收藏 → 最近使用 → 正在运行 → 名称。
         # 这样"我常用的"永远在最上面，不用每次都翻列表。
@@ -2276,6 +2629,56 @@ class ProgramCatalogPane:
         out.sort(key=sort_key)
         self._render(out, group=not (want_cats or self.only_favorites.get()
                                      or self.only_recent.get()))
+
+    def reveal_item(self, item, query: str = "") -> bool:
+        """
+        把某个目录条目**滚到眼前并选中**（不启动）。
+
+        主界面搜索的落点：输入一个没在运行的程序，按 Enter 后切到程序目录，
+        搜索框同步、筛选条件让路、目标行高亮。这样用户不会“搜到了却不知道
+        它藏在哪个类别/筛选后面”。
+        """
+        if item is None:
+            return False
+        # 先解除可能挡住它的筛选；类别分组保留，但会展开目标所在分组。
+        self.only_favorites.set(False)
+        self.only_recent.set(False)
+        # 只有目标本身不可启动时才解除「仅可启动」，避免一次搜索永久改掉用户筛选。
+        if not getattr(item, "runnable", True):
+            self.only_runnable.set(False)
+        self.selected_categories = set()
+        try:
+            self.btn_cats.configure(text=self._category_label())
+        except Exception:
+            pass
+        self.search_var.set(query or item.name)
+        self.apply_filter()
+        target = (item.target or "").lower()
+        row = ""
+        for iid, cand in self.row_of_item.items():
+            if cand is item or (target and (cand.target or "").lower() == target):
+                row = iid
+                break
+        if not row:
+            for iid, cand in self.row_of_item.items():
+                if (cand.name or "").lower() == (item.name or "").lower():
+                    row = iid
+                    break
+        if not row:
+            return False
+        try:
+            parent = self.tree.parent(row)
+            while parent:
+                self.tree.item(parent, open=True)
+                parent = self.tree.parent(parent)
+            self.tree.selection_set(row)
+            self.tree.focus(row)
+            self.tree.see(row)
+            self.tree.focus_set()
+        except Exception:
+            return False
+        self._on_selection_changed()
+        return True
 
     def _render(self, items: list, group: bool = True) -> None:
         """
@@ -2609,9 +3012,10 @@ class ProgramCatalogPane:
 
     def rescan(self) -> None:
         self._icon_cache.clear()
+        # 缓存自 2026-10 起在运行时数据目录，不在程序目录；删错位置会让
+        # “重新扫描”继续读旧缓存，看起来像按钮没生效。
         try:
-            os.remove(os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                   "winmon_catalog.json"))
+            os.remove(core.data_file("winmon_catalog.json"))
         except OSError:
             pass
         self.filter_info.configure(text="正在重新扫描…")
@@ -3629,8 +4033,8 @@ class _AiUsagePanel:
                             "不是你客户端的完整账单。",
                  font=SMALL_FONT, bg=UI_BG, fg=UI_MUTED, anchor="w",
                  justify="left").pack(fill="x", pady=(4, 0))
-        tk.Label(wrap, text="“近30分前台”只累计 AI 窗口在最前面的时间；"
-                            "切到 WinMon 或别的窗口时会暂停。",
+        tk.Label(wrap, text="WinMon 不统计 AI 的运行时长，只按“当前是否在前台”"
+                            "当场识别主 AI；这里只累计 token。",
                  font=SMALL_FONT, bg=UI_BG, fg=UI_MUTED, anchor="w",
                  justify="left").pack(fill="x", pady=(1, 0))
 
@@ -3857,20 +4261,7 @@ class _AiUsagePanel:
                 detail += f" · 置信度 {float(conf):.2f}"
             except (TypeError, ValueError):
                 pass
-        try:
-            secs = int(float(primary.get("foreground_seconds_30m") or 0))
-        except (TypeError, ValueError):
-            secs = 0
-        if secs:
-            detail += (f" · 近30分前台 {secs // 60} 分 {secs % 60} 秒"
-                       if secs >= 60 else f" · 近30分前台 {secs} 秒")
-        acts = 0
-        try:
-            acts = int(primary.get("activations_30m") or 0)
-        except (TypeError, ValueError):
-            pass
-        if acts:
-            detail += f" · 激活 {acts} 次"
+        # 运行时长/激活次数已删除：这里只显示“是谁、怎么认出来的”。
         self.ai_name_text.set(name)
         self.ai_detail_text.set(detail)
 
@@ -3882,7 +4273,7 @@ class _AiUsagePanel:
         follow = str(info.get("follow_ai") or "")
         if info.get("configured") is False:
             title, detail, color = ("未配置直连",
-                                    "用剪贴板交接，不会调用模型", UI_MUTED)
+                                    "纯本地模式，不会调用模型", UI_MUTED)
         elif info.get("configured"):
             model = str(info.get("model") or "?")
             if not info.get("enabled"):
@@ -4580,6 +4971,12 @@ _GUIDE_CONTENT = {
             ("h", "三句话上手"),
             ("p", "右侧窗口列表选中程序，左侧预览画面；双击最小化/还原，"
                   "Enter 或中键切到最前，右键是完整菜单。"),
+            ("h", "顶部搜索"),
+            ("p", "顶部搜索同时查“已运行窗口”和“程序目录”，不再要求窗口标题"
+                  "一字不差：网易云音乐、cloudmusic、Cloud Music 会指向同一条。"),
+            ("p", "命中的程序正在运行 → 在右侧窗口列表选中并显示实时画面；"
+                  "没有运行 → 自动切到程序目录并高亮那一项，不会替你启动，"
+                  "要启动再按 Enter 或点「打开」。"),
             ("h", "预览和刷新速度"),
             ("p", "预览会自动跟随面板大小，按原分辨率显示，不需要再选“大小”。"
                   "刷新速度只影响预览，不改变被监控的程序；调低会更省电。"),
@@ -4598,21 +4995,42 @@ _GUIDE_CONTENT = {
                   "浏览器标签页标题不会被当成歌名。"),
             ("p", "主界面只保留你此刻最需要看的应用和曲名；来源放在这份说明里，"
                   "不挤占那一行。"),
+            ("h", "媒体键：◀◀ / ▶（或 ⏸）/ ▶▶"),
+            ("p", "从左到右是「上一首、播放/暂停、下一首」。播放键按当前状态显示："
+                  "暂停中显示 ▶，正在播放显示 ⏸。"),
+            ("p", "◀◀ 上一首：切到播放列表的上一首；▶▶ 下一首：切到下一首；"
+                  "▶/⏸ 播放暂停：按当前状态发“播放”或“暂停”，不是重头开始。"),
+            ("p", "三个键都只控制当前媒体会话（或你在「媒体应用」里选中的那个），"
+                  "不会去点播放器界面；没有会话时退回 Windows 媒体键，"
+                  "等于按键盘上的多媒体键。它们不调音量、不读进度、不关程序。"),
+            ("p", "如果选中的应用没在运行，勾了「自动启动」会先尝试拉起它；"
+                  "没勾就只如实说“没有在跑”，不会偷偷启动。"),
             ("h", "视频联动"),
             ("p", "「监视当前窗口」只盯着你选中的那个窗口。发现开始放视频时，"
                   "它会先问你，不会自己关。Space=关闭，Esc=继续。"),
             ("h", "AI 状态"),
-            ("p", "高亮的「AI」显示 WinMon 识别到的外部 AI；绿色状态表示已经通过 "
-                  "MCP 或直连接上。"),
+            ("p", "高亮的「AI」显示 WinMon 识别到的外部 AI；右边只写接入状态："
+                  "`已接入 · MCP（客户端）`、`已接入 · API（模型）`，"
+                  "或 `未接入 · 纯本地`。"),
+            ("p", "已接入 MCP：最近 15 分钟有桌面 AI 客户端真的调用过 WinMon 的只读工具。"),
+            ("p", "已接入 API：当前 AI 的直连配置（地址 / 模型 / key）可用；"
+                  "只有「主动 AI」模式才真的会调用，平时仍可不花 token。"),
+            ("p", "未接入纯本地：没有 MCP、也没有可用 API。WinMon 只做本地识别和界面操作，"
+                  "不联网、不调用模型；这不是按键，也没有“复制现场”按钮。"),
+            ("p", "WinMon 不统计 AI 的运行时长/前台计时；主界面只显示识别对象、"
+                  "接入方式和 token 用量。"),
             ("p", "「真实 / 精确 / 估算」是三种计数来源：API 回执、分词器、估算，"
                   "不是三份账单。"),
         ]),
         ("AI 接入", [
-            ("h", "三条接入路径"),
-            ("p", "MCP：让桌面 AI 客户端直接读取 WinMon，只读，最推荐。"),
-            ("p", "直连 key：只有「主动 AI」模式会用；填了也不等于让 WinMon 随便调用。"),
-            ("p", "剪贴板：什么都不配也能用，点「交给 AI」把现场复制过去。"),
-            ("h", "三种模式"),
+            ("h", "三种接入状态"),
+            ("p", "MCP：让桌面 AI 客户端直接读取 WinMon，只读，最推荐；"
+                  "状态条显示 `已接入 · MCP`。"),
+            ("p", "API：给当前 AI 配好直连 key 和模型后显示 `已接入 · API`；"
+                  "只有你显式开启「主动 AI」模式才会调用，会产生 token 费用。"),
+            ("p", "纯本地：两者都没有时显示 `未接入 · 纯本地`；不联网、不调模型，"
+                  "只做识别、预览和本地事件。"),
+            ("h", "三种助手模式"),
             ("p", "只读：不联网、不调用模型。"),
             ("p", "本地：WinMon 用本地模板给提示，0 token。"),
             ("p", "主动 AI：你明确开启后，才允许直连模型；会花 token，受预算限制。"),
@@ -4648,6 +5066,14 @@ _GUIDE_CONTENT = {
             ("p", "Select a program in the right-hand window list to preview it on the left. "
                   "Double-click minimizes/restores; Enter or middle-click brings it "
                   "to the front; right-click opens the full menu."),
+            ("h", "Top search"),
+            ("p", "The top search covers both running windows and the program catalog, "
+                  "and no longer needs an exact window title: NetEase Cloud Music, "
+                  "cloudmusic, and Cloud Music resolve to the same entry."),
+            ("p", "If the program is running, its window is selected in the right-hand "
+                  "list and previewed. If it is not running, WinMon switches to the "
+                  "program catalog and highlights it; it does not launch it — press "
+                  "Enter or choose Open when you want to start it."),
             ("h", "Preview and refresh speed"),
             ("p", "The preview now follows the pane size and renders at native "
                   "resolution, so there is no size picker. Refresh speed only "
@@ -4670,25 +5096,49 @@ _GUIDE_CONTENT = {
                   "titles are never used as track names."),
             ("p", "The main window keeps only the app and track you need; the source "
                   "lives in this guide instead of taking up that row."),
+            ("h", "Media keys: ◀◀ / ▶ (or ⏸) / ▶▶"),
+            ("p", "Left to right: previous track, play/pause, next track. The middle "
+                  "key shows ▶ while paused and ⏸ while playing."),
+            ("p", "◀◀ goes to the previous track; ▶▶ goes to the next; ▶/⏸ sends "
+                  "play or pause for the current state, not restart."),
+            ("p", "All three control only the active media session (or the player "
+                  "selected under Media app); they never click the player UI. Without "
+                  "a session they fall back to the Windows media key, equivalent to "
+                  "the multimedia key on your keyboard. They do not change volume, "
+                  "read progress, or close the player."),
+            ("p", "If the selected app is not running, Auto-start (when checked) tries "
+                  "to launch it first; otherwise WinMon says it is not running and does "
+                  "not start it silently."),
             ("h", "Video link"),
             ("p", "“Watch current window” watches only the selected window. When it "
                   "detects playback it asks first and never closes anything by itself. "
                   "Space = close, Esc = keep playing."),
             ("h", "AI status"),
-            ("p", "The highlighted “AI” is the external AI WinMon detected. A green "
-                  "state means it is connected through MCP or a direct API."),
+            ("p", "The highlighted “AI” is the external AI WinMon detected. The status "
+                  "next to it only says how it is connected: `Connected · MCP (client)`, "
+                  "`Connected · API (model)`, or `Not connected · local only`."),
+            ("p", "MCP: an AI client has actually called WinMon's read-only tools in "
+                  "the last 15 minutes."),
+            ("p", "API: the current AI has a usable direct endpoint/model/key. Only "
+                  "Active AI mode actually calls it; otherwise it can stay at 0 tokens."),
+            ("p", "Local only: neither MCP nor API. WinMon only identifies windows and "
+                  "runs local actions; no network calls and no model calls. It is a "
+                  "status, not a button, and there is no “copy context” button."),
+            ("p", "WinMon does not track AI runtime or foreground time; the card shows "
+                  "only the detected AI, connection type, and token usage."),
             ("p", "“provider / exact / estimated” are three counting sources — API "
                   "receipt, tokenizer, and estimate — not three separate bills."),
         ]),
         ("AI setup", [
-            ("h", "Three ways to connect"),
+            ("h", "Three connection states"),
             ("p", "MCP: a desktop AI client can read WinMon directly. Read-only and "
-                  "recommended."),
-            ("p", "Direct API key: only used in Active AI mode. Having a key does not "
-                  "let WinMon call a model on its own."),
-            ("p", "Clipboard: works with no setup. Click “Send to AI” to copy the "
-                  "current context."),
-            ("h", "Three modes"),
+                  "recommended; the card shows `Connected · MCP`."),
+            ("p", "API: with a direct endpoint/model/key for the current AI, the card "
+                  "shows `Connected · API`. Only Active AI mode calls it, and calls "
+                  "cost tokens."),
+            ("p", "Local only: with neither, the card shows `Not connected · local only`. "
+                  "No network, no model calls; only local detection and UI actions."),
+            ("h", "Three assistant modes"),
             ("p", "Read-only: no network, no model calls."),
             ("p", "Local: WinMon uses local templates only; 0 tokens."),
             ("p", "Active AI: only after you enable it can WinMon call a model; this "
@@ -4852,10 +5302,10 @@ class _AiConnectWindow:
 
         tk.Label(wrap, text=i18n.pick(
             "默认只走 MCP（推荐）；直连 key 和工作区/人设/主动搭子收在下面，"
-            "不配也能用剪贴板交接。",
+            "两者都不配就是纯本地（不联网、不调模型）。",
             "MCP is the default and recommended path. Direct keys and the "
-            "workspace/persona/proactive sections are below; clipboard handoff "
-            "works without any of them."),
+            "workspace/persona/proactive sections are below; with neither, "
+            "WinMon stays local only (no network, no model calls)."),
             font=SMALL_FONT, bg=UI_BG, fg=UI_MUTED, anchor="w",
             justify="left", wraplength=int(740 * scale)).pack(
             fill="x", pady=(0, 8))
@@ -5299,14 +5749,15 @@ class _AiConnectWindow:
             conn = {}
         kind = str(conn.get("kind") or "")
         if kind == "mcp":
-            text = i18n.pick(f"已接入 MCP：{conn.get('client')}",
-                             f"MCP connected: {conn.get('client')}")
+            text = i18n.pick(f"已接入 · MCP（{conn.get('client')}）",
+                             f"Connected · MCP ({conn.get('client')})")
         elif kind == "direct":
-            text = i18n.pick(f"直连就绪：{conn.get('ai')} → {conn.get('model')}",
-                             f"Direct ready: {conn.get('ai')} → {conn.get('model')}")
+            text = i18n.pick(
+                f"已接入 · API（{conn.get('ai')} → {conn.get('model')}）",
+                f"Connected · API ({conn.get('ai')} → {conn.get('model')})")
         else:
-            text = i18n.pick("还没接上；MCP 最省事，不想配置也能直接用剪贴板。",
-                             "Not connected yet; MCP is easiest, and clipboard works without setup.")
+            text = i18n.pick("未接入 · 纯本地（不联网、不调用模型）",
+                             "Not connected · local only (no network or model calls)")
         self.status_text.set(i18n.t("connect.status")
                              + (": " if i18n.get_language() == "en" else "：") + text)
         #: 状态色条：绿色=真接上了，蓝色=直连就绪，琥珀=还没接上。
@@ -6018,6 +6469,12 @@ class WinMonApp:
         self.live_gallery = tk.BooleanVar(value=True)
         self.fps_choice = tk.StringVar(value="很流畅 10 FPS")
         self.search_text = tk.StringVar()
+        #: 顶部搜索的防抖 / 结果浮层（窗口 + 程序目录共用一个搜索框）。
+        self._search_after = None
+        self._search_popup = None
+        self._search_list = None
+        self._search_results_current: list = []
+        self._catalog_search_loading = False
         #: 字号大小（9/10/11/12，默认 9），设置里可调；保存时写入设置文件。
         self.font_size = tk.StringVar(value=str(UI_FONT_SIZE))
         self.status_text = tk.StringVar(value="正在初始化…")
@@ -6071,10 +6528,10 @@ class WinMonApp:
         self._video_dialog_open = False
         self._video_after_id = None
 
-        # AI 工作伴侣（阶段 1.5）：前台累计 + 本地事件。只读、不联网、不花 token。
+        # AI 工作伴侣（阶段 1.5）：识别 + 本地事件。只读、不联网、不花 token。
+        # 2026-10-21：按用户要求删掉“前台时长/激活次数”统计；不再有 tracker。
         self._ai_enabled = True
         self._ai_pin = os.environ.get("WINMON_AI_PIN", "")
-        self._ai_tracker = ai.AiTracker()
         self._ai_incidents = ai.IncidentStore(path=ai.incidents_path())
         self._ai_primary = None
         self._ai_sessions = None
@@ -6150,6 +6607,9 @@ class WinMonApp:
         self.root.after(100, self._tick_close_watch)
         self.root.after(250, self._poll_foreground)
         self.root.after(1200, self._periodic_refresh)
+        # 顶部搜索要跨窗口和程序目录；提前在后台建索引，用户第一次输入时
+        # 才能用中文名（网易云音乐）命中运行中的 cloudmusic.exe。
+        self.root.after(900, self._ensure_catalog_for_search)
         self.root.after(300, lambda: self._set_status(self._startup_status()))
         if self.start_minimized.get() and self._tray_ok:
             # 勾了「启动时直接收进托盘」：直接 withdraw（调用前提是 _tray_ok 已验证、
@@ -6337,15 +6797,24 @@ class WinMonApp:
         style.map("TRadiobutton", background=[("active", base_bg)])
         style.configure("TEntry", fieldbackground=UI_BG, foreground=ink,
                         insertcolor=ink, bordercolor=line)
+        # clam 在 Windows 上会给输入框留一块系统白底；显式把 normal 态的
+        # fieldbackground / foreground 也映射掉，深色主题才不会出现“白框”。
         style.map("TEntry",
-                  fieldbackground=[("readonly", UI_BG)],
-                  foreground=[("disabled", UI_MUTED)])
+                  fieldbackground=[("!disabled", UI_BG),
+                                   ("readonly", UI_BG),
+                                   ("disabled", UI_SURFACE_ALT)],
+                  foreground=[("!disabled", ink), ("disabled", UI_MUTED)],
+                  background=[("!disabled", UI_BG)])
         style.configure("TCombobox", fieldbackground=UI_BG, foreground=ink,
                         background=UI_BG, bordercolor=line, arrowcolor=ink)
         style.map("TCombobox",
                   fieldbackground=[("readonly", UI_BG),
+                                   ("!disabled", UI_BG),
                                    ("disabled", UI_SURFACE_ALT)],
-                  foreground=[("readonly", ink), ("disabled", UI_MUTED)],
+                  foreground=[("readonly", ink), ("!disabled", ink),
+                              ("disabled", UI_MUTED)],
+                  background=[("readonly", UI_BG), ("!disabled", UI_BG),
+                              ("active", UI_HOVER_BG)],
                   selectbackground=[("readonly", UI_BG)],
                   selectforeground=[("readonly", ink)])
         style.configure("TNotebook", background=base_bg, bordercolor=line,
@@ -6397,40 +6866,43 @@ class WinMonApp:
 
     def _install_check_indicators(self, style) -> None:
         """
-        把 clam 自带的「×」勾选标记换成**整格填充**。
+        把勾选标记换成**圆形填充**（不再是方框/方块）。
 
-        用户 2026-10-19 的原话：「勾选了某个选项为啥是×，改为填充该格子」。
-        这里用 14×14 的图片元素替换 indicator：未选是深色空心方框，
-        选中是整块亮蓝填充，禁用态变暗。图片必须挂在 root 上，避免
-        Tk root 销毁后 image 失效（测试里真实踩到过 pyimage 不存在）。
+        用户 2026-10-21 的要求：「勾选选项按键将方块填充改为圆填充」。
+        14×14 的透明 PhotoImage 上逐像素画圆：外圈描边、内部填色；
+        Tk 的 PhotoImage 没有画圆 API，14×14 逐点写入开销可以忽略。
+
+        每次重建主题都创建一个独立 element（旧 element 不删，但也不再被
+        layout 引用），这样不会出现“新圆画在旧方块上、四角还残留”的问题。
         """
-        name = "WinMon.Checkbutton.indicator"
         size = 14
 
-        def paint(img, fill, border):
-            img.put(border, to=(0, 0, size, size))
-            img.put(fill, to=(1, 1, size - 1, size - 1))
-
-        def square(fill, border):
+        def disc(fill, border):
             img = tk.PhotoImage(master=self.root, width=size, height=size)
-            paint(img, fill, border)
+            cx = cy = (size - 1) / 2.0
+            outer = size / 2.0 - 0.5
+            inner = max(0.0, outer - 1.2)
+            for y in range(size):
+                for x in range(size):
+                    d2 = (x - cx) ** 2 + (y - cy) ** 2
+                    if d2 <= inner * inner:
+                        img.put(fill, (x, y))
+                    elif d2 <= outer * outer:
+                        img.put(border, (x, y))
             return img
 
-        existing = getattr(self.root, "_winmon_check_images", None)
-        if name in style.element_names() and existing:
-            # 主题切换时不能重建同名 style element，直接改图片颜色即可。
-            paint(existing["normal"], UI_SURFACE_ALT, UI_MUTED)
-            paint(existing["selected"], UI_INDICATOR, UI_INDICATOR_BORDER)
-            paint(existing["disabled"], UI_SURFACE_ALT, UI_LINE)
-            return
         images = {
-            "normal": square(UI_SURFACE_ALT, UI_MUTED),
-            "selected": square(UI_INDICATOR, UI_INDICATOR_BORDER),
-            "disabled": square(UI_SURFACE_ALT, UI_LINE),
+            "normal": disc(UI_SURFACE_ALT, UI_MUTED),
+            "selected": disc(UI_INDICATOR, UI_INDICATOR_BORDER),
+            "disabled": disc(UI_SURFACE_ALT, UI_LINE),
         }
         #: 生命周期跟着 root；Tk 图片不能用完就丢。
         self.root._winmon_check_images = images
         try:
+            used = {n for n in style.element_names()
+                    if str(n).startswith("WinMon.CheckIndicator")}
+            seq = len(used) + 1
+            name = f"WinMon.CheckIndicator{seq}"
             style.element_create(
                 name, "image", images["normal"],
                 ("selected", images["selected"]),
@@ -6465,11 +6937,19 @@ class WinMonApp:
         # 顶部只留搜索和过滤；`test_a5` 的 `_squeezed()` 守这条约定。
         bar = ttk.Frame(self.root, padding=(10, 6))
         bar.pack(fill="x")
-        ttk.Label(bar, text="搜索", font=UI_FONT,
+        ttk.Label(bar, text="搜索程序", font=UI_FONT,
                   foreground=UI_MUTED).pack(side="left", padx=(0, 4))
-        ent = ttk.Entry(bar, textvariable=self.search_text, width=22, font=UI_FONT)
+        ent = ttk.Entry(bar, textvariable=self.search_text, width=26, font=UI_FONT)
         ent.pack(side="left", padx=(0, 8))
-        ent.bind("<KeyRelease>", lambda e: self.refresh_windows())
+        self.search_entry = ent
+        ent.bind("<KeyRelease>", self._on_search_text_changed)
+        ent.bind("<Return>", self._on_search_submit)
+        ent.bind("<KP_Enter>", self._on_search_submit)
+        ent.bind("<Down>", self._on_search_down)
+        ent.bind("<Escape>", self._on_search_escape)
+        ent.bind("<FocusIn>", lambda _e: (
+            self._show_search_results()
+            if self.search_text.get().strip() else None))
         ttk.Separator(bar, orient="vertical").pack(side="left", fill="y",
                                                   padx=(0, 6))
 
@@ -6585,8 +7065,9 @@ class WinMonApp:
         ttk.Label(bottom, textvariable=self.status_text, font=UI_FONT, anchor="w").pack(
             side="left", fill="x", expand=True)
         #: 关闭超时后才出现；平时不占位置（pack_forget）。
-        self.escalate_btn = ttk.Button(
-            bottom, text="改为强制结束", style="Accent.TButton", width=14,
+        self.escalate_btn = RoundedButton(
+            bottom, text="改为强制结束", kind="accent", bg=UI_BG,
+            width=132, height=30, radius=9,
             command=self.action_escalate_close)
         ttk.Label(bottom, textvariable=self.overview_text, font=MONO_FONT,
                   foreground=UI_MUTED).pack(side="right")
@@ -6634,9 +7115,12 @@ class WinMonApp:
         纯白底黑字下，按钮用浅灰底 + 深色字；主体（实时预览）占满剩下的宽度。
         """
         rail_bg = UI_BG
-        button_bg = UI_SURFACE_ALT
-        ink = UI_INK
-        rail = tk.Frame(parent, bg=rail_bg, width=124,
+        # 固定宽度也要跟着 DPI / 字号放大；否则 150% 下 124px 只够放四个汉字，
+        # “清理程序文件…”会被自己的按钮裁成省略号（实机截图确认过）。
+        rail_scale = max(float(getattr(self, "dpi_scale", 1.0) or 1.0),
+                         UI_FONT_SIZE / 9.0)
+        rail_w = max(124, int(round(124 * rail_scale)))
+        rail = tk.Frame(parent, bg=rail_bg, width=rail_w,
                         highlightbackground=UI_LINE, highlightthickness=0)
         rail.grid(row=0, column=0, sticky="ns", padx=(8, 6), pady=(0, 4))
         rail.grid_propagate(False)
@@ -6655,13 +7139,11 @@ class WinMonApp:
             self._rail_groups.append(lbl)
 
         def action(label, command):
-            # 白底 + 1px 边 + 浅蓝悬停：比一整列灰块更轻，也和主界面的卡片语言一致。
-            btn = tk.Button(rail, text=label, font=UI_FONT, fg=ink, bg=button_bg,
-                            activebackground=UI_HOVER_BG, activeforeground=UI_ACCENT_DARK,
-                            relief="flat", borderwidth=0,
-                            highlightthickness=1, highlightbackground=UI_LINE,
-                            highlightcolor=UI_ACCENT, anchor="w",
-                            padx=9, pady=3, cursor="hand2", command=command)
+            # 圆角 + 浅色描边 + 悬停浅蓝：和主界面的卡片语言一致，不再是直角灰块。
+            btn = RoundedButton(
+                rail, text=label, command=command, kind="secondary",
+                bg=rail_bg, height=30, radius=9, anchor="w", padx=10,
+                font=UI_FONT)
             btn.pack(fill="x", padx=6, pady=1)
             self._rail_buttons.append(btn)
 
@@ -6691,6 +7173,15 @@ class WinMonApp:
         pack 的 pady；9 号字下的行距在 12 号字时会把最后一个动作挤出可视区。
         """
         compact = UI_FONT_SIZE >= 11
+        # 字号变大而轨道宽度不变时，按钮文字会被自己的圆角框裁掉；
+        # 这里同步宽度（DPI 已经在创建时算过一次，字号变化也要跟着走）。
+        try:
+            rail_scale = max(float(getattr(self, "dpi_scale", 1.0) or 1.0),
+                             UI_FONT_SIZE / 9.0)
+            self.action_rail.configure(
+                width=max(124, int(round(124 * rail_scale))))
+        except Exception:
+            pass
         try:
             self._rail_title.pack_configure(
                 pady=(3, 0) if compact else (8, 2))
@@ -6790,8 +7281,9 @@ class WinMonApp:
                      font=UI_FONT,
                      values=[label for label, _s in core.IDLE_CHECK_CHOICES]).pack(
             side="left", padx=(4, 2))
-        ttk.Button(line1, text="清单", width=5,
-                   command=self.action_idle_dialog).pack(side="right")
+        RoundedButton(line1, text="清单", kind="ghost", bg=UI_BG,
+                      width=58, height=28, radius=8,
+                      command=self.action_idle_dialog).pack(side="right")
         line2 = ttk.Frame(idle_bar)
         line2.pack(fill="x", pady=(3, 0))
         #: 提醒节流：提醒过一次之后隔多久才允许**自动**再弹窗（手动点清单不受限制）。
@@ -6830,12 +7322,18 @@ class WinMonApp:
         ttk.Label(vbar, text="视频联动：", font=BOLD_FONT).pack(side="left")
         # 主按钮：**监视当前窗口** —— 不依赖任何特定 App，也不需要"打开"什么，
         # 直接判断列表里选中的那个窗口是不是在放视频（见 _monitor_current_window）。
-        ttk.Button(vbar, text="监视当前窗口", width=13,
-                   command=self._monitor_current_window).pack(side="left", padx=(0, 4))
-        ttk.Button(vbar, text="停止监视", width=9,
-                   command=self.stop_video_watch).pack(side="left", padx=2)
-        ttk.Button(vbar, text="直接关闭视频", width=12,
-                   command=self.action_stop_video).pack(side="left", padx=2)
+        # 宽度交给字体实测（DPI / 字号变化时按真实文字宽度走），
+        # 固定像素宽在 150% 缩放下会把「监视当前窗口」截成「监视当前…」。
+        RoundedButton(vbar, text="监视当前窗口", kind="ghost", bg=UI_BG,
+                      height=30, radius=9,
+                      command=self._monitor_current_window).pack(
+            side="left", padx=(0, 4))
+        RoundedButton(vbar, text="停止监视", kind="ghost", bg=UI_BG,
+                      height=30, radius=9,
+                      command=self.stop_video_watch).pack(side="left", padx=2)
+        RoundedButton(vbar, text="直接关闭视频", kind="ghost", bg=UI_BG,
+                      height=30, radius=9,
+                      command=self.action_stop_video).pack(side="left", padx=2)
 
         # ---- 第 2 行：媒体独占一行（做成高亮卡片，一眼看到“是谁在放什么”）----
         #
@@ -6877,22 +7375,22 @@ class WinMonApp:
         ttk.Checkbutton(mbar, text="自动启动", variable=self.media_auto_wake,
                         style="MediaCard.TCheckbutton").pack(
             side="left", padx=(0, 4))
-        # 「播放」/「暂停」按当前状态显示动作，而不是固定“播放/暂停”：
-        # 2 个汉字在 12 号字下也放得下，且点之前就知道会发生什么。
-        self.media_play_btn = ttk.Button(
-            mbar, text="播放", width=4, style="Media.TButton",
-            command=self.media_toggle_play)
-        self.media_play_btn.pack(side="left", padx=(0, 2))
-        #: 「◀◀ / ▶▶」= 上一首 / 下一首，走的是同一条"唤醒→按应用→退回媒体键"的路。
-        #: 三个键统一用 Media.TButton（深绿底白字）：深色模式下页面变黑，
-        #: 但它们仍坐在彩色高亮卡片上，默认 ttk 按钮会糊成一块看不见的深灰。
-        self.media_prev_btn = ttk.Button(
-            mbar, text="◀◀", width=4, style="Media.TButton",
+        # 顺序按媒体播放器的通用布局：上一首 → 播放/暂停 → 下一首。
+        # 播放按钮用三角/暂停符号（▶ / ⏸），不再写「播放」两个汉字。
+        self.media_prev_btn = RoundedButton(
+            mbar, text="◀◀", kind="media", bg=media["bg"],
+            height=30, radius=9, padx=15, style="Media.TButton",
             command=lambda: self.media_prev_next("previous"))
-        self.media_prev_btn.pack(side="left", padx=1)
-        self.media_next_btn = ttk.Button(
-            mbar, text="▶▶", width=4, style="Media.TButton",
+        self.media_play_btn = RoundedButton(
+            mbar, text="▶", kind="media", bg=media["bg"],
+            height=30, radius=9, padx=15, style="Media.TButton",
+            command=self.media_toggle_play)
+        self.media_next_btn = RoundedButton(
+            mbar, text="▶▶", kind="media", bg=media["bg"],
+            height=30, radius=9, padx=15, style="Media.TButton",
             command=lambda: self.media_prev_next("next"))
+        self.media_prev_btn.pack(side="left", padx=(0, 2))
+        self.media_play_btn.pack(side="left", padx=1)
         self.media_next_btn.pack(side="left", padx=1)
         # 清单要等控件建好才能填（`_reload_media_app_list` 会 configure 这个下拉框）
         self._reload_media_app_list()
@@ -6923,12 +7421,8 @@ class WinMonApp:
         body = tk.Frame(bar, bg=bg)
         body.grid(row=0, column=1, sticky="ew")
         body.columnconfigure(0, weight=1)
-        #: “未接入”时唯一可做的事：把现场复制给当前 AI。
-        #: 按钮只在该状态出现；接上 MCP / 直连后自动收起，避免多一个无效动作。
-        self.ai_copy_btn = ttk.Button(bar, text="复制现场", width=8,
-                                      command=self._ai_copy_handoff)
-        self.ai_copy_btn.grid(row=0, column=2, sticky="ne", padx=(8, 0))
-        self.ai_copy_btn.grid_remove()
+        #: 这里只有状态，没有动作按钮：接入方式由 `_update_ai_bar()` 写成
+        #: “已接入 · MCP / 已接入 · API / 未接入 · 纯本地”。
         self.ai_text = tk.StringVar(value="AI：正在识别…")
         self.ai_identity_text = tk.StringVar(value="正在识别当前 AI…")
         self.ai_identity_label = tk.Label(
@@ -7243,10 +7737,10 @@ class WinMonApp:
             pass
 
     def _sync_media_play_button(self) -> None:
-        """媒体按钮显示“下一步动作”：正在放 → 暂停，否则 → 播放。"""
+        """媒体按钮显示“下一步动作”：正在放 → ⏸，否则 → ▶。"""
         try:
             self.media_play_btn.configure(
-                text="暂停" if getattr(self, "_media_playing", False) else "播放")
+                text="⏸" if getattr(self, "_media_playing", False) else "▶")
         except Exception:
             pass
 
@@ -7485,6 +7979,11 @@ class WinMonApp:
         #: 测试里会手工构造只带 tree/notebook 的 app（没有 root），这里不能硬依赖。
         try:
             self.root.bind("<F1>", lambda _e: self.action_guide())
+        except (AttributeError, tk.TclError):
+            pass
+        # 点主界面别处时收起搜索建议；点搜索框/建议列表本身不收起。
+        try:
+            self.root.bind("<Button-1>", self._on_root_click_hide_search, add="+")
         except (AttributeError, tk.TclError):
             pass
 
@@ -7949,6 +8448,470 @@ class WinMonApp:
             for k in [k for k in d if k not in alive]:
                 d.pop(k, None)
 
+    # ------------------------------------------------------------------
+    # 顶部搜索：窗口 + 程序目录（一个输入框，两种落点）
+    # ------------------------------------------------------------------
+    def _cancel_search_debounce(self) -> None:
+        if getattr(self, "_search_after", None):
+            try:
+                self.root.after_cancel(self._search_after)
+            except Exception:
+                pass
+            self._search_after = None
+
+    def _on_search_escape(self, _event=None):
+        """Esc 关闭建议并取消尚未触发的防抖，避免它过 180ms 又弹回来。"""
+        self._cancel_search_debounce()
+        self._hide_search_popup()
+        return "break"
+
+    def _on_search_text_changed(self, event=None) -> None:
+        """输入防抖：窗口列表和程序目录结果一起刷新。"""
+        if event is not None and getattr(event, "keysym", "") in (
+                "Return", "KP_Enter", "Down", "Up", "Escape"):
+            return
+        self._cancel_search_debounce()
+        try:
+            self._search_after = self.root.after(180, self._apply_search_ui)
+        except Exception:
+            self._apply_search_ui()
+
+    def _apply_search_ui(self) -> None:
+        self._search_after = None
+        try:
+            self.refresh_windows()
+        except Exception:
+            pass
+        query = self.search_text.get().strip()
+        if not query:
+            self._hide_search_popup()
+            return
+        self._ensure_catalog_for_search()
+        self._show_search_results()
+
+    def _ensure_catalog_for_search(self) -> None:
+        """后台准备程序目录索引（只跑一次；已加载/正在加载就直接复用）。"""
+        catalog = getattr(self, "catalog", None)
+        if catalog is None or getattr(catalog, "items", None):
+            return
+        if getattr(catalog, "_loading", False) and self._catalog_search_loading:
+            return
+        self._catalog_search_loading = True
+        try:
+            # 目录页可能已经在扫：load_async 会把回调排队，扫描完一起通知；
+            # 不能直接 return，否则搜索要等用户再敲一次键才会看到目录结果。
+            catalog.load_async(
+                on_done=lambda _items: self._on_catalog_for_search_loaded(),
+                quiet=True)
+        except Exception:
+            self._catalog_search_loading = False
+
+    def _on_catalog_for_search_loaded(self) -> None:
+        self._catalog_search_loading = False
+        if not self.search_text.get().strip():
+            return
+        try:
+            self.refresh_windows()
+            if self.search_entry.focus_get() is self.search_entry:
+                self._show_search_results()
+        except Exception:
+            pass
+
+    def _window_path(self, wi) -> str:
+        return str(getattr(wi, "path", "") or
+                   getattr(self, "_path_cache", {}).get(getattr(wi, "pid", 0), "") or "")
+
+    def _catalog_window_matches(self, item, wi) -> bool:
+        """
+        目录条目与窗口是不是同一个程序。
+
+        **不能只看 PID**：目录缓存里的 PID 会跨刷新残留，Windows 还会回收 PID；
+        只按 PID 认会把“昨天网易云的 PID、今天别的程序”错认成同一个。
+        有路径时一律回读窗口 exe 路径，PID 只当索引。
+        """
+        target = str(getattr(item, "target", "") or "").lower()
+        if not target:
+            return True
+        base = os.path.basename(target)
+        proc = str(getattr(wi, "proc", "") or "").lower()
+        if base and proc and proc == base:
+            return True
+        path = self._window_path(wi).lower()
+        if not path:
+            return False
+        if path == target:
+            return True
+        pbase = os.path.basename(path)
+        if base and pbase == base:
+            return True
+        stem = os.path.splitext(base)[0]
+        pstem = os.path.splitext(pbase)[0]
+        return bool(stem and len(stem) >= 4 and pstem == stem)
+
+    def _window_for_catalog_item(self, item):
+        """目录条目 → 它此刻对应的窗口（先 PID/路径，再 exe 文件名）。"""
+        if item is None:
+            return None
+        target = str(getattr(item, "target", "") or "").lower()
+        if not target:
+            return None
+        pid = int(getattr(item, "pid", 0) or 0)
+        if pid:
+            for wi in getattr(self, "windows", []):
+                if (int(getattr(wi, "pid", 0) or 0) == pid
+                        and self._catalog_window_matches(item, wi)):
+                    return wi
+        base = os.path.basename(target)
+        stem = os.path.splitext(base)[0]
+        candidates = []
+        for wi in getattr(self, "windows", []):
+            if self._catalog_window_matches(item, wi):
+                if not self._window_path(wi):
+                    continue
+                candidates.append(wi)
+        if not candidates:
+            return None
+        candidates.sort(key=lambda w: (w.hwnd != getattr(self, "_fg_hwnd", 0),
+                                       bool(getattr(w, "iconic", False)),
+                                       str(getattr(w, "title", "")).lower()))
+        return candidates[0]
+
+    def _search_results_for_query(self, query: str = "") -> list:
+        """
+        一个查询的合并结果：`("window", WinInfo)` / `("catalog", ProgramItem)`。
+
+        运行中的程序只回窗口结果（点它就在右侧进程列表选中并预览）；没运行的
+        才回目录结果（点它切到程序目录高亮，不自动启动）。
+        """
+        query = (query or self.search_text.get()).strip()
+        needle = core.normalize_program_query(query)
+        if not needle:
+            return []
+        catalog_items = list(getattr(getattr(self, "catalog", None), "items", []) or [])
+        try:
+            catalog_hits = core.search_program_items(catalog_items, query)
+        except Exception:
+            catalog_hits = []
+
+        alias_pid_items: dict[int, list] = {}
+        for it in catalog_hits:
+            pid = int(getattr(it, "pid", 0) or 0)
+            if pid:
+                alias_pid_items.setdefault(pid, []).append(it)
+        alias_paths = {(it.target or "").lower() for it in catalog_hits
+                       if getattr(it, "target", "")}
+        alias_bases = {os.path.basename(p) for p in alias_paths if p}
+        alias_stems = {os.path.splitext(b)[0] for b in alias_bases}
+        window_hits = []
+        for wi in getattr(self, "windows", []):
+            # 右侧列表默认不显示 cloaked 窗口；不要让搜索结果指向一条
+            # 用户根本点不到的行。
+            if getattr(wi, "is_hidden_surface", False) and not self.show_hidden.get():
+                continue
+            path = self._window_path(wi)
+            base = os.path.basename(path).lower()
+            stem = os.path.splitext(base)[0]
+            blob = core.normalize_program_query(
+                f"{getattr(wi, 'title', '')} {getattr(wi, 'proc', '')} "
+                f"{getattr(wi, 'real_name', '')} {getattr(wi, 'pid', 0)} {path}")
+            pid_match = any(
+                self._catalog_window_matches(it, wi)
+                for it in alias_pid_items.get(int(getattr(wi, "pid", 0) or 0), []))
+            if (needle in blob or pid_match
+                    or (path and path.lower() in alias_paths)
+                    or (base and base in alias_bases)
+                    or (stem and stem in alias_stems)):
+                window_hits.append(wi)
+        window_hits.sort(key=lambda w: (w.hwnd != getattr(self, "_fg_hwnd", 0),
+                                        bool(getattr(w, "iconic", False)),
+                                        str(getattr(w, "title", "")).lower()))
+
+        results = []
+        seen_hwnd = set()
+        for wi in window_hits:
+            if wi.hwnd in seen_hwnd:
+                continue
+            results.append(("window", wi))
+            seen_hwnd.add(wi.hwnd)
+        for item in catalog_hits:
+            wi = self._window_for_catalog_item(item)
+            if wi is not None:
+                if wi.hwnd not in seen_hwnd:
+                    results.append(("window", wi))
+                    seen_hwnd.add(wi.hwnd)
+                continue
+            # 已在运行但只有后台进程、没有可见窗口：只给状态，不伪造窗口行。
+            if getattr(item, "pid", 0) and core.is_process_alive(int(item.pid)):
+                results.append(("catalog", item))
+                continue
+            results.append(("catalog", item))
+        return results[:24]
+
+    def _search_result_label(self, result) -> str:
+        kind, obj = result
+        if kind == "window":
+            title = str(getattr(obj, "title", "") or getattr(obj, "real_name", ""))
+            title = fit_media_text(title, 42)
+            name = str(getattr(obj, "display_name", "") or getattr(obj, "real_name", ""))
+            return fit_media_text(f"运行中 ｜ {name} — {title}", 58)
+        name = str(getattr(obj, "name", "") or "?")
+        target = os.path.basename(str(getattr(obj, "target", "") or ""))
+        return fit_media_text(f"程序目录 ｜ {name}" + (f"（{target}）" if target else ""), 58)
+
+    def _ensure_search_popup(self):
+        pop = getattr(self, "_search_popup", None)
+        try:
+            if pop is not None and pop.winfo_exists():
+                return pop
+        except Exception:
+            pass
+        pop = tk.Toplevel(self.root)
+        pop.withdraw()
+        pop.overrideredirect(True)
+        pop.transient(self.root)
+        pop.configure(bg=UI_LINE)
+        frame = tk.Frame(pop, bg=UI_BG)
+        frame.pack(fill="both", expand=True, padx=1, pady=1)
+        lb = tk.Listbox(
+            frame, activestyle="none", exportselection=False,
+            font=UI_FONT, bg=UI_BG, fg=UI_INK,
+            selectbackground=UI_SELECT_BG, selectforeground=UI_SELECT_FG,
+            relief="flat", borderwidth=0, highlightthickness=0,
+            cursor="hand2")
+        lb.pack(fill="both", expand=True)
+        lb.bind("<ButtonRelease-1>", self._on_search_list_click)
+        lb.bind("<Return>", self._on_search_list_enter)
+        lb.bind("<KP_Enter>", self._on_search_list_enter)
+        lb.bind("<Escape>", self._on_search_list_escape)
+        lb.bind("<FocusOut>", lambda _e: self.root.after(
+            120, self._hide_search_if_focus_left))
+        pop.bind("<FocusOut>", lambda _e: self.root.after(
+            120, self._hide_search_if_focus_left))
+        self._search_popup = pop
+        self._search_list = lb
+        return pop
+
+    def _position_search_popup(self, rows: int) -> None:
+        pop = getattr(self, "_search_popup", None)
+        entry = getattr(self, "search_entry", None)
+        if pop is None or entry is None:
+            return
+        try:
+            pop.update_idletasks()
+            entry.update_idletasks()
+            x = entry.winfo_rootx()
+            y = entry.winfo_rooty() + entry.winfo_height() + 2
+            width = max(540, entry.winfo_width() + 240)
+            row_h = tkfont.Font(root=self.root, font=UI_FONT).metrics("linespace") + 8
+            height = max(row_h + 8, min(8, max(1, rows)) * row_h + 8)
+            sw, sh = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
+            width = min(width, max(240, sw - x - 12))
+            height = min(height, max(row_h + 8, sh - y - 12))
+            pop.geometry(f"{int(width)}x{int(height)}+{int(x)}+{int(y)}")
+        except Exception:
+            pass
+
+    def _show_search_results(self) -> None:
+        query = self.search_text.get().strip()
+        if not query:
+            self._hide_search_popup()
+            return
+        results = self._search_results_for_query(query)
+        self._search_results_current = results
+        if not results:
+            self._hide_search_popup()
+            if not getattr(self.catalog, "items", None) and \
+                    getattr(self, "_catalog_search_loading", False):
+                self._set_status("正在读取程序目录；窗口标题仍可直接搜索…")
+            else:
+                self._set_status(f"没有找到「{query}」；可输入程序名、窗口标题或 exe 名")
+            return
+        pop = self._ensure_search_popup()
+        lb = self._search_list
+        try:
+            lb.delete(0, "end")
+            for result in results:
+                lb.insert("end", self._search_result_label(result))
+            lb.selection_clear(0, "end")
+            lb.selection_set(0)
+            lb.activate(0)
+            self._position_search_popup(len(results))
+            # 主窗口可能被用户临时置顶（截图/演示），建议浮层也跟着置顶；
+            # 它只活到失焦/选中，不会长期压住别的程序。
+            try:
+                pop.attributes("-topmost", True)
+            except Exception:
+                pass
+            pop.deiconify()
+            pop.lift()
+        except Exception:
+            self._hide_search_popup()
+
+    def _hide_search_popup(self) -> None:
+        pop = getattr(self, "_search_popup", None)
+        if pop is not None:
+            try:
+                pop.withdraw()
+            except Exception:
+                pass
+
+    def _search_popup_contains(self, widget) -> bool:
+        pop = getattr(self, "_search_popup", None)
+        if pop is None or widget is None:
+            return False
+        try:
+            return str(widget).startswith(str(pop))
+        except Exception:
+            return False
+
+    def _hide_search_if_focus_left(self) -> None:
+        try:
+            focus = self.root.focus_get()
+        except Exception:
+            focus = None
+        if focus is getattr(self, "search_entry", None) or self._search_popup_contains(focus):
+            return
+        self._hide_search_popup()
+
+    def _on_root_click_hide_search(self, event=None) -> None:
+        widget = getattr(event, "widget", None)
+        if widget is getattr(self, "search_entry", None):
+            return
+        if self._search_popup_contains(widget):
+            return
+        self._hide_search_popup()
+
+    def _focus_search_results(self) -> None:
+        if not self._search_results_current:
+            return
+        pop = self._ensure_search_popup()
+        if not self._search_results_current:
+            return
+        self._show_search_results()
+        lb = getattr(self, "_search_list", None)
+        if lb is None:
+            return
+        try:
+            pop.deiconify()
+            pop.lift()
+            if lb.size():
+                lb.selection_clear(0, "end")
+                lb.selection_set(0)
+                lb.activate(0)
+                lb.focus_set()
+        except Exception:
+            pass
+
+    def _on_search_down(self, _event=None):
+        self._ensure_catalog_for_search()
+        self._show_search_results()
+        if self._search_results_current:
+            self._focus_search_results()
+            return "break"
+
+    def _on_search_submit(self, _event=None):
+        self._cancel_search_debounce()
+        self._apply_search_ui()
+        results = getattr(self, "_search_results_current", [])
+        if not results:
+            return "break"
+        idx = 0
+        lb = getattr(self, "_search_list", None)
+        if lb is not None:
+            try:
+                sel = lb.curselection()
+                if sel:
+                    idx = int(sel[0])
+            except Exception:
+                pass
+        self._activate_search_result(idx)
+        return "break"
+
+    def _on_search_list_click(self, event=None) -> None:
+        lb = self._search_list
+        if lb is None:
+            return
+        try:
+            idx = lb.nearest(event.y) if event is not None else lb.curselection()[0]
+            if idx < 0:
+                return
+            self._activate_search_result(int(idx))
+        except Exception:
+            pass
+
+    def _on_search_list_enter(self, _event=None):
+        lb = self._search_list
+        try:
+            sel = lb.curselection()
+            idx = int(sel[0]) if sel else 0
+        except Exception:
+            idx = 0
+        self._activate_search_result(idx)
+        return "break"
+
+    def _on_search_list_escape(self, _event=None):
+        self._hide_search_popup()
+        try:
+            self.search_entry.focus_set()
+        except Exception:
+            pass
+        return "break"
+
+    def _activate_search_result(self, index: int) -> None:
+        results = getattr(self, "_search_results_current", None)
+        if not results:
+            results = self._search_results_for_query()
+            self._search_results_current = results
+        try:
+            kind, obj = results[int(index)]
+        except (IndexError, TypeError, ValueError):
+            return
+        self._hide_search_popup()
+        if kind == "window":
+            self._select_window_from_search(obj)
+        else:
+            self._reveal_catalog_search_result(obj)
+
+    def _select_window_from_search(self, wi) -> None:
+        item = self.row_of_hwnd.get(getattr(wi, "hwnd", 0))
+        if not item:
+            self.refresh_windows()
+            item = self.row_of_hwnd.get(getattr(wi, "hwnd", 0))
+        if not item:
+            self._set_status("这个窗口刚刚关闭或列表尚未刷新")
+            return
+        try:
+            parent = self.tree.parent(item)
+            while parent:
+                self.tree.item(parent, open=True)
+                parent = self.tree.parent(parent)
+            self.tree.selection_set(item)
+            self.tree.focus(item)
+            self.tree.see(item)
+            self._on_select()
+            self.notebook.select(0)
+            self.tree.focus_set()
+        except Exception:
+            return
+        self._set_status(
+            f"已在窗口列表选中「{getattr(wi, 'display_name', '') or wi.real_name}」")
+
+    def _reveal_catalog_search_result(self, item) -> None:
+        try:
+            self.notebook.select(self.catalog.frame)
+        except Exception:
+            pass
+        try:
+            self._ensure_catalog_loaded()
+            if self.catalog.reveal_item(item, self.search_text.get().strip()):
+                self._set_status(
+                    f"已定位到程序目录：{item.name}（未运行；按 Enter / 打开 才会启动）")
+            else:
+                self._set_status(
+                    f"程序目录里暂时找不到「{item.name}」，可能是筛选或缓存刚变化")
+        except Exception as exc:
+            self._set_status(f"打开程序目录失败：{type(exc).__name__}: {exc}")
+
     def refresh_windows(self) -> None:
         """枚举窗口并重建列表（与命令行共用 core.collect_desktop，避免两套逻辑）。"""
         keep = self.selected_hwnd
@@ -8072,15 +9035,47 @@ class WinMonApp:
             self.row_info.clear()
             self._group_app_of.clear()
 
-            needle = self.search_text.get().strip().lower()
+            needle = self.search_text.get().strip()
+            # 顶部搜索不再只认窗口原文：先让程序目录算出命中项，再把它们的
+            # PID / exe 当成窗口的“别名”。这样输入「网易云音乐」也能找到
+            # 运行中的 `cloudmusic.exe`（窗口显示名可能只有 Cloud Music）。
+            catalog_hits = []
+            if needle:
+                try:
+                    catalog_hits = core.search_program_items(
+                        getattr(getattr(self, "catalog", None), "items", []) or [],
+                        needle)
+                except Exception:
+                    catalog_hits = []
+            alias_pid_items: dict[int, list] = {}
+            for it in catalog_hits:
+                pid = int(getattr(it, "pid", 0) or 0)
+                if pid:
+                    alias_pid_items.setdefault(pid, []).append(it)
+            alias_paths = {(it.target or "").lower() for it in catalog_hits
+                           if getattr(it, "target", "")}
+            alias_bases = {os.path.basename(p) for p in alias_paths if p}
+            alias_stems = {os.path.splitext(b)[0] for b in alias_bases}
+            needle_norm = core.normalize_program_query(needle)
 
             def match(wi: core.WinInfo) -> bool:
                 if wi.is_hidden_surface and not self.show_hidden.get():
                     return False
                 if not needle:
                     return True
-                return (needle in wi.title.lower() or needle in wi.proc.lower()
-                        or needle in wi.real_name.lower() or needle == str(wi.pid))
+                path = (getattr(wi, "path", "") or self._path_cache.get(wi.pid, "")
+                        or "").lower()
+                base = os.path.basename(path)
+                stem = os.path.splitext(base)[0]
+                direct = core.normalize_program_query(
+                    f"{wi.title} {wi.proc} {wi.real_name} {wi.pid} {path}")
+                pid_match = any(
+                    self._catalog_window_matches(it, wi)
+                    for it in alias_pid_items.get(int(wi.pid or 0), []))
+                return (needle_norm in direct or pid_match
+                        or (path and path in alias_paths)
+                        or (base and base in alias_bases)
+                        or (stem and stem in alias_stems))
 
             vis = [wi for wi in self.windows if match(wi)]
             by_app: dict[str, list[core.WinInfo]] = {}
@@ -8213,7 +9208,6 @@ class WinMonApp:
                 self._fg_hwnd = fg
                 self._fg_since = time.time()
                 self._update_foreground_marks()
-            self._ai_observe_foreground(fg)
         except Exception:
             pass
         self.root.after(700, self._poll_foreground)
@@ -8221,22 +9215,6 @@ class WinMonApp:
     # ------------------------------------------------------------------
     # AI 工作伴侣（阶段 1.5）：识别主 AI + 本地事件
     # ------------------------------------------------------------------
-    def _ai_observe_foreground(self, fg: int) -> None:
-        """喂一拍给前台累计器（每 700ms 一次；只记内存，不落盘）。"""
-        tracker = getattr(self, "_ai_tracker", None)
-        if tracker is None:
-            return
-        wi = None
-        try:
-            wi = self.win_by_hwnd.get(fg)
-        except Exception:
-            wi = None
-        key = ai.session_key_for_window(wi) if wi is not None else ""
-        try:
-            tracker.observe(time.monotonic(), key)
-        except Exception:
-            pass
-
     def _ai_tick(self) -> None:
         """
         每 2 秒一拍：算主 AI、跑本地检测器、刷新 AI 状态条、必要时弹提醒。
@@ -8249,7 +9227,7 @@ class WinMonApp:
         try:
             res = ai.identify_ai_sessions(
                 self.windows, getattr(self, "proc_map", {}) or {},
-                self._ai_tracker, getattr(self, "_fg_hwnd", 0),
+                foreground_hwnd=getattr(self, "_fg_hwnd", 0),
                 pin=getattr(self, "_ai_pin", ""))
             self._ai_primary = res.get("primary")
             self._ai_sessions = res
@@ -8310,7 +9288,9 @@ class WinMonApp:
         """
         "AI 到底有没有接上 WinMon"的唯一判据（界面必须直接写出来）。
 
-        优先级：最近 15 分钟有 MCP 调用（真实接入）> 当前 AI 直连可用 > 只能剪贴板。
+        优先级：最近 15 分钟有 MCP 调用（真实接入）> 当前 AI 直连 API 可用
+        > 未接入（纯本地）。没有“剪贴板接入”这个状态：主界面的「复制现场」
+        按钮已按用户要求删除，避免把一句说明误当成按键。
         """
         status = self._ai_status_snapshot()
         last = status.get("last_mcp") or {}
@@ -8327,7 +9307,7 @@ class WinMonApp:
                 "direct_provider") or "").strip())
             return {"kind": "direct", "model": cfg.model, "ai": name,
                     "manual": manual}
-        return {"kind": "clipboard", "ai": name}
+        return {"kind": "local", "ai": name}
 
     def _ai_recent_mcp_client(self) -> str:
         """最近 15 分钟有没有 AI 客户端真的通过 MCP 调过 WinMon。"""
@@ -8367,25 +9347,17 @@ class WinMonApp:
             connection = (info.get("connection")
                           if isinstance(info, dict) else None) \
                 or self._ai_connection_snapshot()
-            #: 完整整句仍保留：状态栏/日志/复制场景还在用，测试也钉着它。
+            #: 完整整句仍保留：命令行 / 测试和兼容调用还在用。
             self.ai_text.set(ai.format_ai_bar(primary, status, info,
                                                connection=connection))
             parts = ai.format_ai_summary(primary, status, info,
                                           connection=connection)
             self.ai_identity_text.set(parts["identity"])
-            timer_text = ""
-            if primary:
-                try:
-                    pkey = f"{primary.get('kind')}:{primary.get('name')}"
-                    timer_text = ("前台计时中" if self._ai_tracker.current_key() == pkey
-                                  else "前台计时暂停")
-                except Exception:
-                    timer_text = ""
-            state = " ｜ ".join(
-                item for item in (parts["connection"], parts["mode"],
-                                  parts["follow"], timer_text) if item)
-            self.ai_state_text.set(state or i18n.pick(
-                "未接入 · 可复制现场", "not connected · copy handoff"))
+            # 状态行只保留“接入没有、走哪条路”：
+            #   已接入 · MCP（客户端）/ 已接入 · API（模型）/ 未接入 · 纯本地。
+            # 不再显示模式、跟随对象和前台计时，也不再放任何“复制现场”按钮。
+            self.ai_state_text.set(parts["connection"] or i18n.pick(
+                "未接入 · 纯本地", "not connected · local only"))
             self.ai_usage_text.set(parts["usage"])
             card = UI_CARDS["ai"]
             connected = parts["status_kind"] in ("mcp", "direct")
@@ -8395,12 +9367,6 @@ class WinMonApp:
             else:
                 self.ai_state_label.configure(
                     bg=card["state_warn_bg"], fg=card["state_warn_fg"])
-            # “未接入”时把「复制现场」按钮摆出来；接上后收起。
-            if hasattr(self, "ai_copy_btn"):
-                if primary and parts["status_kind"] == "clipboard":
-                    self.ai_copy_btn.grid()
-                else:
-                    self.ai_copy_btn.grid_remove()
             workspace = getattr(self, "ai_workspace", None)
             if workspace is not None:
                 workspace.sync_state(connected)
@@ -8730,23 +9696,22 @@ class WinMonApp:
         today = int(status.get("provider_tokens", 0) or 0)
         if kind == "mcp":
             stamp = str(conn.get("ts") or "")[11:16]
-            line1 = (f"Connected via MCP: {conn.get('client')}" if en else
-                     f"接入：已通过 MCP 接入 {conn.get('client')}")
+            line1 = (f"Connected · MCP: {conn.get('client')}" if en else
+                     f"接入：已接入 · MCP（{conn.get('client')}）")
             if stamp:
                 line1 += (f" (last {stamp}, today {conn.get('calls', 0)} calls)" if en
                           else f"（最近 {stamp}，今日 {conn.get('calls', 0)} 次）")
         elif kind == "direct":
-            line1 = (f"Direct ready: {conn.get('ai')} → {conn.get('model')}" if en else
-                     f"接入：直连就绪 {conn.get('ai')} → {conn.get('model')}")
+            line1 = (f"Connected · API: {conn.get('ai')} → {conn.get('model')}" if en else
+                     f"接入：已接入 · API（{conn.get('ai')} → {conn.get('model')}）")
         else:
             ai_name = str(conn.get("ai") or "")
             if en:
-                line1 = "Not connected yet" + (
-                    f"; you can copy the context to {ai_name}" if ai_name
-                    else "; open an AI window first")
+                line1 = "Not connected · local only" + (
+                    f" (detected {ai_name})" if ai_name else "; open an AI window first")
             else:
-                line1 = ("接入：还没接上"
-                         + (f"；可复制现场给 {ai_name}" if ai_name else "；先打开一个 AI 窗口"))
+                line1 = ("接入：未接入 · 纯本地"
+                         + (f"（识别到 {ai_name}）" if ai_name else "；先打开一个 AI 窗口"))
         line2 = (f"Mode: {mode_label} ｜ reminders: spoken by the connected AI ｜ "
                  f"{session} ｜ today provider {today:,} token" if en else
                  f"模式：{mode_label} ｜ 提醒：由接入的 AI 说 ｜ "
@@ -8826,10 +9791,6 @@ class WinMonApp:
                 pass
         self._ai_assist = ai.save_assist(data)
         return self._ai_assist
-
-    def _ai_copy_handoff(self) -> None:
-        """主界面 AI 卡上的「复制现场」按钮。"""
-        self._ai_handoff()
 
     def _ai_handoff(self, question: str = "") -> bool:
         """
@@ -9883,6 +10844,9 @@ class WinMonApp:
                             quality=True)
 
     def _on_tab_changed(self) -> None:
+        # 换页时搜索建议已经不属于当前视图；不收掉会浮在新页面上。
+        self._cancel_search_debounce()
+        self._hide_search_popup()
         idx = self.notebook.index("current")
         # 离开实时预览页：立刻取消取帧，不等下一次 16ms 泵。
         if idx != 0 and getattr(self, "preview_key", None) is not None:
@@ -11491,8 +12455,8 @@ def ai_sessions_cli(as_json: bool = False) -> int:
     """
     命令行：识别"现在在用哪个 AI"（只读，不联网）。
 
-    判据与界面 / MCP 完全同一套；区别是命令行只能看**这一拍**，
-    所以"最近 30 分钟前台时长"是 0 —— 累计时长需要 WinMon 界面在跑。
+    判据与界面 / MCP 完全同一套：只识别“现在在用哪个 AI”，
+    不统计、也不输出任何运行时长（该统计已按用户要求删除）。
     """
     try:
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
@@ -11514,8 +12478,7 @@ def ai_sessions_cli(as_json: bool = False) -> int:
               f"score {other.get('score')}）")
     if res.get("ambiguous"):
         print("  注意：前两名分差很小，建议用 WINMON_AI_PIN 或设置里的「主 AI」指定")
-    print("  说明：命令行是一次性查询，看不到「最近 30 分钟前台时长」；"
-          "累计时长需要 WinMon 界面在跑。")
+    print("  说明：只做当场识别；WinMon 不统计 AI 的运行时长。")
     return 0
 
 
@@ -11554,11 +12517,11 @@ def ai_usage_cli(as_json: bool = False) -> int:
     except (TypeError, ValueError):
         fresh_mcp = False
     if last and fresh_mcp:
-        connection = f"已接入 MCP（{last.get('client') or 'MCP 客户端'}）"
+        connection = f"已接入 · MCP（{last.get('client') or 'MCP 客户端'}）"
     elif cfg is not None and not cfg.validate():
-        connection = f"直连就绪（{cfg.model}）"
+        connection = f"已接入 · API（{cfg.model}）"
     else:
-        connection = "未接入 · 可复制现场"
+        connection = "未接入 · 纯本地"
     mode = str(ai.load_assist().get("mode") or "local")
     if as_json:
         print(json.dumps({"sessions": sessions, "budget": status,
@@ -11566,7 +12529,7 @@ def ai_usage_cli(as_json: bool = False) -> int:
                          ensure_ascii=False, indent=2))
     else:
         print(ai.format_sessions_detail(sessions))
-        print(f"接入：{connection} ｜ 模式：{ai.assist_mode_label(mode)}")
+        print(f"接入：{connection} ｜ 助手模式：{ai.assist_mode_label(mode)}")
         print()
         print(ai.format_usage_text(status))
         print("\n（恢复预算只能在 WinMon 界面里操作；MCP 没有改预算的工具）")
@@ -11685,7 +12648,7 @@ def ai_assist_cli(question: str = "", as_json: bool = False,
     wins = core.collect_desktop(include_cloaked=True, with_detail=True)
     procs = core.snapshot_processes()
     fg = core.get_foreground_hwnd()
-    sessions = ai.identify_ai_sessions(wins, procs, None, fg,
+    sessions = ai.identify_ai_sessions(wins, procs, foreground_hwnd=fg,
                                        pin=os.environ.get("WINMON_AI_PIN", ""))
     primary = sessions.get("primary") or {}
     name = str(primary.get("name") or "")

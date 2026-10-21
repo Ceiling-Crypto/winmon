@@ -40,19 +40,19 @@ class _Win:
 
 class TestVisibleAiBar(unittest.TestCase):
     def test_bar_shows_name_and_real_estimate_split(self):
-        primary = {"name": "智谱清言", "kind": "web", "proc": "msedge.exe",
-                   "foreground_seconds_30m": 72}
+        primary = {"name": "智谱清言", "kind": "web", "proc": "msedge.exe"}
         status = {"provider_tokens": 428, "tokenizer_tokens": 0,
                   "estimated_tokens": 1200}
         info = {"enabled": True, "key_present": True, "model": "glm-5.3"}
         text = ai.format_ai_bar(primary, status, info)
         self.assertIn("智谱清言", text)
         self.assertIn("网页", text)
-        self.assertIn("近30分前台 1 分 12 秒", text)
+        self.assertNotIn("前台", text)
+        self.assertNotIn("激活", text)
+        self.assertIn("未接入 · 纯本地", text)
         self.assertIn("真实 428", text)
         self.assertIn("精确 0", text)
         self.assertIn("估算 1,200", text)
-        self.assertIn("glm-5.3 就绪", text)
 
     def test_bar_without_ai_and_without_key(self):
         text = ai.format_ai_bar(None, {"provider_tokens": 0, "tokenizer_tokens": 0,
@@ -60,12 +60,12 @@ class TestVisibleAiBar(unittest.TestCase):
                                 {"enabled": True, "key_present": False,
                                  "model": "glm-5.3"})
         self.assertIn("未识别到", text)
-        self.assertIn("缺 key", text)
+        self.assertIn("未接入 · 纯本地", text)
+        self.assertNotIn("缺 key", text, "状态卡不再展开 key/模型细节")
 
     def test_sessions_detail_lists_candidates_and_reason(self):
         res = {"primary": {"name": "Claude Desktop", "kind": "desktop",
                            "confidence": 0.95, "proc": "claude.exe", "pid": 10,
-                           "foreground_seconds_30m": 61, "activations_30m": 3,
                            "source": "mcp_parent", "pinned": False},
                "others": [{"name": "ChatGPT", "kind": "web", "score": 0.4}],
                "note": "按连接状态优先", "ambiguous": True}

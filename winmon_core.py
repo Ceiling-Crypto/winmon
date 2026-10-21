@@ -2704,6 +2704,78 @@ def _merge_running(items: list[ProgramItem]) -> list[ProgramItem]:
     return items
 
 
+def normalize_program_query(text) -> str:
+    """
+    程序搜索的统一归一化：大小写、空格、路径分隔符和标点都不参与匹配。
+
+    为什么需要它：同一个程序在 Windows 里至少有三个名字 ——
+    开始菜单里的「网易云音乐」、exe 的 `cloudmusic.exe`、窗口的
+    `Cloud Music`。用户不该记得自己输入的是哪一种；去掉空格与符号后，
+    `cloud music`、`CloudMusic`、`cloudmusic.exe` 会得到同一个 key。
+    """
+    value = str(text or "").casefold()
+    return "".join(ch for ch in value if ch.isalnum())
+
+
+def program_search_blob(item: ProgramItem) -> str:
+    """
+    一个目录条目参与搜索的全部文本（原名 + exe + 安装路径 + 发行商 + 类别）。
+
+    不缓存：目录只有一百多项，每次筛选重建时重算是毫秒级；缓存反而会
+    在用户手动改类别后读到旧值。
+    """
+    target = item.target or ""
+    base = os.path.basename(target)
+    stem = os.path.splitext(base)[0]
+    category = CATEGORY_LABELS.get(category_of_item(item), "")
+    return " ".join((
+        item.name or "", target, base, stem,
+        item.install_location or "", item.publisher or "", category,
+    ))
+
+
+def program_matches_query(item: ProgramItem, query: str) -> bool:
+    """目录条目的模糊匹配；空查询视为全部匹配。"""
+    needle = normalize_program_query(query)
+    if not needle:
+        return True
+    return needle in normalize_program_query(program_search_blob(item))
+
+
+def search_program_items(items: list[ProgramItem], query: str,
+                         limit: int = 0) -> list[ProgramItem]:
+    """
+    按用户输入给程序目录排序（纯逻辑，可单测）。
+
+    排序：名称/exe 完全相等 > 名称/exe 开头 > 名称/exe 包含 > 路径/发行商/类别包含。
+    同级里可启动的、名字更短的优先。`limit <= 0` 返回全部匹配。
+    """
+    needle = normalize_program_query(query)
+    if not needle:
+        return []
+    scored = []
+    for it in items:
+        name = normalize_program_query(it.name)
+        target = it.target or ""
+        base = normalize_program_query(os.path.basename(target))
+        stem = normalize_program_query(os.path.splitext(os.path.basename(target))[0])
+        if needle in (name, base, stem):
+            rank = 0
+        elif name.startswith(needle) or base.startswith(needle) or stem.startswith(needle):
+            rank = 1
+        elif needle in name or needle in base or needle in stem:
+            rank = 2
+        elif needle in normalize_program_query(program_search_blob(it)):
+            rank = 3
+        else:
+            continue
+        bonus = 0 if it.runnable else 1
+        scored.append((rank, bonus, len(it.name or ""), (it.name or "").lower(), it))
+    scored.sort(key=lambda x: x[:4])
+    found = [it for *_rest, it in scored]
+    return found if int(limit or 0) <= 0 else found[:int(limit)]
+
+
 def find_programs(keyword: str, items: list[ProgramItem] | None = None,
                   limit: int = 20) -> list[ProgramItem]:
     """

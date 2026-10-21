@@ -192,14 +192,22 @@ class TestLightThemeAndPreviewFirst(unittest.TestCase):
         self.assertNotIn(button_bg, ("#000000", self.winmon.UI_BG),
                          "按钮要和纯白页面区分开")
 
-    def test_checkbox_indicator_is_a_filled_square_not_cross(self):
+    def test_checkbox_indicator_is_a_filled_circle(self):
         from tkinter import ttk
         style = ttk.Style(self.root)
-        self.assertIn("WinMon.Checkbutton.indicator", style.element_names())
+        names = [str(n) for n in style.element_names()
+                 if str(n).startswith("WinMon.CheckIndicator")]
+        self.assertTrue(names, "圆形勾选图片元素不存在")
         layout = str(style.layout("TCheckbutton"))
-        self.assertIn("WinMon.Checkbutton.indicator", layout)
-        self.assertTrue(getattr(self.root, "_winmon_check_images", None),
-                        "勾选图片必须挂在 root 上，避免跨 Tk root 失效")
+        self.assertIn(names[0], layout)
+        images = getattr(self.root, "_winmon_check_images", None)
+        self.assertTrue(images, "勾选图片必须挂在 root 上，避免跨 Tk root 失效")
+        # 圆心有色、四角透明：这才是圆填充，而不是整块方块。
+        selected = images["selected"]
+        self.assertNotEqual(tuple(selected.get(7, 7)), (0, 0, 0),
+                            "选中圆应有可见填充")
+        self.assertEqual(tuple(selected.get(0, 0)), (0, 0, 0),
+                         "圆的四角必须透明，不能退化成方块")
 
     def test_preview_is_the_main_pane_and_list_is_a_compact_sidebar(self):
         self.root.update()

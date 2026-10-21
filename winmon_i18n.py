@@ -56,7 +56,7 @@ _STRINGS = {
         "connect.head": "连接你的 AI",
         "connect.mcp": "1）MCP 接入（推荐，只读）",
         "connect.mcp_hint": "把下面这段加到客户端的 MCP 配置里，重启客户端。"
-                            "接入后主界面的 AI 卡会显示「已接入 MCP（客户端名）」。",
+                            "接入后主界面的 AI 卡会显示「已接入 · MCP（客户端名）」。",
         "connect.mcp_short": "让支持 MCP 的桌面客户端（如 Claude Desktop）直接读取 WinMon；"
                              "只读，不改任何东西。",
         "connect.show_steps": "查看配置与步骤",
@@ -186,7 +186,7 @@ _STRINGS = {
         "connect.head": "Connect your AI",
         "connect.mcp": "1) MCP connection (recommended, read-only)",
         "connect.mcp_hint": "Add this to the client's MCP config and restart it. "
-                            "WinMon's AI card will then show “MCP connected (client)”.",
+                            "WinMon's AI card will then show “Connected · MCP (client)”.",
         "connect.mcp_short": "Let an MCP-capable desktop client (e.g. Claude Desktop) read "
                              "WinMon directly; read-only, nothing is changed.",
         "connect.show_steps": "Show config and steps",
@@ -366,7 +366,6 @@ _STATIC_EN = {
     "分析当前窗口": "Analyze window",
     "复制路径": "Copy path",
     "复制全部": "Copy all",
-    "复制现场给 AI": "Copy context to AI",
     "跟随选择": "Follow selection",
     "工作区": "Workspace",
     "工作区快照": "Workspace snapshots",

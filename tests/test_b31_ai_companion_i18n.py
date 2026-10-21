@@ -252,7 +252,7 @@ class TestConnectWindow(unittest.TestCase):
     def test_window_holds_setup_not_assistant(self):
         win = self.winmon._AiConnectWindow(self.root, self.app)
         self.app._ai_connect_window = win
-        self.assertIn("还没接上", win.status_text.get())
+        self.assertIn("未接入 · 纯本地", win.status_text.get())
         self.assertIn("winmon", win.config_text.get("1.0", "end"))
         win.break_var.set(False)
         win.toggle_break()
