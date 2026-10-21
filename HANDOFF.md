@@ -3,7 +3,7 @@
 > 用途：在新的对话里快速恢复上下文。读这一份即可继续开发。
 > **正式发布名 `winmon1.0`**（`APP_VER = "1.0"`，查版本：`py winmon.py --version`）。
 > **先读 §一点五「WinMon 的定位与能力边界」** —— 输入注入已明确不再投入。
-> 代码状态：**1031 个测试用例全绿**（约 100–110 秒；`--fast` 974 条约 45–52 秒；
+> 代码状态：**1032 个测试用例全绿**（约 110–120 秒；`--fast` 975 条约 45–52 秒；
 > 跳过数按当前桌面/媒体环境在 3–7 之间变化）+
 > 代码复检 0 新增问题（基线为空）、
 > 自检 8/8、界面冒烟通过、
@@ -22,7 +22,7 @@
 
 | | |
 | --- | --- |
-| 测试 | **1031 用例全绿**（`py tests\run_tests.py`，约 100–110 秒；跳过数按环境 3–7）；`--fast` 974 条约 45–52 秒 |
+| 测试 | **1032 用例全绿**（`py tests\run_tests.py`，约 110–120 秒；跳过数按环境 3–7）；`--fast` 975 条约 45–52 秒 |
 | 代码复检 | `py tests\lint_check.py` → **新增问题 0**（基线已清空，见 §四） |
 | 自检 / 冒烟 | `py winmon.py --selftest` 8/8 通过；`--smoke` 通过 |
 | 规模 | `winmon_core.py` ~6900 行 / `winmon.py` ~16040 行 / 测试 57 个 .py（43 个测试模块） |
@@ -49,7 +49,7 @@
   按动作/**按程序**筛选、搜索、导出 txt/**CSV**），保留 7/30/90 天（默认 30）；
 - **AI 工作区**：助手 / 接入 / 用量三个入口，**最后一栏**；**设置（三合一）**：
   Edge 式左侧导航（常规 / AI 用量 / 使用说明）+ 右侧卡片；常规页含开机自启动、
-  点 × 的行为、启动收进托盘、历史保留、**9 套设计主题**、语言、字号；
+  点 × 的行为、启动收进托盘、历史保留、**10 套设计主题**（含 Edge 深色）、语言、字号；
 - **托盘**：启动就绪，双击恢复、右键菜单；
 - **清理**：`py winmon.py --clean` 或界面「清理程序文件」。
 
@@ -107,7 +107,7 @@
 | `winmon_mcp.py` | ~800 | **MCP 服务器**：双时代 stdio + 本地 HTTP + 四个只读工具 |
 | `winmon_ai_provider.py` | ~250 | **可选**直连模型 API（默认关；精确 usage；key 只从环境变量读） |
 | `media_session.ps1` | ~230 | 系统媒体会话（GSMTC）桥接脚本（PowerShell + Windows 自带 WinRT 投影；**必须纯 ASCII 无 BOM**） |
-| `tests/` | 57 个 .py | **可重复运行的测试**（1031 用例，纯 unittest） + `_marks.py` 慢用例标记 + 开发辅助工具 + `lint_check.py` / `lint_baseline.txt` |
+| `tests/` | 57 个 .py | **可重复运行的测试**（1032 用例，纯 unittest） + `_marks.py` 慢用例标记 + 开发辅助工具 + `lint_check.py` / `lint_baseline.txt` |
 | `启动WinMon.bat` | — | 菜单式启动器（纯 ASCII，避免批处理编码问题） |
 | `scan_windows.py` | — | 命令行窗口清单 |
 | `close_others.py` | — | 批量关闭除当前窗口外的窗口 |
@@ -160,7 +160,7 @@ python winmon.py --videos --open 3 --watch --close-window   :: 完整视频链�
 python winmon.py --version          :: 打印版本（winmon1.0）
 python winmon.py --idle             :: 列出"长期开着、没人用"的程序（只看，不关任何东西）
 python winmon.py --idle --idle-minutes 5   :: 换个闲置阈值（分钟）
-py tests\run_tests.py               :: 全部测试（1031 用例，约 107 秒）
+py tests\run_tests.py               :: 全部测试（1032 用例，约 106 秒）
 py tests\run_tests.py --fast        :: 快跑（957 用例，约 48 秒；跳过真窗口/抓屏慢用例）
 ```
 
@@ -3280,6 +3280,47 @@ AI 深蓝卡可见；深色接入窗展开后目视无浅色卡残留。
   `--smoke` 退出 0，白底截图已目视确认。
 - 跳过数会随桌面是否有 Edge / 媒体会话变化。
 
+### 9.33 阶段 8.23：Edge 开关、深色主题、滚动条收口（2026-10-22）
+
+用户圈出窗口列表右侧的浅色竖条，并追加三条：勾选改 Edge 开关、主界面要
+Edge 深色、为什么市面软件能把设置/搜索/最小化/最大化/关闭放同一排。
+
+1. **空白竖条**：不是内容，是 `ttk.Scrollbar` 在空列表时也占 10–17px。
+   新增 `EdgeScrollbar`：Canvas 画 10px 圆角滑块，`set(first,last)` 发现
+   `last-first >= .9995` 就 `grid_remove()`，滚得动才出现；窗口列表、
+   设置常规页、AI 用量页都换上。空列表截图右缘不再有竖条。
+   注意 `set()` 在初始时也会被调用，所以不能只在 `_visible` 为真时才隐藏，
+   必须无条件 `grid_remove()`（第一版这里会留下初始空白列）。
+2. **开关**：新增 `ToggleSwitch`：42×22 胶囊轨道 + 白圆滑块；
+   普通项 on `#D13438`，启动/关闭 on `#101010`；深色主题下 black track
+   补 `#8A8A8A` 边。设置里所有 `_check_control()` 和 AI 用量的
+   “MCP 结果精确分词”都改用它，不再有圆点勾选。
+3. **Edge 深色**：
+   - `_THEME_SPECS["edge_dark"]`：page `#202124`、surface `#292A2D`、
+     alt `#35363A`、ink `#E8EAED`、muted `#9AA0A6`、line `#3C4043`、
+     accent `#2F6FCC`、secondary `#8AB4F8`；
+   - 在 `_build_palette()` 里加 `dark` 分支：`UI_OK/WARN/PURPLE`、
+     `ok/warn/key` 卡片前景、behavior/proactive accent 都换成深色可读值；
+   - `accent` 选 `#2F6FCC` 而不是 Edge 链接蓝 `#4C8DFF`，因为白字在
+     后者上只有 3.2:1，达不到项目要求的 4.5:1；`#2F6FCC` 白字 4.92:1；
+   - 旧 `dark` 不再丢回浅色，映射到 edge_dark；`light/system` 仍到 sunlit。
+4. **同排标题栏**：市面软件用的是“无原生 caption 的自绘客户区”：
+   `WM_NCCALCSIZE` 把非客户区收掉、`WM_NCHITTEST` 给窗口边缘返回 resize
+   命中、标题栏拖动发 `WM_NCLBUTTONDOWN/HTCAPTION` 交给系统做贴边/最大化，
+   再自己画设置/搜索/最小化/最大化/关闭。WinMon 目前是标准 Tk 顶层窗口，
+   保留原生 caption；要做同排必须整体改自绘窗口，并重做拖动/缩放/任务栏，
+   本轮没有为视觉冒险动这块，原因在这里写清。
+
+#### 一、测试与验收
+
+- `test_b43` 增加“空列表滚动条不占位”（7 条）；
+- `test_b35` 10 套主题 / Edge 深色色值 / old dark 映射；
+- `test_b37` 深色卡片按深色检查对比度；`test_b40` 数量同步；
+- 全量 **1032 用例**，失败 0 / 错误 0，跳过 7，**106.283 秒**；
+  `--fast` **975 条**，失败 0 / 错误 0，跳过 6，**48.092 秒**；
+  `lint_check` 新增 0；`--selftest` 8/8；`--mcp-selftest` 13/13；
+  `--smoke` 退出 0。
+
 ### 9.32 阶段 8.22：归位、Edge 设置、key 隐私（2026-10-22）
 
 这一轮用户又给了 8 条，核心不是加功能，而是**纠正上一轮的位置和视觉**：
@@ -4046,7 +4087,7 @@ README 的界面颜色一节也加了同样说明。
 ## 四、测试体系（**改代码后先跑这个**）
 
 ```bat
-py tests\run_tests.py            :: 1031 用例，约 107 秒（--fast 974 条约 49 秒）
+py tests\run_tests.py            :: 1032 用例，约 106 秒（--fast 975 条约 48 秒）
 py tests\run_tests.py -v         :: 逐个看
 py tests\run_tests.py -k capture :: 只跑关心的
 py tests\lint_check.py           :: 代码复检（退出码 1 = 有新增问题）
@@ -4730,8 +4771,8 @@ C 盘那份**保持原样、一字未改**（用户 2026-10-11 确认：暂不�
 
 > 继续开发 **winmon1.0** —— Windows 程序监控与终止工具，纯标准库，在 `项目根目录\`。
 > 请先读 `HANDOFF.md` 和 `README.md`，然后跑 `py tests\run_tests.py`
-> 确认基线是 **1031 用例全绿**（需要哔哩哔哩/UIA 页面的用例会按需 skip；
-> 日常改动用 `--fast` 跑 974 条，提交前跑全量）、
+> 确认基线是 **1032 用例全绿**（需要哔哩哔哩/UIA 页面的用例会按需 skip；
+> 日常改动用 `--fast` 跑 975 条，提交前跑全量）、
 > `py tests\lint_check.py` 退出码 0（无新增问题）。
 > **版式要另眼验收**：测试进程没有开 DPI 感知，布局检查看不到"真实 DPI 下控件被挤没"，
 > 所以改动界面后还要跑一次 `py winmon.py --smoke` 看截图（见 §9.15 第 14 条）。

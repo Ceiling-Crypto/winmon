@@ -9,6 +9,7 @@ B43 —— 2026-10-22 第三轮：AI/媒体归位、Edge 式设置与 key 隐私
   · 启动/关闭的勾选是黑色，其余勾选是红色；
   · key 只从剪贴板读入，始终掩码，没有“显示/复制 key”；
   · 透明度滑杆的已选填充必须连续，不能看起来断成两截。
+  · 列表装得下时，右侧不能留下滚动条空白竖条。
 """
 from __future__ import annotations
 
@@ -95,22 +96,30 @@ class TestEdgeSettings(unittest.TestCase):
             self.assertEqual(dlg._nav_items[section]["frame"].winfo_manager(),
                              "pack")
 
-    def test_startup_checks_are_black_and_others_are_red(self):
+    def test_startup_toggles_are_black_and_others_are_red(self):
         dlg = self._open()
-        red = self.root._winmon_check_images["selected"]
-        black = self.root._winmon_check_images_startup["selected"]
-        self.assertNotEqual(tuple(red.get(7, 7)), tuple(black.get(7, 7)),
-                            "启动/关闭的选中圆必须与其他设置区分")
-        r, g, b = tuple(red.get(7, 7))[:3]
-        self.assertGreater(r, g, "普通勾选应是红色")
-        self.assertGreater(r, b, "普通勾选应是红色")
-        br, bg, bb = tuple(black.get(7, 7))[:3]
-        self.assertLess(max(br, bg, bb), 60, "启动/关闭勾选应是黑色")
-        # 三个启动/关闭行都显式使用黑色样式。
-        styles = [str(w.cget("style")) for w in walk(dlg._general_canvas)
-                  if w.winfo_class() == "TCheckbutton"]
-        self.assertGreaterEqual(styles.count("Startup.TCheckbutton"), 3)
-        self.assertGreaterEqual(styles.count("Settings.TCheckbutton"), 4)
+        toggles = [w for w in walk(dlg._general_canvas)
+                   if isinstance(w, self.winmon.ToggleSwitch)]
+        self.assertGreaterEqual(len(toggles), 7)
+        self.assertEqual(sum(1 for t in toggles
+                             if t._variant == "startup"), 3)
+
+        def track_fill(toggle):
+            items = [i for i in toggle.find_all()
+                     if "toggle-track" in toggle.gettags(i)]
+            self.assertTrue(items, "开关没有画出胶囊轨道")
+            return str(toggle.itemcget(items[0], "fill"))
+
+        normal = next(t for t in toggles
+                      if t._variant == "normal" and t.get())
+        startup = next(t for t in toggles
+                       if t._variant == "startup" and t.get())
+        self.assertEqual(track_fill(normal), "#D13438")
+        self.assertEqual(track_fill(startup), "#101010")
+        # 关掉的普通开关仍是胶囊，不是又退回圆点。
+        off = next(t for t in toggles
+                   if t._variant == "normal" and not t.get())
+        self.assertEqual(off._state, "normal")
 
     def test_old_migration_hints_are_not_in_settings(self):
         dlg = self._open()
@@ -164,6 +173,27 @@ class TestRound3MainPlacement(unittest.TestCase):
             self.assertEqual(button._icon, icon)
             self.assertTrue([i for i in button.find_all()
                              if "jelly-icon" in button.gettags(i)])
+
+    def test_window_scrollbar_disappears_when_the_list_fits(self):
+        """用户圈出的右侧空白竖条：列表装得下时不能占位。"""
+        self.assertEqual(self.app.window_scroll.winfo_manager(), "",
+                         "空列表不应留下滚动条空白竖条")
+        try:
+            for i in range(40):
+                self.app.tree.insert("", "end", iid=f"b43-{i}", text="",
+                                     values=(f"app{i}", f"title{i}", "运行中"))
+            self.root.update()
+            self.assertEqual(self.app.window_scroll.winfo_manager(), "grid",
+                             "列表超出高度后应出现细滚动条")
+        finally:
+            for i in range(40):
+                try:
+                    self.app.tree.delete(f"b43-{i}")
+                except Exception:
+                    pass
+            self.root.update()
+        self.assertEqual(self.app.window_scroll.winfo_manager(), "",
+                         "列表恢复后滚动条应再次收起")
 
 
 if __name__ == "__main__":

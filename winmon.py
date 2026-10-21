@@ -14,8 +14,9 @@ WinMon —— Windows 桌面工具（图形界面 + 命令行）
 7. AI 工作伴侣：识别当前 AI、用量预算、MCP / API / 纯本地
 8. 操作历史：谁在什么时候被关闭/结束了，可复制、可导出
 9. 前台窗口实时高亮、置顶窗口标记、程序图标、隐藏窗口过滤
-10. 界面颜色有 9 套设计主题（钴蓝电青 / 霓虹粉青 / 石墨信号 / 青柠白昼 /
-    晴日天绿 / 暖阳橙绿 / 落日珊瑚 / 云白天蓝 / 山雪梅染）；字号 9–12
+10. 界面颜色有 10 套设计主题（钴蓝电青 / 霓虹粉青 / 石墨信号 / 青柠白昼 /
+    晴日天绿 / 暖阳橙绿 / 落日珊瑚 / 云白天蓝 / 山雪梅染 / Edge 深色）；
+    字号 9–12
 
 命令行
 ------
@@ -177,20 +178,20 @@ UI_OPACITY_MIN = 45
 UI_OPACITY_MAX = 100
 UI_OPACITY = UI_OPACITY_DEFAULT
 
-# ---- 界面颜色（9 套设计主题）----
+# ---- 界面颜色（10 套设计主题）----
 #
 # 2026-10-21 用户决议：删掉旧的“普通白底 / 深色黑底”两套，改用从塞壬唱片
-# 专辑封面提炼、并由用户挑选的 9 套设计主题。颜色只换语义槽位，不碰按键的
+# 专辑封面提炼、并由用户挑选的浅色设计主题；2026-10-22 增加 Edge 深色。颜色只换语义槽位，不碰按键的
 # 果冻回弹、圆角、阴影等结构——那些是交互设计，不是颜色。
 #
 # 每套主题只描述“页面 / 面 / 字 / 主色 / 次色 / 危险色”，其余槽位由
-# `_build_palette()` 统一推导，保证 9 套的卡片、状态、按钮语义一致。
+# `_build_palette()` 统一推导，保证各主题的卡片、状态、按钮语义一致。
 THEME_DEFAULT = "sunlit"
 THEME_PREFERENCE = THEME_DEFAULT
 THEME_RESOLVED = THEME_DEFAULT
 THEME_ORDER = (
     "cobalt", "neon", "graphite", "lime", "sunlit",
-    "amber", "coral", "cloud", "snow",
+    "amber", "coral", "cloud", "snow", "edge_dark",
 )
 
 #: 名字是“设计名”，不再把专辑名当主题名。
@@ -267,6 +268,17 @@ _THEME_SPECS = {
         secondary="#5E7A6D", on_secondary="#FFFFFF",
         danger="#8E2F34", on_danger="#FFFFFF",
     ),
+    #: 2026-10-22：按 Edge 当前深色模式取色（页面 #202124 / 面 #292A2D /
+    #: 正文 #E8EAED / 强调 #2F6FCC）。它不是“把浅色反相”，所有卡片、
+    #: 状态条和 key 卡都有各自的可读前景色，见 `_build_palette()`。
+    "edge_dark": dict(
+        zh="Edge 深色", en="Edge Dark",
+        page="#202124", surface="#292A2D", alt="#35363A",
+        ink="#E8EAED", muted="#9AA0A6", line="#3C4043",
+        accent="#2F6FCC", accent_dark="#255BA8", on_accent="#FFFFFF",
+        secondary="#8AB4F8", on_secondary="#0B1220",
+        danger="#F28B82", on_danger="#3A0908",
+    ),
 }
 
 
@@ -298,9 +310,9 @@ def _blend_hex(first: str, second: str, amount: float) -> str:
 
 def _build_palette(spec: dict) -> dict:
     """
-    把 9 套主题的“核心色”展开成完整语义色板。
+    把当前主题的“核心色”展开成完整语义色板。
 
-    卡片颜色不写死 9 份：媒体/AI/MCP/行为/主动搭子都从主色或次色混出淡底，
+    卡片颜色不写死每个主题一份：媒体/AI/MCP/行为/主动搭子都从主色或次色混出淡底，
     接入状态用固定的绿/琥珀语义，KEY 用固定的琥珀语义。这样换主题时
     卡片仍保留各自的栏目锚点，又不会把 27 张卡写成 27 份重复代码。
     """
@@ -317,6 +329,12 @@ def _build_palette(spec: dict) -> dict:
     on_secondary = spec["on_secondary"]
     danger = spec["danger"]
     on_danger = spec["on_danger"]
+    #: 深色页面的派生色要单独抬高状态文字的亮度；否则固定深绿/深棕
+    #: 会落在深色卡片上，看起来像“没接上”或者直接糊掉。
+    try:
+        dark = sum(int(page[i:i + 2], 16) for i in (1, 3, 5)) < 384
+    except (TypeError, ValueError):
+        dark = False
     hover = _blend_hex(surface, accent, 0.10)
     select = _blend_hex(surface, accent, 0.18)
     card_muted = _blend_hex(muted, ink, 0.30)
@@ -325,19 +343,19 @@ def _build_palette(spec: dict) -> dict:
     media_border = _blend_hex(surface, accent, 0.26)
     ai_bg = _blend_hex(surface, secondary, 0.09)
     ai_border = _blend_hex(surface, secondary, 0.26)
-    ok_bg = _blend_hex(surface, "#2F7D4E", 0.12)
-    ok_fg = "#1F5A39"
-    ok_border = _blend_hex(surface, "#2F7D4E", 0.32)
-    warn_bg = _blend_hex(surface, "#B7791F", 0.13)
-    warn_fg = "#6E4308"
-    warn_border = _blend_hex(surface, "#B7791F", 0.34)
-    key_bg = _blend_hex(surface, "#C9973A", 0.12)
-    key_line = _blend_hex(surface, "#B7791F", 0.30)
+    ok_bg = _blend_hex(surface, "#2F7D4E", 0.24 if dark else 0.12)
+    ok_fg = "#9BD6AE" if dark else "#1F5A39"
+    ok_border = _blend_hex(surface, "#2F7D4E", 0.42 if dark else 0.32)
+    warn_bg = _blend_hex(surface, "#B7791F", 0.26 if dark else 0.13)
+    warn_fg = "#F5C26B" if dark else "#6E4308"
+    warn_border = _blend_hex(surface, "#B7791F", 0.45 if dark else 0.34)
+    key_bg = _blend_hex(surface, "#C9973A", 0.24 if dark else 0.12)
+    key_line = _blend_hex(surface, "#B7791F", 0.45 if dark else 0.30)
     workspace_border = _blend_hex(ink, surface, 0.42)
-    behavior_bg = _blend_hex(surface, "#2F7D4E", 0.09)
-    behavior_border = _blend_hex(surface, "#2F7D4E", 0.30)
-    proactive_bg = _blend_hex(surface, "#6B4FA8", 0.10)
-    proactive_border = _blend_hex(surface, "#6B4FA8", 0.30)
+    behavior_bg = _blend_hex(surface, "#2F7D4E", 0.18 if dark else 0.09)
+    behavior_border = _blend_hex(surface, "#2F7D4E", 0.40 if dark else 0.30)
+    proactive_bg = _blend_hex(surface, "#6B4FA8", 0.20 if dark else 0.10)
+    proactive_border = _blend_hex(surface, "#6B4FA8", 0.42 if dark else 0.30)
     return {
         "UI_BG": page,
         "UI_SURFACE": surface,
@@ -353,10 +371,10 @@ def _build_palette(spec: dict) -> dict:
         "UI_HOVER_BG": hover,
         "UI_SELECT_BG": select,
         "UI_SELECT_FG": ink,
-        "UI_OK": "#2F7D4E",
-        "UI_WARN": "#A86412",
+        "UI_OK": "#7BC79A" if dark else "#2F7D4E",
+        "UI_WARN": "#F5C26B" if dark else "#A86412",
         "UI_DANGER": danger,
-        "UI_PURPLE": "#5E4699",
+        "UI_PURPLE": "#C4B1FF" if dark else "#5E4699",
         "UI_HEADING": _blend_hex(ink, surface, 0.30),
         "UI_PLACEHOLDER": muted,
         "UI_MEDIA_BTN_BG": accent,
@@ -379,15 +397,21 @@ def _build_palette(spec: dict) -> dict:
                     "fg": ink, "muted": card_muted, "border": ai_border,
                     "accent": mcp_accent, "code_bg": surface,
                     "code_fg": ink},
-            "key": {"bg": key_bg, "fg": "#5B3D12", "muted": "#7A6240",
-                    "border": "#B7791F", "accent": "#9A6A00",
-                    "warn": danger, "state": "#8A5A00"},
+            "key": {"bg": key_bg,
+                    "fg": "#F3D19B" if dark else "#5B3D12",
+                    "muted": "#D6B77A" if dark else "#7A6240",
+                    "border": "#8C6A2A" if dark else "#B7791F",
+                    "accent": "#E8C06A" if dark else "#9A6A00",
+                    "warn": "#FFB4AB" if dark else danger,
+                    "state": "#F0C36A" if dark else "#8A5A00"},
             "workspace": {"bg": alt, "fg": ink, "muted": card_muted,
                           "border": workspace_border, "accent": muted},
             "behavior": {"bg": behavior_bg, "fg": ink, "muted": card_muted,
-                         "border": behavior_border, "accent": "#2F7D4E"},
+                         "border": behavior_border,
+                         "accent": "#7BC79A" if dark else "#2F7D4E"},
             "proactive": {"bg": proactive_bg, "fg": ink, "muted": card_muted,
-                          "border": proactive_border, "accent": "#5E4699"},
+                          "border": proactive_border,
+                          "accent": "#C4B1FF" if dark else "#5E4699"},
         },
     }
 
@@ -398,15 +422,16 @@ _THEME_PALETTES = {key: _build_palette(spec)
 
 def normalize_theme_mode(mode) -> str:
     """
-    只认 9 套设计主题；旧设置里的 light / dark / system 一律回到默认。
+    只认当前设计主题；旧 light/auto/system 回到默认，旧 dark 回到 Edge 深色。
 
-    2026-10-21 用户决议：删掉旧的普通/深色两套，改用以塞壬唱片封面为参考
-    的 9 套设计。旧值不能把启动卡死，所以统一迁移到默认的「晴日天绿」。
+    2026-10-22 用户要求补一套 Edge 深色，所以旧的 `dark` 不再一律丢回
+    浅色默认：它能映射到真正可读的深色色板；坏值仍安全回到晴日天绿。
     """
     value = str(mode or "").strip().lower()
     aliases = {"normal": THEME_DEFAULT, "white": THEME_DEFAULT,
                "light": THEME_DEFAULT, "auto": THEME_DEFAULT,
-               "system": THEME_DEFAULT, "dark": THEME_DEFAULT}
+               "system": THEME_DEFAULT, "dark": "edge_dark",
+               "black": "edge_dark", "night": "edge_dark"}
     value = aliases.get(value, value)
     return value if value in _THEME_SPECS else THEME_DEFAULT
 
@@ -462,9 +487,9 @@ def set_dark_title_bar(widget, dark: bool | None = None) -> None:
     """
     让 Windows 原生标题栏跟随应用深浅色（Win10 1809+ / Win11）。
 
-    9 套设计主题目前都是浅色页面，所以标题栏按页面亮度自动走浅色；
-    显式传 dark 的调用仍尊重参数。DWM 属性号旧版是 19、新版是 20，
-    两个都试，失败就静默保持系统默认。
+    10 套设计主题里有 9 套浅色、1 套 Edge 深色，标题栏按页面亮度自动
+    走浅色或深色；显式传 dark 的调用仍尊重参数。DWM 属性号旧版是 19、
+    新版是 20，两个都试，失败就静默保持系统默认。
 
     **映射时再设一次**：Toplevel 刚创建、还没映射时，DWM 可能忽略这个属性。
     用 `<Map>` 而不是 `after` 重试，窗口销毁时 Tk 会一起回收这个绑定，
@@ -491,6 +516,26 @@ def set_dark_title_bar(widget, dark: bool | None = None) -> None:
                         break
                 except Exception:
                     continue
+            if want:
+                # Win11 的沉浸式深色属性在部分远程/主题环境下只改文字色，
+                # caption 仍是白的。再显式给标题栏和标题文字上色。
+                try:
+                    def _colorref(color: str) -> int:
+                        raw = str(color).lstrip("#")
+                        r = int(raw[0:2], 16)
+                        g = int(raw[2:4], 16)
+                        b = int(raw[4:6], 16)
+                        return r | (g << 8) | (b << 16)
+                    for attr, color in ((35, UI_BG), (36, UI_INK)):
+                        ref = ctypes.c_int(_colorref(color))
+                        try:
+                            dwm.DwmSetWindowAttribute(
+                                core.w.HWND(hwnd), attr, ctypes.byref(ref),
+                                ctypes.sizeof(ref))
+                        except Exception:
+                            pass
+                except Exception:
+                    pass
     except Exception:
         pass
     try:
@@ -2223,6 +2268,281 @@ class RoundedBadge(tk.Canvas):
         except Exception:
             pass
         self._draw()
+
+
+class ToggleSwitch(tk.Canvas):
+    """
+    Edge 风格的开关：胶囊轨道 + 圆形滑块，打开时滑到右侧。
+
+    设置里的布尔项统一用它，不再画“实心圆点”。颜色仍遵守上一轮的两组：
+    普通项红色、启动/关闭黑色；深色界面下给黑色轨道补一圈浅边，
+    否则会和页面糊在一起。
+    """
+
+    def __init__(self, parent, variable, *, command=None,
+                 variant: str = "normal", width: int = 42, height: int = 22,
+                 bg: str | None = None, state: str = "normal") -> None:
+        self._var = variable
+        self._command = command
+        self._variant = str(variant or "normal")
+        self._w = max(36, int(width))
+        self._h = max(20, int(height))
+        self._bg = bg if bg is not None else _container_bg(parent)
+        self._state = str(state or "normal")
+        self._hover = False
+        self._trace = self._var.trace_add("write", self._on_var)
+        super().__init__(parent, width=self._w, height=self._h, bg=self._bg,
+                         bd=0, highlightthickness=0, takefocus=1,
+                         cursor="hand2")
+        self.bind("<Configure>", lambda _e: self._draw(), add="+")
+        self.bind("<Button-1>", self._on_click, add="+")
+        self.bind("<Return>", lambda _e: self.invoke(), add="+")
+        self.bind("<space>", lambda _e: self.invoke(), add="+")
+        self.bind("<Enter>", lambda _e: self._set_hover(True), add="+")
+        self.bind("<Leave>", lambda _e: self._set_hover(False), add="+")
+        self.bind("<Destroy>", self._on_destroy, add="+")
+        self._draw()
+
+    def winfo_class(self):
+        # 语义上仍是勾选控件，测试和 i18n 遍历按 Checkbutton 处理。
+        return "Checkbutton"
+
+    def get(self) -> bool:
+        try:
+            return bool(self._var.get())
+        except Exception:
+            return False
+
+    def set(self, value: bool) -> None:
+        try:
+            self._var.set(bool(value))
+        except Exception:
+            pass
+
+    def invoke(self) -> None:
+        if self._state == "disabled":
+            return
+        try:
+            self._var.set(not bool(self._var.get()))
+        except Exception:
+            return
+        if callable(self._command):
+            try:
+                self._command()
+            except Exception:
+                pass
+
+    def configure(self, cnf=None, **kw):
+        state = kw.pop("state", None)
+        if state is not None:
+            self._state = str(state)
+            self.configure(cursor="arrow" if self._state == "disabled"
+                           else "hand2")
+            self._draw()
+        if cnf is not None:
+            return super().configure(cnf, **kw)
+        return super().configure(**kw)
+
+    def _on_click(self, _event=None) -> None:
+        self.focus_set()
+        self.invoke()
+
+    def _set_hover(self, hover: bool) -> None:
+        self._hover = bool(hover) and self._state != "disabled"
+        self._draw()
+
+    def _on_var(self, *_args) -> None:
+        try:
+            if self.winfo_exists():
+                self._draw()
+        except Exception:
+            pass
+
+    def _on_destroy(self, event=None) -> None:
+        if event is not None and getattr(event, "widget", None) is not self:
+            return
+        try:
+            self._var.trace_remove("write", self._trace)
+        except Exception:
+            pass
+
+    def _draw(self) -> None:
+        try:
+            if not self.winfo_exists():
+                return
+            w = max(2, int(self.winfo_width() or self._w))
+            h = max(2, int(self.winfo_height() or self._h))
+            self.delete("all")
+            dark = color_luminance(UI_BG) < 0.35
+            on = self.get()
+            disabled = self._state == "disabled"
+            if self._variant == "startup":
+                on_fill = "#101010"
+                on_outline = "#8A8A8A" if dark else "#000000"
+            else:
+                on_fill = "#D13438"
+                on_outline = "#8E1B10"
+            off_fill = mix_color(self._bg, UI_MUTED,
+                                 0.30 if dark else 0.24)
+            off_outline = mix_color(self._bg, UI_MUTED, 0.50 if dark else 0.34)
+            fill = on_fill if on else off_fill
+            outline = (on_outline if on else off_outline)
+            if disabled:
+                fill = mix_color(self._bg, UI_LINE, 0.55)
+                outline = mix_color(self._bg, UI_MUTED, 0.25)
+            track_h = max(14.0, h - 4.0)
+            y1 = (h - track_h) / 2.0
+            y2 = y1 + track_h
+            radius = track_h / 2.0
+            self.create_polygon(
+                RoundedButton._rounded_points(
+                    self, 1.5, y1, w - 1.5, y2, radius),
+                smooth=True, splinesteps=24, fill=fill,
+                outline=outline, width=1.3, tags=("toggle-track",))
+            knob_r = max(5.0, track_h / 2.0 - 2.2)
+            off_x = 1.5 + track_h / 2.0
+            on_x = w - 1.5 - track_h / 2.0
+            cx = on_x if on else off_x
+            cy = h / 2.0
+            knob = "#F7F7F7" if dark else "#FFFFFF"
+            if disabled:
+                knob = mix_color(UI_BG, UI_INK, 0.35)
+            self.create_oval(cx - knob_r + 0.7, cy - knob_r + 1.6,
+                             cx + knob_r + 0.7, cy + knob_r + 1.6,
+                             fill=mix_color(fill, "#000000", 0.28),
+                             outline="", tags=("toggle-knob-shadow",))
+            self.create_oval(cx - knob_r, cy - knob_r,
+                             cx + knob_r, cy + knob_r,
+                             fill=knob, outline="",
+                             tags=("toggle-knob",))
+        except Exception:
+            pass
+
+
+class EdgeScrollbar(tk.Canvas):
+    """
+    Edge 式细滚动条：只有需要滚动时才占 10px，内容装得下就完全收起。
+
+    原生 `ttk.Scrollbar` 的浅色轨道 + 上下箭头会像一条“空白竖条”
+    （用户 2026-10-22 圈出的就是窗口列表右侧这条）。这里自己画圆角滑块，
+    不需要滚动时 `grid_remove()`，从视觉上彻底消失。
+    """
+
+    def __init__(self, parent, command, *, width: int = 10,
+                 bg: str | None = None) -> None:
+        self._command = command
+        self._width = max(8, int(width))
+        self._bg = bg if bg is not None else _container_bg(parent)
+        self._first = 0.0
+        self._last = 1.0
+        self._visible = False
+        self._drag = False
+        self._drag_offset = 0.0
+        self._hover = False
+        super().__init__(parent, width=self._width, bg=self._bg,
+                         bd=0, highlightthickness=0, cursor="arrow")
+        self.bind("<Configure>", lambda _e: self._draw(), add="+")
+        self.bind("<Button-1>", self._on_press, add="+")
+        self.bind("<B1-Motion>", self._on_drag, add="+")
+        self.bind("<ButtonRelease-1>", self._on_release, add="+")
+        self.bind("<Enter>", lambda _e: self._set_hover(True), add="+")
+        self.bind("<Leave>", lambda _e: self._set_hover(False), add="+")
+
+    def set(self, first, last) -> None:
+        try:
+            a = max(0.0, min(1.0, float(first)))
+            b = max(a, min(1.0, float(last)))
+        except (TypeError, ValueError, tk.TclError):
+            return
+        self._first, self._last = a, b
+        if b - a >= 0.9995:
+            # 初始也由调用方 grid 进来；即使 _visible 还是 False，也必须收起。
+            try:
+                self.grid_remove()
+            except tk.TclError:
+                pass
+            self._visible = False
+            return
+        if not self._visible:
+            try:
+                self.grid()
+                self._visible = True
+            except tk.TclError:
+                return
+        self._draw()
+
+    def _set_hover(self, hover: bool) -> None:
+        self._hover = bool(hover)
+        self._draw()
+
+    def _thumb(self) -> tuple[float, float]:
+        h = max(2, int(self.winfo_height() or 2))
+        top = max(2.0, self._first * h)
+        bottom = min(h - 2.0, self._last * h)
+        if bottom - top < 24.0:
+            center = (top + bottom) / 2.0
+            top = max(2.0, center - 12.0)
+            bottom = min(h - 2.0, top + 24.0)
+            top = max(2.0, bottom - 24.0)
+        return top, bottom
+
+    def _draw(self) -> None:
+        try:
+            if not self.winfo_exists():
+                return
+            w = max(2, int(self.winfo_width() or self._width))
+            self.delete("all")
+            if not self._visible:
+                return
+            if self._hover or self._drag:
+                self.create_line(w - 2.0, 3, w - 2.0, self.winfo_height() - 3,
+                                 fill=mix_color(UI_BG, UI_LINE, 0.55),
+                                 width=2, capstyle="round")
+            top, bottom = self._thumb()
+            color = UI_ACCENT if (self._hover or self._drag) else mix_color(
+                UI_BG, UI_MUTED, 0.56)
+            x1, x2 = w / 2.0 - 3.0, w / 2.0 + 3.0
+            r = min(3.0, (bottom - top) / 2.0)
+            self.create_polygon(
+                RoundedButton._rounded_points(
+                    self, x1, top, x2, bottom, r),
+                smooth=True, splinesteps=18, fill=color, outline="",
+                tags=("scroll-thumb",))
+        except Exception:
+            pass
+
+    def _on_press(self, event) -> None:
+        if not self._visible:
+            return
+        top, bottom = self._thumb()
+        y = float(event.y)
+        self._drag = True
+        self.focus_set()
+        if top <= y <= bottom:
+            self._drag_offset = y - top
+        else:
+            self._drag_offset = (bottom - top) / 2.0
+            self._jump(y)
+        self._draw()
+
+    def _on_drag(self, event) -> None:
+        if self._drag:
+            self._jump(float(event.y))
+
+    def _on_release(self, _event=None) -> None:
+        self._drag = False
+        self._draw()
+
+    def _jump(self, y: float) -> None:
+        h = max(2.0, float(self.winfo_height() or 2))
+        top, bottom = self._thumb()
+        thumb_h = max(1.0, bottom - top)
+        target_top = max(0.0, min(h - thumb_h, y - self._drag_offset))
+        frac = target_top / max(1.0, h - thumb_h)
+        try:
+            self._command("moveto", max(0.0, min(1.0, frac)))
+        except Exception:
+            pass
 
 
 class RoundedSlider(tk.Canvas):
@@ -5225,7 +5545,7 @@ class _SettingsWindow:
         general_tab.columnconfigure(0, weight=1)
         self.nb.add(general_tab, text=i18n.pick("常规", "General"))
         canvas = tk.Canvas(general_tab, bg=UI_BG, highlightthickness=0)
-        scroll = ttk.Scrollbar(general_tab, orient="vertical", command=canvas.yview)
+        scroll = EdgeScrollbar(general_tab, command=canvas.yview, bg=UI_BG)
         canvas.configure(yscrollcommand=scroll.set)
         canvas.grid(row=0, column=0, sticky="nsew")
         scroll.grid(row=0, column=1, sticky="ns")
@@ -5353,10 +5673,10 @@ class _SettingsWindow:
 
     def _check_control(self, parent, variable, *, startup: bool = False,
                        command=None):
-        style = "Startup.TCheckbutton" if startup else "Settings.TCheckbutton"
-        return ttk.Checkbutton(parent, variable=variable, text="",
-                               style=style, command=command,
-                               takefocus=1)
+        # Edge 同款开关；普通项红色、启动/关闭黑色（深色主题下自动补浅边）。
+        return ToggleSwitch(parent, variable, command=command,
+                            variant="startup" if startup else "normal",
+                            bg=UI_SURFACE)
 
     def _check_row(self, parent, title: str, variable, *, desc: str = "",
                    startup: bool = False, command=None, first: bool = False):
@@ -6292,8 +6612,7 @@ class _AiUsagePanel:
         self.frame.rowconfigure(0, weight=1)
         self.frame.columnconfigure(0, weight=1)
         self.canvas = tk.Canvas(self.frame, bg=UI_BG, highlightthickness=0)
-        scroll = ttk.Scrollbar(self.frame, orient="vertical",
-                               command=self.canvas.yview)
+        scroll = EdgeScrollbar(self.frame, command=self.canvas.yview, bg=UI_BG)
         self.canvas.configure(yscrollcommand=scroll.set)
         self.canvas.grid(row=0, column=0, sticky="nsew")
         scroll.grid(row=0, column=1, sticky="ns")
@@ -6514,9 +6833,14 @@ class _AiUsagePanel:
         ttk.Button(bar, text="刷新", width=7,
                    command=self.refresh).pack(side="left", padx=(0, 6))
         self.exact_var = tk.BooleanVar(value=False)
-        ttk.Checkbutton(bar, text="MCP 结果精确分词",
-                        variable=self.exact_var,
-                        command=self.toggle_exact).pack(side="left", padx=(8, 0))
+        self.exact_toggle = ToggleSwitch(
+            bar, self.exact_var, command=self.toggle_exact, bg=UI_BG)
+        self.exact_toggle.pack(side="left", padx=(10, 5))
+        exact_label = tk.Label(bar, text="MCP 结果精确分词", font=UI_FONT,
+                               bg=UI_BG, fg=UI_INK, cursor="hand2")
+        exact_label.pack(side="left")
+        exact_label.bind("<Button-1>", lambda _e: self.exact_toggle.invoke(),
+                         add="+")
         ttk.Button(bar, text="打开数据目录", width=14,
                    command=self.reveal).pack(side="right")
         ttk.Button(bar, text="AI 助手…", width=9,
@@ -7390,9 +7714,9 @@ _GUIDE_CONTENT = {
                   "请求关闭是发关闭消息，程序可以先保存再退出；强制结束是直接终止，"
                   "未保存内容会丢。请求关闭超时后，底栏会出现「改为强制结束」。"),
             ("h", "设置与颜色"),
-            ("p", "界面颜色有 9 套设计主题：钴蓝电青、霓虹粉青、石墨信号、"
+            ("p", "界面颜色有 10 套设计主题：钴蓝电青、霓虹粉青、石墨信号、"
                   "青柠白昼、晴日天绿、暖阳橙绿、落日珊瑚、云白天蓝、"
-                  "山雪梅染。保存后立即生效；高亮卡、媒体键、勾选圆点和"
+                  "山雪梅染、Edge 深色。保存后立即生效；高亮卡、媒体键、开关和"
                   "状态条一起换，但按键的果冻回弹、圆角、阴影不变。"),
             ("p", "配色参考：鹰角网络《明日方舟》/ 塞壬唱片（Monster Siren）"
                   "专辑封面。仅作色彩研究，不代表官方合作或官方配色。"),
@@ -7497,9 +7821,9 @@ _GUIDE_CONTENT = {
                   "and unsaved work is lost. If the close request times out, a "
                   "“Force end” button appears in the bottom bar."),
             ("h", "Settings and color"),
-            ("p", "WinMon has nine light design themes. A theme applies immediately "
-                  "and changes colors only; the button spring, rounded corners, and "
-                  "shadows stay the same."),
+            ("p", "WinMon has ten design themes (nine light plus Edge Dark). A theme "
+                  "applies immediately and changes colors only; the button spring, "
+                  "rounded corners, and shadows stay the same."),
             ("p", "Settings → General → Window opacity defaults to 100% and stops at "
                   "45%, where the window edge is still visible and the app cannot "
                   "vanish. The main window, settings/history/AI windows, context menus, "
@@ -9732,7 +10056,11 @@ class WinMonApp:
         #: 用户 2026-10-21：主界面不再有「刷新列表」按钮 —— 右键窗口列表标题/表头刷新。
         self.window_header.bind("<Button-3>", self._show_window_header_menu)
         columns = ("act", "app", "title", "pid", "mem", "cpu", "state")
-        tv = ttk.Treeview(left, columns=columns, show="tree headings",
+        tree_holder = tk.Frame(left, bg=UI_BG)
+        tree_holder.grid(row=1, column=0, sticky="nsew")
+        tree_holder.rowconfigure(0, weight=1)
+        tree_holder.columnconfigure(0, weight=1)
+        tv = ttk.Treeview(tree_holder, columns=columns, show="tree headings",
                           selectmode="extended",
                           displaycolumns=("app", "title", "state"))
         self.tree = tv
@@ -9769,10 +10097,13 @@ class WinMonApp:
         tv.column("state", width=state_w, anchor="center", stretch=False,
                   minwidth=int(round(52 * side_scale)))
 
-        vs = ttk.Scrollbar(left, orient="vertical", command=tv.yview)
-        tv.configure(yscrollcommand=vs.set)
-        tv.grid(row=1, column=0, sticky="nsew")
-        vs.grid(row=1, column=1, sticky="ns")
+        #: 内容装得下时完全不占宽度；需要滚动才出现 10px 的圆角滑块。
+        #: 旧的 ttk.Scrollbar 在空列表时也会留下一条空白竖条（用户圈出的就是它）。
+        self.window_scroll = EdgeScrollbar(tree_holder, command=tv.yview,
+                                           bg=UI_SURFACE)
+        tv.configure(yscrollcommand=self.window_scroll.set)
+        tv.grid(row=0, column=0, sticky="nsew")
+        self.window_scroll.grid(row=0, column=1, sticky="ns")
         left.rowconfigure(1, weight=1)
         left.columnconfigure(0, weight=1)
 

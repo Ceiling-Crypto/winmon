@@ -1,14 +1,15 @@
 # -*- coding: utf-8 -*-
 """
-B35 —— 9 套设计主题与「设置」三合一。
+B35 —— 设计主题与「设置」三合一。
 
 用户 2026-10-21 的决定：
-  · 旧普通/深色两套删掉，改用 9 套设计主题；
+  · 旧普通/深色两套删掉，改用设计主题；
   · 只换颜色，按键的果冻回弹、圆角、阴影不动；
-  · 旧设置里的 light / dark / system 要安全迁移到默认主题；
+  · 旧设置里的 light / dark / system 要安全迁移；
+  · 2026-10-22 增加 Edge 深色，旧 dark 映射到它；
   · 窗口标题只叫 winmon1.0；关闭窗口与强制结束必须说清楚。
 
-这里守住可程序化的部分：9 套色板、旧值迁移、三标签页、媒体按键样式、
+这里守住可程序化的部分：10 套色板、旧值迁移、三标签页、媒体按键样式、
 实时重建、标题文案、两个操作的解释。
 """
 from __future__ import annotations
@@ -31,9 +32,9 @@ class TestThemeSelection(unittest.TestCase):
         winmon.apply_theme("sunlit")
         i18n.set_language("zh")
 
-    def test_nine_design_themes_and_default(self):
+    def test_design_themes_and_default(self):
         import winmon
-        self.assertEqual(len(winmon.THEME_ORDER), 9)
+        self.assertEqual(len(winmon.THEME_ORDER), 10)
         self.assertEqual(winmon.THEME_DEFAULT, "sunlit")
         self.assertEqual(winmon.apply_theme("sunlit"), "sunlit")
         self.assertEqual(winmon.THEME_PREFERENCE, "sunlit")
@@ -44,13 +45,18 @@ class TestThemeSelection(unittest.TestCase):
             [slug for slug, _label in winmon.theme_choices()],
             list(winmon.THEME_ORDER))
         self.assertEqual(len({slug for slug, _label in winmon.theme_choices()}),
-                         9, "9 个 slug 不能重复")
+                         10, "主题 slug 不能重复")
+        self.assertEqual(winmon.apply_theme("edge_dark"), "edge_dark")
+        self.assertEqual(winmon.UI_BG, "#202124")
+        self.assertEqual(winmon.UI_ACCENT, "#2F6FCC")
 
     def test_normalize_accepts_aliases_and_rejects_junk(self):
         import winmon
-        for old in ("normal", "white", "light", "auto", "system", "dark"):
+        for old in ("normal", "white", "light", "auto", "system"):
             self.assertEqual(winmon.normalize_theme_mode(old), "sunlit",
                              f"旧值 {old} 应迁移到默认主题")
+        for old in ("dark", "black", "night"):
+            self.assertEqual(winmon.normalize_theme_mode(old), "edge_dark")
         self.assertEqual(winmon.normalize_theme_mode("snow"), "snow")
         self.assertEqual(winmon.normalize_theme_mode("cloud"), "cloud")
         self.assertEqual(winmon.normalize_theme_mode("blue"), "sunlit")
@@ -58,15 +64,16 @@ class TestThemeSelection(unittest.TestCase):
         self.assertFalse(hasattr(winmon, "THEME_SYSTEM"))
         self.assertFalse(hasattr(winmon, "detect_system_theme"))
 
-    def test_old_settings_values_migrate_to_default(self):
+    def test_old_settings_values_migrate_safely(self):
         """旧设置里可能还存着 light / dark / system；不能卡启动。"""
         import winmon
         with tempfile.TemporaryDirectory(prefix="winmon-b35-legacy-") as tmp:
             path = os.path.join(tmp, "settings.json")
-            for old in ("system", "dark", "light"):
+            for old, want in (("system", "sunlit"), ("light", "sunlit"),
+                              ("dark", "edge_dark")):
                 with open(path, "w", encoding="utf-8") as fh:
                     fh.write('{"theme": "%s"}' % old)
-                self.assertEqual(winmon.read_theme_mode(path), "sunlit")
+                self.assertEqual(winmon.read_theme_mode(path), want)
         self.assertEqual(winmon.apply_theme("system"), "sunlit")
         self.assertEqual(winmon.THEME_PREFERENCE, "sunlit")
         self.assertEqual(winmon.UI_BG, "#FAFDF6")
@@ -209,7 +216,7 @@ class TestSettingsMergedWindow(unittest.TestCase):
         dlg = self._open()
         labels = [label for _slug, label in self.winmon.theme_choices()]
         self.assertEqual(list(dlg._theme_by_label), labels,
-                         "设置里应列出 9 套设计主题")
+                         "设置里应列出全部设计主题")
         self.assertEqual(dlg.theme.get(), "晴日天绿")
         dlg.theme.set("山雪梅染")
         with mock.patch.object(self.winmon.core, "get_autostart",

@@ -72,12 +72,17 @@ class TestCardPalettes(unittest.TestCase):
         for theme in winmon.THEME_ORDER:
             winmon.apply_theme(theme)
             page = winmon.UI_BG
+            dark = luminance(page) < 0.35
             for key in CARD_KEYS:
                 card = winmon.UI_CARDS[key]
                 self.assertNotEqual(card["bg"], page,
                                     f"{theme}/{key} 卡和页面同色")
-                self.assertGreater(luminance(card["bg"]), 0.7,
-                                   f"{theme}/{key} 卡应是浅色高亮卡")
+                if dark:
+                    self.assertLess(luminance(card["bg"]), 0.35,
+                                    f"{theme}/{key} 深色卡不应发白")
+                else:
+                    self.assertGreater(luminance(card["bg"]), 0.7,
+                                       f"{theme}/{key} 卡应是浅色高亮卡")
                 for field in ("fg", "muted", "state", "warn"):
                     if card.get(field):
                         self.assertGreaterEqual(

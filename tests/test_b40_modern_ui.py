@@ -28,11 +28,11 @@ class TestModernPaletteAndType(unittest.TestCase):
         import winmon
         winmon.apply_theme("sunlit")
 
-    def test_nine_design_themes_and_default(self):
+    def test_design_themes_and_default(self):
         import winmon
         winmon.apply_theme("sunlit")
         self.assertEqual(winmon.THEME_DEFAULT, "sunlit")
-        self.assertEqual(len(winmon.THEME_ORDER), 9)
+        self.assertEqual(len(winmon.THEME_ORDER), 10)
         self.assertEqual(winmon.UI_BG, "#FAFDF6")
         self.assertEqual(winmon.UI_INK, "#1B2A1F")
         self.assertEqual(winmon.UI_ACCENT, "#2F7F55")
