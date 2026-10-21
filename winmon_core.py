@@ -2974,7 +2974,9 @@ def launch_item(item: ProgramItem, as_admin: bool = False,
     if already_background:
         # 后台进程已经在，但刚才没有可见窗口：不等“进程存在”（它一直存在），
         # 只等一个**新的可见顶层窗口**。这是 Edge 场景的关键判据。
-        hwnd = _wait_window_for_target(target, max(2.5, settle + 1.0), procs)
+        # 等待从 3 秒放宽到 4 秒：冷启动 + 扩展加载时首个窗口可能晚于 3 秒，
+        # 过早走 explorer 兜底会再请求一次启动，用户可能看到多余标签页。
+        hwnd = _wait_window_for_target(target, max(4.0, settle + 2.0), procs)
         if hwnd:
             return True, f"{item.name} 已在后台运行，已打开窗口"
         ok, msg = start_via_shell(target, args, workdir)
@@ -3013,7 +3015,8 @@ def _wait_window_for_target(path: str, seconds: float,
 
     和 `_wait_running()` 的区别：后台常驻进程（Edge 启动预加载、Steam 托盘）
     一直有进程，所以“进程出现了”不能证明“窗口打开了”。这里只认窗口。
-    每次重查窗口列表，但进程快照复用调用方传进来的那份（窗口进程不会换 pid）。
+    每次重查窗口列表；调用方传进来的进程快照只当提示，窗口若属于快照里
+    没有的新 pid，`_find_window_for_target()` 会现查完整路径再判断。
     """
     import time as _time
     snapshot = procs if procs is not None else snapshot_processes()
@@ -5025,7 +5028,10 @@ def _decode_helper_output(raw: bytes) -> str:
 
     所以这里按"哪种解出来像正经 JSON"来判断，顺序是：
       1. **UTF-8**（严格）—— 如果哪天脚本改成显式输出 UTF-8，这条会先命中；
-      2. **系统 ANSI 代码页**（`locale.getpreferredencoding()`，中文 Windows 上是 cp936）；
+      2. **系统 ANSI 代码页**（中文 Windows 上是 cp936）。注意不能用
+         `locale.getpreferredencoding()`：Python 以 `-X utf8` / `PYTHONUTF8=1`
+         启动时它返回 utf-8，GBK 兜底会静默失效（测试里已经复现）。
+         `locale.getencoding()` 在 UTF-8 模式下仍返回系统 ANSI 代码页；
       3. 都不行就 UTF-8 + `replace`（宁可留个问号，也不要抛异常）。
 
     这样修的好处：**不依赖 `chcp`**（那个只影响它自己那个控制台，管不到新起的进程），
@@ -5034,7 +5040,23 @@ def _decode_helper_output(raw: bytes) -> str:
     data = raw or b""
     if not data:
         return ""
-    for enc in ("utf-8", locale.getpreferredencoding(False) or "utf-8"):
+    try:
+        ansi = locale.getencoding()
+    except AttributeError:                       # Python < 3.11
+        ansi = locale.getpreferredencoding(False) or "utf-8"
+    if ansi.lower().replace("-", "").replace("_", "") in ("utf8", "utf"):
+        # 有些 3.10 及更早版本没有 getencoding()，或者发行版仍把 UTF-8 模式
+        # 报成系统编码；直接问 Windows 的 ANSI 代码页（本机 = 936）。
+        try:
+            acp = int(ctypes.windll.kernel32.GetACP())
+            if acp:
+                ansi = f"cp{acp}"
+        except Exception:
+            pass
+    encodings = ["utf-8"]
+    if ansi and ansi.lower().replace("-", "").replace("_", "") not in ("utf8", "utf"):
+        encodings.append(ansi)
+    for enc in encodings:
         try:
             text = data.decode(enc)
         except (UnicodeDecodeError, LookupError):

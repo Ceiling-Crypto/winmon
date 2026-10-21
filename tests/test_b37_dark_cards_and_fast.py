@@ -100,25 +100,16 @@ class TestCardPalettes(unittest.TestCase):
                     contrast(card[f"{prefix}_fg"], card[f"{prefix}_bg"]), 4.5,
                     f"{theme}/{prefix} 接入状态条对比度不足")
 
-    def test_cards_are_dark_glass_and_change_between_themes(self):
+    def test_light_cards_stay_light_and_dark_cards_change(self):
         import winmon
         winmon.apply_theme("light")
         light = {key: winmon.UI_CARDS[key]["bg"] for key in CARD_KEYS}
-        light_page = winmon.UI_BG
         winmon.apply_theme("dark")
-        dark_page = winmon.UI_BG
-        self.assertNotEqual(light_page, dark_page,
-                            "两套主题必须有不同的页面底色")
         for key, old_bg in light.items():
             self.assertNotEqual(winmon.UI_CARDS[key]["bg"], old_bg,
                                 f"{key} 卡在深色主题下没有换底色")
-            self.assertLess(luminance(old_bg), 0.25,
-                            f"{key} 卡的默认版本也应是深蓝玻璃，不是浅色补丁")
-            self.assertGreater(luminance(old_bg), luminance(light_page),
-                               f"{key} 卡必须比页面亮一档，否则没有卡片层次")
-            self.assertGreater(luminance(winmon.UI_CARDS[key]["bg"]),
-                               luminance(dark_page),
-                               f"{key} 卡在深色主题下也要比纯黑页亮")
+            self.assertGreater(luminance(old_bg), 0.7,
+                               f"{key} 卡的浅色版本不应变暗")
 
 
 class _Case:

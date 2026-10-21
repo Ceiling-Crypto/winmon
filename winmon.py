@@ -14,7 +14,7 @@ WinMon —— Windows 桌面工具（图形界面 + 命令行）
 7. AI 工作伴侣：识别当前 AI、用量预算、MCP / API / 纯本地
 8. 操作历史：谁在什么时候被关闭/结束了，可复制、可导出
 9. 前台窗口实时高亮、置顶窗口标记、程序图标、隐藏窗口过滤
-10. 颜色可选普通（克莱因蓝）/ 深色（午夜蓝）；字号 9–12
+10. 颜色可选普通（白底）/ 深色（黑底）；字号 9–12
 
 命令行
 ------
@@ -174,7 +174,7 @@ THEME_RESOLVED = THEME_DEFAULT
 
 # ---- 界面透明度（2026-10-21）----
 # 用户要求：默认 100%，可调，但下限只到“窗口边缘淡下去”为止，不允许整窗消失。
-# 45% 下深蓝底仍能看清文字与边界；再低就开始影响可用性，所以把它定为硬下限。
+# 45% 下白底/深色底都仍能看清文字与边界；再低就开始影响可用性，所以定为硬下限。
 UI_OPACITY_DEFAULT = 100
 UI_OPACITY_MIN = 45
 UI_OPACITY_MAX = 100
@@ -293,13 +293,13 @@ _THEME_PALETTES = {
 #: 想回退时只要把 `_THEME_PALETTES = _THEME_PALETTES_LEGACY` 一行换回来。
 _THEME_PALETTES_LEGACY = _THEME_PALETTES
 
-#: 现代色板：整窗是**克莱因蓝玻璃**（#061B4E → #102F78 三层明度），
-#: 强调色用亮克莱因蓝 #4D74FF；高亮卡是比页面亮一档的蓝玻璃，不再是浅色补丁。
-#: 媒体卡/媒体键全部改为蓝色系，不再使用绿色；只有“已连接/成功”这类语义状态
-#: 保留绿色，避免把状态色和栏目色混在一起。
+#: 实验色板（2026-10-21 暂停启用）：整窗克莱因蓝玻璃。
+#: 用户实际看过之后认为“比白底还差”，已明确要求颜色改回去，所以默认重新启用
+#: `_THEME_PALETTES_LEGACY`。这套蓝板不删除，留作后续配色实验；不要把它当作
+#: 当前产品外观，也不要在文档/截图里继续宣称默认是蓝底。
 _THEME_PALETTES_MODERN = {
     THEME_LIGHT: {
-        #: 2026-10-21 用户决议：整窗不再是白底，而是**克莱因蓝玻璃**。
+        #: 实验色板（当时方案，现已停用）：整窗不再是白底，而是克莱因蓝玻璃。
         #: 背景/浮片/卡片是同一蓝色系的三个明度层，靠亮边与暗影制造“半透明”
         #: 的错觉；真正整窗 alpha 仍由设置里的透明度控制。
         "UI_BG": "#04122f",
@@ -401,17 +401,18 @@ _THEME_PALETTES_MODERN = {
     },
 }
 
-#: 当前生效的新色板；`_THEME_PALETTES_LEGACY` 是用户决议前的回退路径。
-_THEME_PALETTES = _THEME_PALETTES_MODERN
+#: 当前生效的色板：2026-10-21 用户否决全窗蓝，恢复旧白底。
+#: `_THEME_PALETTES_MODERN` 仅作为实验色板保留，不再默认启用。
+_THEME_PALETTES = _THEME_PALETTES_LEGACY
 
 _THEME_LABELS = {
     "zh": (
-        (THEME_LIGHT, "普通（克莱因蓝）"),
-        (THEME_DARK, "深色（午夜蓝）"),
+        (THEME_LIGHT, "普通（白底）"),
+        (THEME_DARK, "深色（黑底）"),
     ),
     "en": (
-        (THEME_LIGHT, "Light (Klein blue)"),
-        (THEME_DARK, "Dark (midnight)"),
+        (THEME_LIGHT, "Light"),
+        (THEME_DARK, "Dark"),
     ),
 }
 
@@ -482,8 +483,8 @@ def set_dark_title_bar(widget, dark: bool | None = None) -> None:
     的收尾噪音。
     """
     if dark is None:
-        # 2026-10-21 起默认主题也是克莱因蓝深底，不能再按 light/dark 判断；
-        # 直接用页面亮度决定标题栏明暗，换任何色板都不会出现白标题栏。
+        # 2026-10-21：默认主题恢复白底；仍按页面亮度决定标题栏明暗，
+        # 这样以后换任何色板都不会出现白标题栏。
         try:
             want = color_luminance(UI_BG) < 0.55
         except Exception:
@@ -1190,6 +1191,11 @@ class _RowTip:
         if not row or row != self._row:
             return
         try:
+            if not self.widget.winfo_exists():
+                return
+        except tk.TclError:
+            return
+        try:
             text = self.text_for(row)
         except Exception:
             text = ""
@@ -1417,6 +1423,27 @@ class RoundedButton(tk.Canvas):
         # 语义上它就是一个按钮；测试里的“找按钮”遍历依赖这一点。
         return "Button"
 
+    def cget(self, key):
+        if str(key) == "text":
+            return self._text
+        return super().cget(key)
+
+    def configure(self, cnf=None, **kw):
+        # 让 i18n.translate_widgets() 能像普通按钮一样读写文字；
+        # 不补这个接口，英文界面里自绘按钮仍会停在中文。
+        text = kw.pop("text", None)
+        if text is not None:
+            self._text = str(text)
+            if self._fixed_width is None:
+                try:
+                    super().configure(width=self._natural_width())
+                except Exception:
+                    pass
+            self._draw()
+        if cnf is not None:
+            return super().configure(cnf, **kw)
+        return super().configure(**kw)
+
     @staticmethod
     def _parent_bg(parent) -> str:
         for key in ("bg", "background"):
@@ -1442,13 +1469,35 @@ class RoundedButton(tk.Canvas):
             text_w = len(self._text) * 10
         return max(44, text_w + self._padx * 2 + (12 if self._lead else 0))
 
+    def _refresh_font(self) -> None:
+        """
+        字号实时变化时重设 Canvas 里的文字和自然宽度。
+
+        Canvas 没有标准 `font` 选项，`apply_font_size_live()` 的通用遍历改不到
+        这里的文字；不补这个钩子，用户把字号从 9 调到 12 后，主界面的圆角
+        按钮仍会保持 9 号字，直到重启或换主题重建。
+        """
+        self._font = UI_FONT
+        try:
+            self._font_obj = tkfont.Font(root=self, font=self._font)
+        except Exception:
+            return
+        try:
+            if not self._req_height:
+                super().configure(height=self._measure_height())
+            if self._fixed_width is None:
+                super().configure(width=self._natural_width())
+        except Exception:
+            pass
+        self._draw()
+
     def _configure_palette(self) -> None:
         """
         按钮配色：不再画“灰色方块 + 边框”，而是近白/深色浮片 + 柔和投影。
 
-        强调按钮用克莱因蓝；媒体键也是蓝紫玻璃（不再用深青）；次级按钮
-        只在悬停时浮起半档，靠投影和位移表达层次，符合“边框换成大范围
-        低透明阴影”的要求。
+        强调按钮用界面强调色；媒体键默认仍是深青绿（随旧色板恢复）；
+        次级按钮只在悬停时浮起半档，靠投影和位移表达层次，符合“边框换成
+        大范围低透明阴影”的要求。
         """
         kind = self._kind
         light_bg = color_luminance(self._bg) > 0.55
@@ -1473,7 +1522,7 @@ class RoundedButton(tk.Canvas):
                 self._hover_fill = "#ffffff"
                 self._pressed_fill = mix_color(UI_SELECT_BG, "#ffffff", 0.18)
             else:
-                # 深色底上不要“白块”：用一层淡蓝玻璃，和面板拉开一档，
+                # 深色底上不要“白块”：用一层浅浮片色，和面板拉开一档，
                 # 再把阴影压到下面，形成玻璃片浮起的感觉。
                 self._fill = mix_color(mix_color(self._bg, UI_ACCENT, 0.12),
                                        "#ffffff", 0.18)
@@ -1484,7 +1533,7 @@ class RoundedButton(tk.Canvas):
             self._shadow_tint = UI_ACCENT
         elif kind == "ghost":
             # 不是“透明到看不见”：给一层和页面只差半档的薄底 + 柔影，
-            # 深蓝底上仍能看出可点的胶囊，但不会像旧版灰块那样抢视线。
+            # 深色底上仍能看出可点的胶囊，但不会像旧版灰块那样抢视线。
             self._fill = mix_color(self._bg, UI_SURFACE_ALT,
                                    0.90 if light_bg else 0.85)
             self._hover_fill = mix_color(self._bg, "#ffffff",
@@ -1514,7 +1563,7 @@ class RoundedButton(tk.Canvas):
         base = self._bg
         tint = self._shadow_tint or "#0b1020"
         if color_luminance(base) < 0.30:
-            # 深蓝玻璃上不要白边光晕（会像描边）；用更深的墨蓝做“下沉”阴影。
+            # 深色玻璃上不要白边光晕（会像描边）；用更深的墨色做“下沉”阴影。
             tint = "#000000"
             strength *= 1.10
         return mix_color(base, tint, max(0.0, min(0.34, strength)))
@@ -1585,7 +1634,7 @@ class RoundedButton(tk.Canvas):
                              (x2 - x1) / 2.0))
 
             # 多层低透明投影：越靠外越淡，且所有层都在 shadow_room 里，
-            # 不再被 Canvas 底边裁成一条硬线。深蓝底上用墨色下沉，靠亮边提气。
+            # 不再被 Canvas 底边裁成一条硬线。深色底上用墨色下沉，靠亮边提气。
             if not disabled:
                 layers = ((room - 0.4, 1.9, 0.030),
                           (room - 1.0, 1.6, 0.042),
@@ -1596,7 +1645,7 @@ class RoundedButton(tk.Canvas):
                     grow = max(0.4, grow)
                     if self._kind == "rail":
                         # 栏内按钮的“果冻”要保留，但阴影改成更深、更柔的下沉，
-                        # 不再用亮描边勾轮廓；这样在蓝玻璃面板上不会显得脏。
+                        # 不再用亮描边勾轮廓；这样在浮片面板上不会显得脏。
                         strength *= 2.20
                     self.create_polygon(
                         self._rounded_points(
@@ -1917,7 +1966,7 @@ class RoundedButton(tk.Canvas):
 # ============================================================================
 
 def _container_bg(parent) -> str:
-    """读父容器底色；读不到就按页面品牌蓝处理。"""
+    """读父容器底色；读不到就按当前页面底色处理。"""
     for key in ("bg", "background"):
         try:
             value = str(parent.cget(key))
@@ -1963,7 +2012,7 @@ class SoftPanel(tk.Frame):
 
     def _shadow_color(self, strength: float) -> str:
         lum = color_luminance(self._panel_bg)
-        # 深蓝页面上用更深的墨蓝下沉，不再铺白色光晕（那会像硬描边）。
+        # 浅色页面上用更深的墨色下沉，不再铺白色光晕（那会像硬描边）。
         tint = "#0b1020" if lum > 0.35 else "#000000"
         if lum < 0.30:
             strength *= 0.95
@@ -2043,6 +2092,20 @@ class RoundedBadge(tk.Canvas):
         except Exception:
             pass
 
+    def cget(self, key):
+        if str(key) == "text":
+            return self._text
+        return super().cget(key)
+
+    def configure(self, cnf=None, **kw):
+        text = kw.pop("text", None)
+        if text is not None:
+            self._text = str(text)
+            self._refresh_font()
+        if cnf is not None:
+            return super().configure(cnf, **kw)
+        return super().configure(**kw)
+
     def _refresh_font(self) -> None:
         """字号设置变化时重算标签宽度；Canvas 没有标准 font 选项。"""
         self._font = SMALL_BOLD_FONT
@@ -2111,30 +2174,71 @@ class TabStrip(tk.Canvas):
         self.configure(height=height)
         self._redraw()
 
+    def retranslate(self) -> None:
+        """
+        从 Notebook 重新读取标签文字。
+
+        `i18n.translate_widgets()` 能翻原生 Notebook 的 tab，但 `TabStrip._labels`
+        是构造时的快照；不重新同步，英文界面顶部仍会显示中文胶囊。
+        """
+        try:
+            labels = [self.notebook.tab(i, "text")
+                      for i in range(len(self.notebook.tabs()))]
+        except Exception:
+            return
+        if labels and labels != self._labels:
+            self._labels = [str(x) for x in labels]
+            self._redraw()
+
     def _layout(self):
         width = max(1, int(self.winfo_width()))
         height = max(2, int(self.winfo_height()))
         lane_h = max(24, height - 6)
+        n = max(1, len(self._labels))
         gap = 6
         padx = 18
-        widths = []
-        for label in self._labels:
-            widths.append(max(64, self._bold.measure(label) + padx * 2))
-        total = sum(widths) + gap * max(0, len(widths) - 1)
-        limit = max(80, width - 4)
-        if total > limit:
-            padx = max(8, padx - int((total - limit) / max(1, len(widths) * 2)))
+        #: 右边留 4px，最后一项不能画到 Canvas 外面；旧版只缩一次 padding，
+        #: 12 号字 + 英文 + 最小窗口时 total 仍可能大于 width，末项文字被裁掉。
+        limit = max(40, width - 6)
+        widths = [max(64, self._bold.measure(label) + padx * 2)
+                  for label in self._labels]
+        total = sum(widths) + gap * max(0, n - 1)
+        if total > limit and n:
+            # 先做一轮自然收缩（保留标签本身的可读宽度）。
             gap = max(3, gap - 2)
+            padx = max(8, padx - 8)
             widths = [max(48, self._bold.measure(label) + padx * 2)
                       for label in self._labels]
-            total = sum(widths) + gap * max(0, len(widths) - 1)
-        x = 2
+            total = sum(widths) + gap * max(0, n - 1)
+        if total > limit and n:
+            # 仍放不下就按可用宽度等分；文字在 _draw() 里用省略号收尾，
+            # 保证每一项都可点、不会把最后一项推到画布外。
+            gap = 3
+            available = max(1, limit - gap * (n - 1))
+            each = available / float(n)
+            widths = [max(32.0, min(float(w), each)) for w in widths]
+            total = sum(widths) + gap * max(0, n - 1)
+        x = 2.0
         y = (height - lane_h) / 2.0
         rects = []
         for label, w in zip(self._labels, widths):
             rects.append((x, y, x + w, y + lane_h, label))
             x += w + gap
-        return rects, total
+        return rects, min(total, float(width - 2))
+
+    def _fit_label(self, label: str, available: int, bold: bool) -> str:
+        """把标签裁到胶囊内；Canvas 文字不会自动省略，必须自己补 `…`。"""
+        font = self._bold if bold else self._font
+        available = max(4, int(available))
+        try:
+            if font.measure(label) <= available:
+                return label
+            text = str(label)
+            while text and font.measure(text + "…") > available:
+                text = text[:-1]
+            return (text + "…") if text else "…"
+        except Exception:
+            return label
 
     def _redraw(self) -> None:
         try:
@@ -2180,8 +2284,9 @@ class TabStrip(tk.Canvas):
                         RoundedButton._rounded_points(
                             self, x1, y1, x2, y2, (y2 - y1) / 2.0),
                         smooth=True, splinesteps=24, fill=fill, outline="")
+                shown = self._fit_label(label, int(x2 - x1) - 10, selected)
                 self.create_text((x1 + x2) / 2.0, (y1 + y2) / 2.0,
-                                 text=label, fill=fg, font=font)
+                                 text=shown, fill=fg, font=font)
             # 底部一条极淡的分隔光，让标签栏和内容区有层次但不抢色。
             self.create_line(1, height - 1, max(1, total + 3), height - 1,
                              fill=mix_color(UI_BG, UI_LINE, 0.55))
@@ -3823,6 +3928,8 @@ class ProgramCatalogPane:
         """
         import threading
 
+        if getattr(self, "_destroyed", False):
+            return
         # 主界面搜索和「程序目录」页可能同时请求；只允许一个扫描线程，
         # 其余调用排队等结果，避免两次完整扫描互相覆盖。
         if self._loading:
@@ -3850,26 +3957,19 @@ class ProgramCatalogPane:
 
     def _progress(self, text: str) -> None:
         """目录构建进度：显示在面板自身的状态标签 + 主状态栏上。"""
-        self.filter_info.configure(text=text)
+        if getattr(self, "_destroyed", False):
+            return
+        try:
+            self.filter_info.configure(text=text)
+        except Exception:
+            return
         try:
             self.app._set_status(text)
         except Exception:
             pass
 
-    def _on_load_failed(self) -> None:
-        self._loading = False
-        callbacks = self._load_callbacks
-        self._load_callbacks = []
-        for callback in callbacks:
-            try:
-                callback([])
-            except Exception:
-                pass
-
-    def _on_loaded(self, items) -> None:
-        self.items = items
-        self._loading = False
-        self.apply_filter()
+    def _finish_callbacks(self, items) -> None:
+        """把排队等目录的调用方一次性唤醒；扫描失败也传空列表。"""
         callbacks = self._load_callbacks
         self._load_callbacks = []
         for callback in callbacks:
@@ -3877,6 +3977,25 @@ class ProgramCatalogPane:
                 callback(items)
             except Exception:
                 pass
+
+    def _on_load_failed(self) -> None:
+        self._loading = False
+        if getattr(self, "_destroyed", False):
+            self._load_callbacks = []
+            return
+        self._finish_callbacks([])
+
+    def _on_loaded(self, items) -> None:
+        if getattr(self, "_destroyed", False):
+            # 主题切换会整体重建主界面，旧目录面板的 frame 已经销毁；
+            # 后台线程此时才回来的结果不能再碰旧 Treeview。
+            self._loading = False
+            self._load_callbacks = []
+            return
+        self.items = items
+        self._loading = False
+        self.apply_filter()
+        self._finish_callbacks(items)
 
     # -- 收藏 / 分类（状态由 WinMonApp 持久化到 winmon_settings.json）--
     def prefs(self) -> core.CatalogPrefs:
@@ -4219,6 +4338,8 @@ class ProgramCatalogPane:
         但会让测试输出很吵，也掩盖真正的错误。
         """
         self._destroyed = True
+        self._loading = False
+        self._load_callbacks = []
         for attr in ("_search_after", "_apply_after"):
             after_id = getattr(self, attr, None)
             if after_id is None:
@@ -4268,8 +4389,13 @@ class ProgramCatalogPane:
                         else:
                             msg = f"已在运行，但切前台失败：{msg}"
                     else:
-                        ok = True
-                        msg = "已在后台运行（没有可见窗口）"
+                        # 后台进程存在但没有可见窗口（Edge startup boost、托盘程序、
+                        # 或窗口在别的虚拟桌面）不能算“已经打开”。旧代码在这里
+                        # 直接 ok=True 返回，launch_item 里的“后台进程继续请求窗口”
+                        # 分支永远走不到，用户看到的仍是“点了没反应”。
+                        # 交给 launch_item 统一处理：它会 ShellExecute 并等可见窗口。
+                        ok, msg = core.launch_item(it, as_admin=as_admin,
+                                                   extra_args=extra_args)
                 else:
                     ok, msg = core.launch_item(it, as_admin=as_admin,
                                                extra_args=extra_args)
@@ -6427,9 +6553,9 @@ _GUIDE_CONTENT = {
             ("h", "设置与颜色"),
             ("p", "「设置…」里同时有常规、AI 用量和使用说明；主界面不再单独放"
                   "「AI 用量」和「说明」。"),
-            ("p", "颜色可选普通（克莱因蓝玻璃）或深色（午夜蓝玻璃）；保存后立即生效。"
-                  "整窗是深蓝底，高亮卡比页面亮一档；媒体卡和媒体键是蓝紫色，"
-                  "不再使用绿色。"),
+            ("p", "颜色可选普通（白底）或深色（黑底）；保存后立即生效。"
+                  "高亮卡仍保留各自的栏目色（媒体为深青绿，AI 为蓝，"
+                  "接入为绿/黄，MCP 为蓝，KEY 为琥珀）。"),
             ("p", "「设置 → 常规 → 界面透明度」默认 100%，最低 45%：只淡到仍能看见"
                   "窗口边缘，不会整窗消失。主界面、设置/历史/AI 窗口、右键菜单、"
                   "搜索建议、操作下拉和媒体多选会一起变化；高亮卡和播放时的媒体拟光"
@@ -8170,7 +8296,7 @@ class WinMonApp:
         self.history_days = tk.IntVar(value=HISTORY_DAYS_DEFAULT)
         #: 界面语言：zh / en（默认中文；切换后主界面与 AI 窗口立即重译）
         self.language = tk.StringVar(value=i18n.get_language())
-        #: 界面颜色：普通（克莱因蓝）/ 深色（午夜蓝）。存 slug，显示当前语言标签。
+        #: 界面颜色：普通（白底）/ 深色（黑底）。存 slug，显示当前语言标签。
         self.theme_mode = tk.StringVar(
             value=theme_display(getattr(self, "theme_pref", THEME_DEFAULT)))
         #: 整窗透明度（45–100，默认 100）；改设置时同步给所有 Toplevel。
@@ -8395,7 +8521,7 @@ class WinMonApp:
                   lightcolor=[("active", UI_ACCENT_DARK)],
                   darkcolor=[("active", UI_ACCENT_DARK)])
         self._install_check_indicators(style)
-        # 主界面里还有少量 tk.Label/tk.Frame 没有显式背景；统一成品牌蓝底浅字。
+        # 主界面里还有少量 tk.Label/tk.Frame 没有显式背景；统一成页面底色和正文色。
         # 高亮卡片都显式设置了 bg/fg，不会被这些默认值覆盖。
         try:
             for pattern, value in (
@@ -13543,6 +13669,11 @@ class WinMonApp:
             i18n.translate_widgets(self.root)
         except Exception:
             pass
+        # 自绘胶囊的标签不在控件树里，原生 Notebook 翻完后要再同步一次。
+        try:
+            self.tab_strip.retranslate()
+        except Exception:
+            pass
         try:
             i18n.translate_menu(self.menu)
         except Exception:
@@ -13600,13 +13731,25 @@ class WinMonApp:
             self.menu.destroy()
         except Exception:
             pass
+        # 目录扫描在后台线程进行；先让旧面板进入“已销毁”状态，
+        # 否则扫描结果回来时会去更新已经随主题重建销毁的 Treeview。
+        try:
+            self.catalog.destroy()
+        except Exception:
+            pass
+        # 悬停提示条可能还挂着一个 550ms 后的 after；必须在销毁 Treeview
+        # **之前**取消并销毁，不能只把 Python 引用置空。
+        try:
+            self._row_tip.destroy()
+        except Exception:
+            pass
+        self._row_tip = None
         for child in list(self.root.winfo_children()):
             try:
                 child.destroy()
             except Exception:
                 pass
         self._body_sash_ready = False
-        self._row_tip = None
         self._last_preview_req = None
         self.preview_key = None
         self._initial_preview_done = selected is None

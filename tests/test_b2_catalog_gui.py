@@ -16,6 +16,7 @@ import tempfile
 import threading
 import time
 import unittest
+from types import SimpleNamespace
 from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -367,6 +368,27 @@ class TestCatalogPane(unittest.TestCase):
         self.assertEqual(activate.call_args.args[0], 4242)
         self.assertIn("切到前台", self.app.status)
 
+    def test_running_but_windowless_program_still_calls_launch_item(self):
+        """
+        目录里的 pid 还活着、但已经没有可见窗口（Edge 关窗后 startup boost
+        留下后台进程），不能直接报“已在后台运行”就结束；必须继续请求窗口。
+        """
+        steam = self.pane.items[0]
+        steam.pid = os.getpid()
+        self.app.hwnd_of_pid = lambda _pid: 0
+        self.pane.tree.selection_set(self._iid_of("Steam"))
+        with mock.patch.object(core, "is_process_alive", return_value=True), \
+                mock.patch.object(core, "launch_item",
+                                  return_value=(True, "已打开窗口")) as launch, \
+                mock.patch.object(core, "activate_window") as activate:
+            self.pane.launch_selected()
+            self._pump(lambda: bool(self.app.actions))
+        launch.assert_called_once()
+        activate.assert_not_called()
+        self.assertIn("已打开窗口", self.app.status)
+        self.assertTrue(self.app.program_prefs.is_recent(steam.target),
+                        "真正请求过启动后才能记入最近使用")
+
     # -- 手动类别 --
     def test_set_category_via_dialog(self):
         self.pane.tree.selection_set(self._iid_of("e管家"))
@@ -528,6 +550,34 @@ class TestCatalogPaneSettingsRoundTrip(unittest.TestCase):
                             pass
         finally:
             h.destroy_root(root)
+
+
+@h.needs_tk
+class TestCatalogDestroyedWhileLoading(unittest.TestCase):
+    """主题切换会重建整个面板；后台扫描晚回来时不能再碰旧控件。"""
+
+    def test_late_scan_result_after_destroy_is_ignored(self):
+        import tkinter as tk
+        import winmon
+
+        root = tk.Tk()
+        root.withdraw()
+        self.addCleanup(h.destroy_root, root)
+        app = SimpleNamespace(root=root, dpi_scale=1.0,
+                              _set_status=lambda _text: None)
+        pane = winmon.ProgramCatalogPane(root, app)
+        pane._loading = True
+        pane._load_callbacks.append(lambda _items: self.fail(
+            "面板已销毁，旧回调不应再执行"))
+        pane.destroy()
+
+        # 这两条正是后台线程扫完后经 _ui_call 回到主线程的路径。
+        pane._on_loaded(make_items())
+        pane._progress("正在读取程序目录…")
+
+        self.assertTrue(pane._destroyed)
+        self.assertFalse(pane._loading)
+        self.assertEqual(pane._load_callbacks, [])
 
 
 if __name__ == "__main__":

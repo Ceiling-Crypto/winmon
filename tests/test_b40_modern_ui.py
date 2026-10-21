@@ -1,14 +1,15 @@
 # -*- coding: utf-8 -*-
 """
-B40 —— 现代视觉层：克莱因蓝、无衬线字体、胶囊标签、圆角浮片与目录滚动。
+B40 —— 现代视觉层：无衬线字体、胶囊标签、圆角浮片与目录滚动。
 
 用户 2026-10-21 的第二轮界面要求：
   · 按键圆角要为果冻回弹服务；点击“实时预览”等按钮不能出现虚线焦点框；
   · 字体换成现代无衬线；按钮要轻盈，边框改为大范围低透明阴影；
   · 整个窗口/主要表面有圆角，而不是早期 WinForms / WPF 默认控件；
-  · 色彩用更现代的克莱因蓝，高亮卡同步；
-  · 程序目录名称不能盖到图标上，并且要能左右滑动；
-  · 旧色板先原样保留，等用户决议后再删。
+  · 程序目录名称不能盖到图标上，并且要能左右滑动。
+
+配色先按用户 2026-10-21 的否决恢复白底；实验蓝板仅保留在
+`_THEME_PALETTES_MODERN`，等待下一轮配色决议。
 """
 from __future__ import annotations
 
@@ -28,27 +29,25 @@ class TestModernPaletteAndType(unittest.TestCase):
         import winmon
         winmon.apply_theme("light")
 
-    def test_klein_blue_is_used_but_legacy_palette_is_untouched(self):
+    def test_white_theme_is_default_and_experimental_blue_is_inactive(self):
         import winmon
         winmon.apply_theme("light")
-        self.assertEqual(winmon.UI_BG, "#04122f",
-                         "默认窗口应是克莱因蓝玻璃，不是纯白页")
-        self.assertEqual(winmon.UI_ACCENT, "#5e7cff",
-                         "强调色应是提亮的克莱因蓝")
-        legacy = winmon._THEME_PALETTES_LEGACY
-        self.assertIsNot(legacy, winmon._THEME_PALETTES)
-        self.assertEqual(legacy["light"]["UI_ACCENT"], "#2563eb",
-                         "旧色板必须原样保留，等用户决议")
-        self.assertEqual(legacy["light"]["UI_BG"], "#ffffff",
-                         "旧色板的纯白页也要原样保留")
-        self.assertEqual(legacy["dark"]["UI_BG"], "#000000")
-        self.assertNotEqual(winmon.UI_CARDS["ai"]["bg"],
-                            legacy["light"]["UI_CARDS"]["ai"]["bg"],
-                            "高亮卡应跟随新色板，而不是继续用旧底色")
-        self.assertNotEqual(winmon.UI_CARDS["media"]["tag_bg"], "#0f6b5c",
-                            "媒体卡不再使用绿色")
-        self.assertNotEqual(winmon.UI_MEDIA_BTN_BG, "#0f6b5c",
-                            "媒体键也不再使用绿色")
+        self.assertEqual(winmon.UI_BG, "#ffffff",
+                         "用户否决全窗蓝后，默认必须恢复白底")
+        self.assertEqual(winmon.UI_INK, "#0f172a",
+                         "白底要配深色字")
+        self.assertEqual(winmon.UI_ACCENT, "#2563eb")
+        self.assertIs(winmon._THEME_PALETTES,
+                      winmon._THEME_PALETTES_LEGACY,
+                      "默认应指回旧色板，而不是克莱因蓝实验板")
+        modern = winmon._THEME_PALETTES_MODERN
+        self.assertEqual(modern["light"]["UI_BG"], "#04122f",
+                         "实验蓝板应保留，方便以后比较/回滚")
+        self.assertIsNot(modern, winmon._THEME_PALETTES)
+        self.assertEqual(winmon.UI_CARDS["media"]["tag_bg"], "#0f6b5c",
+                         "媒体卡回到旧色板的深青绿")
+        self.assertEqual(winmon.UI_MEDIA_BTN_BG, "#0f6b5c",
+                         "媒体键随旧色板恢复深青绿")
 
     def test_ui_font_is_a_modern_sans_serif(self):
         import winmon
@@ -155,6 +154,73 @@ class TestModernWidgets(unittest.TestCase):
         self.assertGreaterEqual(int(pane.tree.column("name", "width")), 370)
         self.assertNotEqual(tuple(pane.tree.xview()), (0.0, 1.0),
                             "列总宽应超过面板，横向滚动才有可滑动范围")
+
+    def test_rounded_button_font_tracks_live_font_change(self):
+        import winmon
+        old = winmon.UI_FONT_SIZE
+        self.addCleanup(winmon.set_font_size, old)
+        winmon.set_font_size(9)
+        btn = winmon.RoundedButton(
+            self.root, text="实时预览", kind="accent", height=32)
+        btn.pack()
+        self.root.update_idletasks()
+        old_width = int(btn.cget("width"))
+        winmon.apply_font_size_live(self.root, 12)
+        self.root.update_idletasks()
+        self.assertIn("12", str(btn._font),
+                      "自绘圆角按钮必须跟字号实时变化，不能等重启")
+        self.assertGreater(int(btn.cget("width")), old_width,
+                           "字号变大后按钮自然宽度也要跟着放大")
+
+    def test_custom_canvas_labels_follow_language_switch(self):
+        import tkinter as tk
+        from tkinter import ttk
+        import winmon
+        import winmon_i18n as i18n
+        old_lang = i18n.get_language()
+        self.addCleanup(i18n.set_language, old_lang)
+
+        i18n.set_language("zh")
+        nb = ttk.Notebook(self.root)
+        for label in ("实时预览", "实时总览"):
+            nb.add(ttk.Frame(nb), text=label)
+        strip = winmon.TabStrip(self.root, nb,
+                                [nb.tab(i, "text") for i in range(len(nb.tabs()))])
+        btn = winmon.RoundedButton(self.root, text="加入总览", kind="ghost")
+        badge = winmon.RoundedBadge(self.root, "媒体", fill="#0f6b5c",
+                                    fg="#ffffff", bg="#ffffff")
+        i18n.set_language("en")
+        i18n.translate_widgets(self.root)
+        strip.retranslate()
+
+        self.assertEqual(btn.cget("text"), "Add view")
+        self.assertEqual(badge.cget("text"), "Media")
+        self.assertEqual(strip._labels, ["Live preview", "Live overview"],
+                         "自绘胶囊不能停在中文快照")
+
+    def test_tabs_fit_minimum_width_even_at_large_font(self):
+        import tkinter as tk
+        from tkinter import ttk
+        import winmon
+        old = winmon.UI_FONT_SIZE
+        self.addCleanup(winmon.set_font_size, old)
+        winmon.set_font_size(12)
+        nb = ttk.Notebook(self.root)
+        labels = ["Live preview", "Live overview", "Process tree",
+                  "Programs", "Workspace", "AI workspace"]
+        for label in labels:
+            nb.add(ttk.Frame(nb), text=label)
+        strip = winmon.TabStrip(self.root, nb, labels)
+        strip.configure(width=600, height=40)
+        strip.pack()
+        self.root.update_idletasks()
+        rects, total = strip._layout()
+        self.assertLessEqual(total, 600, "标签总宽不能超过画布")
+        self.assertLessEqual(rects[-1][2], 600,
+                             "最后一项不能被推到画布外")
+        for x1, _y1, x2, _y2, _label in rects:
+            self.assertGreaterEqual(x2 - x1, 32,
+                                    "再挤也要保留可点的最小宽度")
 
     def test_rail_button_has_soft_shadow_room_and_no_hard_rim(self):
         rail_bg = self.winmon.mix_color(

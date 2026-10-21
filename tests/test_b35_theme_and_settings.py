@@ -44,19 +44,18 @@ class TestThemeSelection(unittest.TestCase):
         self.assertFalse(hasattr(winmon, "detect_system_theme"),
                          "没有跟随系统后，读注册表的函数也应删除")
 
-    def test_dark_palette_is_midnight_blue_with_white_text(self):
+    def test_dark_palette_is_black_with_white_text(self):
         import winmon
         self.assertEqual(winmon.apply_theme("dark"), "dark")
         self.assertEqual(winmon.UI_BG, "#000000")
         self.assertEqual(winmon.UI_INK, "#ffffff")
         self.assertNotEqual(winmon.UI_SURFACE_ALT, winmon.UI_BG)
         self.assertEqual(winmon.THEME_PREFERENCE, "dark")
-        self.assertEqual(winmon.UI_MEDIA_BTN_BG, "#2e5bff",
-                         "媒体键改成克莱因蓝玻璃按钮，不再用绿色")
-        self.assertNotEqual(winmon.UI_MEDIA_BTN_BG, "#0f6b5c")
+        self.assertEqual(winmon.UI_MEDIA_BTN_BG, "#0f6b5c",
+                         "媒体按键在浅绿/深青卡片上仍要用深绿底白字")
 
     def test_removed_system_value_falls_back_to_light(self):
-        """旧设置里可能还存着 system；回退到 light 也不能回到纯白底。"""
+        """旧设置里可能还存着 system；选项删了也不能让启动变白屏/报错。"""
         import winmon
         with tempfile.TemporaryDirectory(prefix="winmon-b35-legacy-") as tmp:
             path = os.path.join(tmp, "settings.json")
@@ -65,10 +64,7 @@ class TestThemeSelection(unittest.TestCase):
             self.assertEqual(winmon.read_theme_mode(path), "light")
         self.assertEqual(winmon.apply_theme("system"), "light")
         self.assertEqual(winmon.THEME_PREFERENCE, "light")
-        self.assertEqual(winmon.UI_BG, "#04122f")
-        self.assertNotEqual(winmon.UI_BG, "#ffffff",
-                            "默认主题必须是克莱因蓝玻璃，不是纯白页")
-        self.assertNotEqual(winmon.UI_INK, "#000000")
+        self.assertEqual(winmon.UI_BG, "#ffffff")
 
     def test_read_theme_mode_from_settings(self):
         import winmon
@@ -204,10 +200,10 @@ class TestSettingsMergedWindow(unittest.TestCase):
     def test_theme_choice_is_saved_and_panels_close(self):
         dlg = self._open()
         self.assertEqual(list(dlg._theme_by_label),
-                         ["普通（克莱因蓝）", "深色（午夜蓝）"],
-                         "设置里只剩品牌蓝/深色，跟随系统选项必须删掉")
-        self.assertEqual(dlg.theme.get(), "普通（克莱因蓝）")
-        dlg.theme.set("深色（午夜蓝）")
+                         ["普通（白底）", "深色（黑底）"],
+                         "设置里只剩普通/深色，跟随系统选项必须删掉")
+        self.assertEqual(dlg.theme.get(), "普通（白底）")
+        dlg.theme.set("深色（黑底）")
         with mock.patch.object(self.winmon.core, "get_autostart",
                                return_value=False):
             dlg._ok()

@@ -3,7 +3,7 @@
 > 用途：在新的对话里快速恢复上下文。读这一份即可继续开发。
 > **正式发布名 `winmon1.0`**（`APP_VER = "1.0"`，查版本：`py winmon.py --version`）。
 > **先读 §一点五「WinMon 的定位与能力边界」** —— 输入注入已明确不再投入。
-> 代码状态：**1009 个测试用例全绿**（约 102–109 秒；`--fast` 952 条约 42–46 秒；
+> 代码状态：**1014 个测试用例全绿**（约 106–120 秒；`--fast` 957 条约 46–50 秒；
 > 跳过数按当前桌面/媒体环境在 3–7 之间变化）+
 > 代码复检 0 新增问题（基线为空）、
 > 自检 8/8、界面冒烟通过、
@@ -22,7 +22,7 @@
 
 | | |
 | --- | --- |
-| 测试 | **1009 用例全绿**（`py tests\run_tests.py`，约 102–109 秒；跳过数按环境 3–7）；`--fast` 952 条约 42–46 秒 |
+| 测试 | **1014 用例全绿**（`py tests\run_tests.py`，约 106–120 秒；跳过数按环境 3–7）；`--fast` 957 条约 46–50 秒 |
 | 代码复检 | `py tests\lint_check.py` → **新增问题 0**（基线已清空，见 §四） |
 | 自检 / 冒烟 | `py winmon.py --selftest` 8/8 通过；`--smoke` 通过 |
 | 规模 | `winmon_core.py` ~6865 行 / `winmon.py` ~14892 行 / 测试 54 个 .py（40 个测试模块） |
@@ -107,7 +107,7 @@
 | `winmon_mcp.py` | ~800 | **MCP 服务器**：双时代 stdio + 本地 HTTP + 四个只读工具 |
 | `winmon_ai_provider.py` | ~250 | **可选**直连模型 API（默认关；精确 usage；key 只从环境变量读） |
 | `media_session.ps1` | ~230 | 系统媒体会话（GSMTC）桥接脚本（PowerShell + Windows 自带 WinRT 投影；**必须纯 ASCII 无 BOM**） |
-| `tests/` | 54 个 .py | **可重复运行的测试**（1009 用例，纯 unittest） + `_marks.py` 慢用例标记 + 开发辅助工具 + `lint_check.py` / `lint_baseline.txt` |
+| `tests/` | 54 个 .py | **可重复运行的测试**（1014 用例，纯 unittest） + `_marks.py` 慢用例标记 + 开发辅助工具 + `lint_check.py` / `lint_baseline.txt` |
 | `启动WinMon.bat` | — | 菜单式启动器（纯 ASCII，避免批处理编码问题） |
 | `scan_windows.py` | — | 命令行窗口清单 |
 | `close_others.py` | — | 批量关闭除当前窗口外的窗口 |
@@ -160,8 +160,8 @@ python winmon.py --videos --open 3 --watch --close-window   :: 完整视频链�
 python winmon.py --version          :: 打印版本（winmon1.0）
 python winmon.py --idle             :: 列出"长期开着、没人用"的程序（只看，不关任何东西）
 python winmon.py --idle --idle-minutes 5   :: 换个闲置阈值（分钟）
-py tests\run_tests.py               :: 全部测试（1009 用例，约 102 秒）
-py tests\run_tests.py --fast        :: 快跑（952 用例，约 42 秒；跳过真窗口/抓屏慢用例）
+py tests\run_tests.py               :: 全部测试（1014 用例，约 119 秒）
+py tests\run_tests.py --fast        :: 快跑（957 用例，约 48 秒；跳过真窗口/抓屏慢用例）
 ```
 
 ---
@@ -3163,6 +3163,120 @@ AI 深蓝卡可见；深色接入窗展开后目视无浅色卡残留。
 - `--smoke` 退出 0；150% 桌面截图确认：整窗深蓝、媒体卡蓝紫且无绿、
   媒体键蓝色、左侧按钮阴影更柔、Edge 能打开新窗口。
 
+### 9.28 阶段 8.18：颜色回退、配色提案、生命周期修复（2026-10-21）
+
+用户这一轮的原话：
+
+1. 「颜色改回去 这个界面 ui 比白底还差 你可以参考一下鹰角网络发表的明日方舟的
+   平面设计采用的配色搭配 我的想法是采用现代平面的讲究简约时尚感」；
+2. 「然后复查 bug 和优化代码 等我决议保留哪些」。
+
+这里的结论是：**先回退，不再擅自定色**。全窗克莱因蓝被明确否决；
+结构升级（圆角、果冻、胶囊标签、低透明阴影）保留，颜色等用户看提案后再定。
+
+#### 一、颜色回退
+
+- `_THEME_PALETTES` 重新指回 `_THEME_PALETTES_LEGACY`：
+  页面 `#FFFFFF`、浮片 `#FFFFFF`、次级层 `#F7F9FC`、正文 `#0F172A`、
+  强调色 `#2563EB`、边框 `#E2E8F0`。
+- `_THEME_LABELS` 恢复「普通（白底）/ 深色（黑底）」；英文 `Light / Dark`。
+- 上一轮的 `_THEME_PALETTES_MODERN`（整窗蓝玻璃）**完整保留但不启用**；
+  注释写清楚“用户看过实机后否决”，避免后来者误以为它仍是产品外观。
+- 媒体卡 / 媒体键 / 播放拟光随旧色板回到深青绿；用户上一轮“媒体去绿”的
+  要求没有被偷偷保留成半套。是否在新配色里继续去绿，等用户决议。
+- `set_dark_title_bar()` 仍按 `UI_BG` 亮度决定标题栏明暗，白底自动浅色标题栏、
+  黑底自动深色；不再依赖 `THEME_RESOLVED == dark`，以后换色板也不会出现
+  白底 + 白标题栏或黑底 + 白标题栏的割裂。
+
+#### 二、明日方舟式配色提案（**未写入程序**）
+
+参考点不是照搬游戏 UI，而是它的平面语言：大留白、硬朗网格、单一信号色、
+低饱和面、细发丝线、少量工业感等宽标签。三套候选：
+
+| 方案 | 页面 / 面 | 正文 | 信号色 | 适用 |
+| --- | --- | --- | --- | --- |
+| A 纸白 / 信号橙（推荐） | `#F4F2EC` / `#FFFFFF` | `#151515` | `#E0A100`（深字） | 暖纸白、近黑、琥珀只做小面积 |
+| B 冷白 / 朱砂 | `#FAFAF8` / `#FFFFFF` | `#111111` | `#C63B23`（白字） | 更锐利、编辑感；红色避开危险动作 |
+| C 深夜 / 警戒黄 | `#0C0D0F` / `#16181B` | `#F2F1EA` | `#F2B300`（深字） | 只替换深色主题 |
+
+- 提案图：`docs/palette-directions.png`。
+- 关键对比度（WCAG）：A 正文/纸白 16.3:1、次要文字 4.85:1、
+  琥珀上的深字 8.2:1；B 白字/朱砂 5.18:1；C 正文/近黑 17.2:1、次要 7.8:1。
+- A 的琥珀**不拿来做正文颜色**（琥珀在白底上只有约 2.3:1），只做填充、
+  标签和 1px 信号线；深色文字压在琥珀上。B 的朱砂从 `#D9482B` 调到
+  `#C63B23` 才够白字 4.5:1。
+- 三套都建议：卡片最多 1px 发丝线，取消大范围灰影；阴影只保留给果冻按键，
+  避免“白底 + 灰糊糊一圈”的旧工具感。是否这样做，等用户选色后一起定。
+
+#### 三、复查出来的 bug 与修法
+
+1. **换主题时后台目录扫描回写已销毁控件**（真 bug）
+   - 路径：`_rebuild_ui_for_theme()` 直接销毁 root 子控件；`ProgramCatalogPane`
+     不是 widget，它的 `destroy()` 没有被调用；后台线程扫完后经 `_ui_call`
+     调 `_on_loaded()`，此时旧 Treeview 已销毁。
+   - 修法：重建前显式 `self.catalog.destroy()`；`_on_loaded` / `_on_load_failed`
+     / `_progress` 检查 `_destroyed` 后直接收手；`destroy()` 清空回调队列；
+     `load_async()` 对已销毁面板直接返回。
+2. **悬停提示条的 550ms after 落到已销毁 Treeview**（真 bug）
+   - 路径：`_rebuild_ui_for_theme()` 只把 `_row_tip` 置 None，没有取消定时器；
+     旧 Treeview 销毁后 `_RowTip._show()` 仍会取 `winfo_rootx()`。
+   - 修法：重建前 `row_tip.destroy()`；`_show()` 先检查 widget 是否存在。
+3. **自绘圆角按钮不跟字号实时变化**（真 bug）
+   - 路径：`apply_font_size_live()` 依赖 `cget("font")` 和 `_refresh_font()`；
+     `RoundedButton` 是 Canvas，两者都没有，9→12 号字后按钮仍是旧字号。
+   - 修法：补 `RoundedButton._refresh_font()`，重建 `tkfont.Font`、重算自然宽度，
+     再 `_draw()`；固定高度的按钮保持原高度。
+4. **程序目录预检绕过 Edge 修复**（P1，真 bug）
+   - 路径：`launch_selected()` 在 `it.pid` 存活但 `hwnd_of_pid()==0` 时直接
+     `ok=True; "已在后台运行（没有可见窗口）"`，`core.launch_item()` 根本不执行。
+   - 这正是上一轮 Edge 修复被绕开的地方：`launch_item` 里的后台分支永远走不到。
+   - 修法：没有可见窗口时继续调 `launch_item`，由它 ShellExecute 并等窗口；
+     新增“后台 pid 无窗口必须调用 launch_item”的回归。
+5. **媒体桥接在 UTF-8 模式下丢中文**（P2，真 bug）
+   - 路径：`_decode_helper_output()` 用 `locale.getpreferredencoding()` 兜底；
+     `py -X utf8` / `PYTHONUTF8=1` 下它返回 utf-8，PowerShell 5.1 的 GBK
+     曲名又被解成乱码。
+   - 修法：优先 `locale.getencoding()`（UTF-8 模式下仍返回系统 ANSI），
+     再不行用 `GetACP()`；先严格 UTF-8、再 ANSI 的顺序不变。
+   - 已用 `-X utf8` 单独跑 3 条 GBK 用例，全绿。
+6. **自绘控件不参与语言切换**（P2，i18n 回归）
+   - 路径：`RoundedButton` 是 Canvas，没有 `text` 选项；`RoundedBadge` 的
+     `_text` 也不在控件树里；`TabStrip._labels` 是构造时快照。
+     `i18n.translate_widgets()` 只能翻原生控件，英文界面顶部胶囊、左侧按钮、
+     媒体徽标仍会是中文。
+   - 修法：给 `RoundedButton` / `RoundedBadge` 实现 `cget("text")` 和
+     `configure(text=...)`；`TabStrip` 增加 `retranslate()`，从 Notebook 重读；
+     `WinMonApp.retranslate()` 里调用。
+7. **12 号字 + 英文 + 最小窗口时 TabStrip 溢出**（P2，真 bug）
+   - 路径：旧 `_layout()` 只缩一次 padding；600px 宽时 total 仍约 669，
+     最后一项 “AI workspace” 被推到画布外，文字中心越界，点击也点不到。
+   - 修法：保留自然宽度优先，仍超宽就按可用宽度等分（每项最低 32px），
+     绘制时用 `_fit_label()` 加省略号；新增 600px/12 号字回归。
+8. **主题回退后的测试锚点**：b34/b35/b37/b40 里“蓝底 / 蓝紫媒体卡”的断言
+   全部按白底与深青绿恢复；b40 另加“实验蓝板仍在但不启用”的守门，
+   防止以后误把 `_THEME_PALETTES_MODERN` 当默认。
+9. 顺带把代码里“品牌蓝 / 深蓝页面 / 蓝玻璃”的过时注释改成中性表述，
+   避免后来者按旧注释判断当前外观。
+
+#### 四、待用户决议
+
+- 选 A / B / C，还是都不满意（可以继续出方案）。
+- 媒体卡是否继续保持深青绿，还是在新方案里换成中性卡 + 信号色标签。
+- 是否把卡片的灰影进一步压平（当前结构升级仍保留低透明阴影）。
+- 在用户拍板前，**不改默认色板、不删实验蓝板、不把提案图当已实现功能**。
+
+#### 五、验收
+
+- 新增回归（5 条）：`test_b2` 晚到的目录结果在面板销毁后必须被忽略；
+  `test_b2` 后台 pid 无窗口必须继续调 `launch_item`；
+  `test_b40` 圆角按钮字号 9→12 时文字和宽度同步；
+  `test_b40` 自绘按钮 / 徽标 / 胶囊随语言切换；
+  `test_b40` 12 号英文标签在 600px 下不溢出。
+- 全量 **1014 用例**，失败 0 / 错误 0，本次跳过 6，耗时 **118.971 秒**；
+  `--fast` **957 条**，失败 0 / 错误 0，耗时 **47.777 秒**；lint 新增 0；
+  `--smoke` 退出 0，白底截图已目视确认。
+- 跳过数会随桌面是否有 Edge / 媒体会话变化。
+
 ## 三、踩过的坑（**最重要，别重复踩**）
 
 ### 编码类（最容易毁掉成果）
@@ -3715,7 +3829,7 @@ AI 深蓝卡可见；深色接入窗展开后目视无浅色卡残留。
 ## 四、测试体系（**改代码后先跑这个**）
 
 ```bat
-py tests\run_tests.py            :: 1009 用例，约 102 秒（--fast 952 条约 42 秒）
+py tests\run_tests.py            :: 1014 用例，约 119 秒（--fast 957 条约 48 秒）
 py tests\run_tests.py -v         :: 逐个看
 py tests\run_tests.py -k capture :: 只跑关心的
 py tests\lint_check.py           :: 代码复检（退出码 1 = 有新增问题）
@@ -3874,8 +3988,8 @@ py tests\lint_check.py           :: 代码复检（退出码 1 = 有新增问题
    以及 `lint_check.py` 的"函数过长"（>200 行）阈值 —— `_build_ui` 已经贴着线走了，
    当时就是靠把视频联动那三行拆成 `_build_video_bars()` 才压下去的。
 5. ~~**测试提速**~~ **已做（2026-10-20，阶段 8.9）**：
-   `tests/_marks.py` 的 `@slow` + `run_tests.py --fast`。**1009 用例约 102 秒**，
-   `--fast` 跳过 57 条真窗口/抓屏/跨进程输入/真 CLI 用例，跑 **952 条约 42 秒**；
+   `tests/_marks.py` 的 `@slow` + `run_tests.py --fast`。**1014 用例约 119 秒**，
+   `--fast` 跳过 57 条真窗口/抓屏/跨进程输入/真 CLI 用例，跑 **957 条约 48 秒**；
    提交前仍跑全量。B6 里 5 条只验过滤分支的用例改成 `probe_seconds=0.05`，
    全量因此又少了约 12 秒；真窗口用例仍保留 2 秒采画面。
    另一个大头 `test_a7` 已经从 8.9s 降到 1.2s（现在也在 `--fast` 的跳过列表里）。
@@ -4399,8 +4513,8 @@ C 盘那份**保持原样、一字未改**（用户 2026-10-11 确认：暂不�
 
 > 继续开发 **winmon1.0** —— Windows 程序监控与终止工具，纯标准库，在 `项目根目录\`。
 > 请先读 `HANDOFF.md` 和 `README.md`，然后跑 `py tests\run_tests.py`
-> 确认基线是 **1009 用例全绿**（需要哔哩哔哩/UIA 页面的用例会按需 skip；
-> 日常改动用 `--fast` 跑 952 条，提交前跑全量）、
+> 确认基线是 **1014 用例全绿**（需要哔哩哔哩/UIA 页面的用例会按需 skip；
+> 日常改动用 `--fast` 跑 957 条，提交前跑全量）、
 > `py tests\lint_check.py` 退出码 0（无新增问题）。
 > **版式要另眼验收**：测试进程没有开 DPI 感知，布局检查看不到"真实 DPI 下控件被挤没"，
 > 所以改动界面后还要跑一次 `py winmon.py --smoke` 看截图（见 §9.15 第 14 条）。

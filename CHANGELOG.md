@@ -19,6 +19,47 @@
 以及跟随当前 AI 的助手**；阶段 6 补上 **多 profile 跟随 + 对话交接留痕**；
 阶段 8 按用户纠正把**休息提醒改由接入的 AI 说**，并拆出独立接入窗口、加入中英双语。
 
+### 阶段 8.18（2026-10-21）—— 颜色回退、配色提案、生命周期修复
+
+- **恢复白底默认**：用户实机看过后否决全窗克莱因蓝（“这个界面 UI 比白底还差”），
+  默认重新启用 `_THEME_PALETTES_LEGACY`（页面 `#FFFFFF`、正文 `#0F172A`、
+  强调色 `#2563EB`），设置标签恢复为「普通（白底）/ 深色（黑底）」。
+  实验蓝板 `_THEME_PALETTES_MODERN` 完整保留但不再默认启用；圆角、果冻回弹、
+  胶囊标签、低透明阴影等结构升级不回退。
+- **媒体栏随旧色板恢复深青绿**：媒体卡、媒体键和播放拟光回到旧白底方案的
+  深青绿；不再维持上一轮的蓝紫玻璃。
+- **配色提案**：新增 `docs/palette-directions.png`，按明日方舟式工业平面语言
+  给出 A 纸白 / 信号橙（推荐）、B 冷白 / 朱砂、C 深夜 / 警戒黄三套方向；
+  仅用于选型，未写入程序。
+- **修复主题切换时旧目录扫描回写已销毁控件**：`_rebuild_ui_for_theme()` 现在
+  先 `catalog.destroy()`；`ProgramCatalogPane` 的 `_on_loaded` / `_on_load_failed`
+  / `_progress` 在 `_destroyed` 后直接收手，后台线程晚回来的结果不会再碰旧
+  Treeview。
+- **修复悬停提示条的迟到回调**：换主题重建前主动 `row_tip.destroy()` 取消
+  550ms 的 after；`_RowTip._show()` 也先检查 widget 是否还存在。
+- **修复自绘圆角按钮不跟字号实时变化**：`RoundedButton` 补 `_refresh_font()`，
+  字号 9→12 时 Canvas 内文字和自然宽度一起更新，不再要等重启/换主题。
+- **修复程序目录“打开”绕过 Edge 修复**：`launch_selected()` 在 `pid` 存活但
+  `hwnd_of_pid()==0` 时原来直接 `ok=True; "已在后台运行（没有可见窗口）"`，
+  根本不会调 `core.launch_item()`。现在这种情况继续走 `launch_item`，由它
+  ShellExecute 并等可见窗口；只有真的看到窗口才算成功。
+- **修复媒体桥接在 UTF-8 模式下丢中文**：`_decode_helper_output()` 原来用
+  `locale.getpreferredencoding()` 作 ANSI 兜底，`-X utf8` / `PYTHONUTF8=1`
+  下它返回 utf-8，GBK 曲名又变乱码。改用 `locale.getencoding()`，必要时再问
+  `GetACP()`；先严格 UTF-8、再 ANSI 的顺序不变。
+- **修复自绘控件不参与语言切换**：`RoundedButton` / `RoundedBadge` 现在实现
+  `cget("text")` / `configure(text=...)`，`i18n.translate_widgets()` 能直接翻；
+  `TabStrip` 增加 `retranslate()`，从 Notebook 重读标签并重画。英文界面不再
+  出现“顶部胶囊/左侧按钮/媒体徽标仍是中文”的半翻译状态。
+- **修复 12 号字 + 英文 + 最小窗口的标签溢出**：`TabStrip._layout()` 在自然
+  收缩后仍放不下时按可用宽度等分，绘制前用省略号裁字，最后一项不再被推到
+  Canvas 外；新增最小宽度回归。
+- 新增 5 条回归：主题切换后晚到的目录结果必须被忽略、后台无窗口必须继续
+  请求窗口、圆角按钮字号实时变化、自绘标签/徽标随语言切换、12 号英文标签
+  不溢出（`test_b2` 2 条 + `test_b40` 3 条）；颜色断言按白底恢复更新。
+- 验收：全量 **1014 用例**，失败 0 / 错误 0；`--fast` **957 条**，失败 0 /
+  错误 0；lint 新增 0（精确耗时见 HANDOFF §9.28）。
+
 ### 阶段 8.17（2026-10-21）—— 全窗克莱因蓝玻璃、Edge 后台启动、媒体去绿、阴影细化
 
 - **整窗不再是纯白底**：默认主题改为克莱因蓝玻璃，页面 `#04122F`、

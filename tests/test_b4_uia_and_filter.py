@@ -467,7 +467,18 @@ class TestMediaSessionLogic(unittest.TestCase):
                     side_effect=lambda slug, key="": (
                         sent.append((slug, key)), (True, "已发送"))[1]):
             app.media_command("play_pause")
-            pump_media(app, root, lambda: bool(app.status_text.get()))
+            # 每条分支等不同的“真正完成”信号；不能用“status 非空”统一判断：
+            # 自动唤醒会先写“等它起来…”，2.5 秒后才发命令并覆盖成“已发送”，
+            # 早停会读到中间态（2026-10-21 混跑复现）。
+            if already_running:
+                done = lambda: bool(sent)
+            elif not auto_wake:
+                done = lambda: "没在运行" in app.status_text.get()
+            elif not launch_ok:
+                done = lambda: "失败" in app.status_text.get()
+            else:
+                done = lambda: "等它起来" in app.status_text.get()
+            pump_media(app, root, done)
         return app, launched, sent
 
     def test_already_running_is_not_launched_again(self):
