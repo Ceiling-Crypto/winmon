@@ -39,6 +39,7 @@ from __future__ import annotations
 import base64
 import ctypes
 import json
+import math
 import os
 import queue
 import re
@@ -142,6 +143,14 @@ THEME_DARK = "dark"
 THEME_DEFAULT = THEME_LIGHT
 THEME_PREFERENCE = THEME_DEFAULT
 THEME_RESOLVED = THEME_DEFAULT
+
+# ---- 界面透明度（2026-10-21）----
+# 用户要求：默认 100%，可调，但下限只到“窗口边缘淡下去”为止，不允许整窗消失。
+# 45% 下白底仍能看清文字与边界；再低就开始影响可用性，所以把它定为硬下限。
+UI_OPACITY_DEFAULT = 100
+UI_OPACITY_MIN = 45
+UI_OPACITY_MAX = 100
+UI_OPACITY = UI_OPACITY_DEFAULT
 
 _THEME_PALETTES = {
     THEME_LIGHT: {
@@ -408,6 +417,160 @@ def _walk_widgets(widget):
         return
     for child in children:
         yield from _walk_widgets(child)
+
+
+def _discard_widget_commands(widget) -> None:
+    """
+    销毁自绘控件前清掉它登记的 Tcl 回调命令，并**把列表置空**。
+
+    为什么需要：Python 3.14 的 `after` 回调执行/取消后，命令已从 Tcl 删除，
+    但 `Misc._tclCommands` 里可能还留着名字；随后 `Misc.destroy()` 再一个个
+    `deletecommand`，就会抛 “can't delete Tcl command”，把 root.destroy 中断。
+    这里逐个尝试删除（已删掉的忽略），最后把列表置 None，让基类的收尾跳过。
+    只在控件真的要销毁时调用，不会影响正常事件。
+    """
+    names = getattr(widget, "_tclCommands", None)
+    if names:
+        for name in list(names):
+            try:
+                widget.tk.deletecommand(name)
+            except Exception:
+                pass
+    try:
+        widget._tclCommands = None
+    except Exception:
+        pass
+
+
+def normalize_opacity(value) -> int:
+    """
+    把透明度（百分比，100 = 完全不透明）夹到 [45, 100]。
+
+    为什么下限不是 0：这是**整窗透明**，不是“内容渐隐”。到 45% 时窗口边缘
+    仍然看得见，再往下整个应用会像消失了一样，点不到也找不回来。非法值/
+    空值一律回默认 100，避免一个坏设置让界面启动即“看不见”。
+    """
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        return UI_OPACITY_DEFAULT
+    if number != number:                       # NaN
+        return UI_OPACITY_DEFAULT
+    return max(UI_OPACITY_MIN, min(UI_OPACITY_MAX, int(round(number))))
+
+
+def opacity_to_alpha(value) -> float:
+    """百分比 → Tk 的 -alpha（0.45–1.0）。"""
+    return normalize_opacity(value) / 100.0
+
+
+def set_ui_opacity(value) -> int:
+    """改全局透明度并返回归一化后的整数；只改状态，不负责重画窗口。"""
+    global UI_OPACITY
+    UI_OPACITY = normalize_opacity(value)
+    return UI_OPACITY
+
+
+def read_ui_opacity(path: str = "") -> int:
+    """启动前从设置文件读透明度；坏文件/非法值回 100，不让设置挡住启动。"""
+    try:
+        with open(path or _settings_path(), encoding="utf-8") as fh:
+            data = json.load(fh)
+        value = data.get("ui_opacity", data.get("opacity", UI_OPACITY_DEFAULT))
+    except Exception:
+        return UI_OPACITY_DEFAULT
+    return normalize_opacity(value)
+
+
+def apply_window_opacity(window, value=None) -> int:
+    """
+    给一个 Tk 顶层窗口设置整窗透明度，并记住已经设过。
+
+    100% 且从未设过时**什么也不做**：Tk 一旦设过 -alpha，就会给窗口加
+    WS_EX_LAYERED；默认完全不需要这层合成，少一层对抓屏和性能都更友好。
+    """
+    pct = normalize_opacity(UI_OPACITY if value is None else value)
+    try:
+        if not window.winfo_exists():
+            return pct
+    except Exception:
+        return pct
+    already = bool(getattr(window, "_winmon_alpha_applied", False))
+    if pct >= UI_OPACITY_MAX and not already:
+        window._winmon_opacity = pct
+        return pct
+    try:
+        window.attributes("-alpha", pct / 100.0)
+        window._winmon_alpha_applied = True
+        window._winmon_opacity = pct
+    except Exception:
+        # 某些远程会话 / 无合成器环境不支持 -alpha；界面照常显示即可。
+        pass
+    return pct
+
+
+def apply_opacity_to_windows(root, value=None) -> int:
+    """
+    把透明度应用到 root 以及它下面**所有 Toplevel**。
+
+    这覆盖的不只是主窗口：设置、操作历史、AI 助手、搜索建议、操作下拉、
+    媒体应用多选、右键菜单、悬停提示都是 Toplevel，所以会一起变。
+    系统原生的 Combobox 下拉列表不归 WinMon 创建，无法用 Tk 的 -alpha；
+    文档里只承诺“WinMon 自己的二级浮层”，不冒充能改系统控件。
+    """
+    pct = set_ui_opacity(UI_OPACITY if value is None else value)
+    apply_window_opacity(root, pct)
+    try:
+        widgets = list(_walk_widgets(root))
+    except Exception:
+        widgets = []
+    for widget in widgets:
+        if isinstance(widget, tk.Toplevel):
+            apply_window_opacity(widget, pct)
+    return pct
+
+
+def _color_rgb(color: str):
+    """#rrggbb / #rgb → (r,g,b)；读不出来返回 None（只用于界面配色）。"""
+    text = str(color or "").strip()
+    if not text.startswith("#"):
+        return None
+    raw = text[1:]
+    try:
+        if len(raw) == 3:
+            return tuple(int(ch * 2, 16) for ch in raw)
+        if len(raw) >= 6:
+            return tuple(int(raw[i:i + 2], 16) for i in (0, 2, 4))
+    except ValueError:
+        return None
+    return None
+
+
+def mix_color(first: str, second: str, amount: float) -> str:
+    """
+    在两个 #rrggbb 颜色之间线性混合，amount=0 → first，1 → second。
+
+    果冻按钮的高光/暗边、媒体卡的拟光都靠它算；不引入图片或第三方库。
+    非法颜色原样返回 first，宁可少一层装饰，也不能让界面崩。
+    """
+    a, b = _color_rgb(first), _color_rgb(second)
+    if a is None or b is None:
+        return first
+    try:
+        t = max(0.0, min(1.0, float(amount)))
+    except (TypeError, ValueError):
+        t = 0.0
+    return "#%02x%02x%02x" % tuple(
+        int(round(a[i] + (b[i] - a[i]) * t)) for i in range(3))
+
+
+def color_luminance(color: str) -> float:
+    """颜色的感知亮度（0–1），用于决定 3D 阴影该压暗还是提亮。"""
+    rgb = _color_rgb(color)
+    if rgb is None:
+        return 0.5
+    r, g, b = (v / 255.0 for v in rgb)
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
 
 
 def _scaled_font_spec(widget, spec, ratio: float):
@@ -1033,6 +1196,13 @@ class RoundedButton(tk.Canvas):
         self._radius = max(4, int(radius))
         self._fixed_width = int(width) if width else None
         self._req_height = int(height) if height else 0
+        #: 果冻回弹的形变量：0 = 静止，1 = 按到底；松手后会短暂越过 0 再收回。
+        self._squash = 0.0
+        self._anim_after = None
+        self._anim_kind = ""
+        self._anim_start = 0.0
+        self._anim_from = 0.0
+        self._release_amp = 1.0
         self._bg = bg if bg is not None else self._parent_bg(parent)
         super().__init__(parent, bg=self._bg, bd=0, highlightthickness=0,
                          takefocus=1, cursor="hand2",
@@ -1124,7 +1294,34 @@ class RoundedButton(tk.Canvas):
             x1, y2, x1, y2 - r, x1, y1 + r, x1, y1,
         ]
 
+    @staticmethod
+    def _edge_colors(fill: str) -> tuple[str, str, str]:
+        """
+        由底色推出一组 3D 边：顶面高光、底部暗唇、投影。
+
+        浅色按钮投影压暗，深色按钮投影会“压成黑”，所以深色时改成提亮一条
+        细边 —— 看起来像光从上方扫过，而不是一块没有厚度的色卡。
+        """
+        lum = color_luminance(fill)
+        if lum < 0.32:
+            highlight = mix_color(fill, "#ffffff", 0.20)
+            lip = mix_color(fill, "#ffffff", 0.10)
+            shadow = mix_color(fill, "#ffffff", 0.05)
+        else:
+            highlight = mix_color(fill, "#ffffff", 0.52)
+            lip = mix_color(fill, "#000000", 0.22)
+            shadow = mix_color(fill, "#000000", 0.16)
+        return highlight, lip, shadow
+
     def _draw(self) -> None:
+        """
+        画按钮：投影 + 底唇 + 主体 + 顶面高光 + 文字。
+
+        按下时整个“按钮块”会略微压扁、下移，阴影同步缩短；松手后由
+        `_animate_release()` 用阻尼正弦弹回（会过冲一点，再收住）。
+        这是纯 Canvas 绘制，不需要图片，也没有额外窗口，所以 150% DPI
+        与字号切换后仍然清晰。
+        """
         try:
             width = int(self.winfo_width() or 0)
             height = int(self.winfo_height() or 0)
@@ -1141,23 +1338,160 @@ class RoundedButton(tk.Canvas):
             fg = UI_MUTED if disabled else self._fg
             border = UI_LINE if disabled else (
                 UI_ACCENT if self._has_focus else self._border)
+            highlight, lip, shadow = self._edge_colors(fill)
             self.delete("all")
-            r = min(self._radius, height / 2 - 1, width / 2 - 1)
+
+            # 果冻形变：横向略胀、纵向略压；松手后的负值代表回弹过冲。
+            squash = max(-0.8, min(1.4, float(self._squash or 0.0)))
+            sx = 1.0 + 0.032 * squash
+            sy = 1.0 - 0.070 * squash
+            hover_lift = -0.8 if (self._hover and not disabled
+                                  and squash <= 0.02) else 0.0
+            margin_x = 2.0
+            body_w = max(8.0, (width - margin_x * 2) * sx)
+            body_h = max(8.0, (height - 5.0) * sy)
+            cx = width / 2.0
+            body_top = 1.0 + hover_lift + 1.4 * max(0.0, squash) \
+                - 0.7 * max(0.0, -squash)
+            x1 = cx - body_w / 2.0
+            x2 = cx + body_w / 2.0
+            y1 = body_top
+            y2 = min(height - 2.5, body_top + body_h)
+            r = max(1.0, min(self._radius, (y2 - y1) / 2.0 - 0.5,
+                             (x2 - x1) / 2.0 - 0.5))
+
+            # 投影：按钮向下“离开”底板，阴影在下方；按下时阴影缩到最近。
+            shadow_gap = 2.6 - 1.0 * max(0.0, squash) + 0.5 * max(0.0, -squash)
             self.create_polygon(
-                self._rounded_points(1, 1, width - 1, height - 1, max(1, r)),
+                self._rounded_points(x1 + 0.6, y1 + shadow_gap,
+                                     x2 + 0.6, y2 + shadow_gap,
+                                     max(1.0, r * 0.96)),
+                smooth=True, splinesteps=24, fill=shadow, outline="",
+                tags=("jelly-shadow",))
+            # 底唇：比主体深一档，制造“有厚度”的 3D 错觉。
+            self.create_polygon(
+                self._rounded_points(x1, y1 + 1.8, x2, y2 + 1.8,
+                                     max(1.0, r * 0.98)),
+                smooth=True, splinesteps=24, fill=lip, outline="",
+                tags=("jelly-lip",))
+            # 主体。
+            self.create_polygon(
+                self._rounded_points(x1, y1, x2, y2, r),
                 smooth=True, splinesteps=24, fill=fill, outline=border,
-                width=2 if self._has_focus else 1)
-            text = self._display_text(max(8, width - self._padx * 2))
+                width=2 if self._has_focus else 1,
+                tags=("jelly-body",))
+            # 顶面高光 / 底部内阴影：一条就够，太多线会脏。
+            if x2 - x1 > 12 and y2 - y1 > 8:
+                self.create_line(
+                    x1 + r * 0.55, y1 + 1.2, x2 - r * 0.55, y1 + 1.2,
+                    fill=highlight, width=1, tags=("jelly-highlight",))
+                self.create_line(
+                    x1 + r * 0.55, y2 - 1.4, x2 - r * 0.55, y2 - 1.4,
+                    fill=lip, width=1, tags=("jelly-shade",))
+
+            text = self._display_text(max(8, int(width - self._padx * 2)))
             if self._anchor == "w":
                 x, anchor = self._padx, "w"
             elif self._anchor == "e":
                 x, anchor = width - self._padx, "e"
             else:
                 x, anchor = width / 2, "center"
-            self.create_text(x, height / 2, text=text, anchor=anchor,
-                             fill=fg, font=self._font)
+            ty = (y1 + y2) / 2.0 + (0.6 if squash > 0.35 else 0.0)
+            # 浅色字在深色按钮上先画一层极浅的暗影，3D 感会更实；
+            # 深色字在浅底上不画，免得出现“重影”。
+            if color_luminance(fg) > 0.62 and color_luminance(fill) < 0.55:
+                self.create_text(
+                    x, ty + 1.0, text=text, anchor=anchor,
+                    fill=mix_color(fill, "#000000", 0.42), font=self._font)
+            self.create_text(x, ty, text=text, anchor=anchor,
+                             fill=fg, font=self._font, tags=("jelly-text",))
             self.configure(cursor="arrow" if disabled else "hand2")
         except Exception:
+            pass
+
+    # -- 果冻回弹动画 -------------------------------------------------
+    def _cancel_animation(self) -> None:
+        if self._anim_after is not None:
+            try:
+                self.after_cancel(self._anim_after)
+            except Exception:
+                pass
+            self._anim_after = None
+        self._anim_kind = ""
+
+    def _animate_press(self) -> None:
+        if self._state == "disabled":
+            return
+        self._cancel_animation()
+        self._anim_kind = "press"
+        self._anim_start = time.perf_counter()
+        self._anim_from = float(self._squash)
+        self._jelly_tick()
+
+    def _animate_release(self) -> None:
+        if self._state == "disabled":
+            self._squash = 0.0
+            self._draw()
+            return
+        self._cancel_animation()
+        self._anim_kind = "release"
+        self._anim_start = time.perf_counter()
+        # 快速点一下时形变还没到 1；保留当前幅度，回弹才不会“从 0 突然跳到 1”。
+        self._release_amp = max(0.35, min(1.0, float(self._squash or 0.0)))
+        self._jelly_tick()
+
+    def _jelly_tick(self) -> None:
+        self._anim_after = None
+        try:
+            if not self.winfo_exists():
+                return
+        except Exception:
+            return
+        elapsed = max(0.0, time.perf_counter() - self._anim_start)
+        done = False
+        if self._anim_kind == "press":
+            progress = min(1.0, elapsed / 0.075)
+            eased = 1.0 - (1.0 - progress) ** 3
+            self._squash = self._anim_from + (1.0 - self._anim_from) * eased
+            done = progress >= 1.0
+        elif self._anim_kind == "release":
+            tau = min(1.0, elapsed / 0.46)
+            # 阻尼正弦：1 → 过零 → 轻微反冲 → 收住，像手指离开键帽。
+            self._squash = (self._release_amp * math.exp(-5.2 * tau)
+                            * math.cos(11.8 * tau))
+            if tau >= 1.0:
+                self._squash = 0.0
+                done = True
+        else:
+            return
+        self._draw()
+        if done:
+            self._anim_kind = ""
+            return
+        try:
+            self._anim_after = self.after(16, self._jelly_tick)
+        except Exception:
+            self._anim_after = None
+
+    def _keyboard_bounce(self) -> None:
+        """键盘触发也要有按压反馈；不等 46ms，命令本身立即执行。"""
+        self._squash = 0.9
+        self._animate_release()
+
+    def destroy(self) -> None:
+        """
+        先收掉回弹定时器再销毁控件。
+
+        不绑 `<Destroy>`：那会创建一个 Python 绑定命令，控件销毁时 Tcl 先
+        auto-delete 它、`Misc.destroy()` 再遍历 `_tclCommands` 删一次，直接抛
+        “can't delete Tcl command”，把整个 root.destroy 中断（实机 + 全量测试
+        都复现过）。重写 `destroy()` 没有这个绑定命令，时序也可控。
+        """
+        self._cancel_animation()
+        _discard_widget_commands(self)
+        try:
+            super().destroy()
+        except tk.TclError:
             pass
 
     def _display_text(self, available: int) -> str:
@@ -1188,8 +1522,12 @@ class RoundedButton(tk.Canvas):
 
     def _on_leave(self, _event=None) -> None:
         self._hover = False
-        self._pressed = False
-        self._draw()
+        if self._pressed:
+            # 按住后移出按钮：取消这次点击，但按键要像真的弹起来一样收回。
+            self._pressed = False
+            self._animate_release()
+        else:
+            self._draw()
 
     def _on_press(self, event=None) -> None:
         if self._state == "disabled":
@@ -1199,12 +1537,15 @@ class RoundedButton(tk.Canvas):
         except Exception:
             pass
         self._pressed = True
-        self._draw()
+        self._animate_press()
 
     def _on_release(self, event=None) -> None:
         was_pressed = self._pressed
         self._pressed = False
-        self._draw()
+        if was_pressed:
+            self._animate_release()
+        else:
+            self._draw()
         if was_pressed and self._state != "disabled" and (
                 event is None or self._inside(event)):
             self.invoke()
@@ -1219,6 +1560,7 @@ class RoundedButton(tk.Canvas):
 
     def _invoke_event(self):
         if self._state != "disabled":
+            self._keyboard_bounce()
             self.invoke()
         return "break"
 
@@ -1244,6 +1586,10 @@ class RoundedButton(tk.Canvas):
                 self._command = value
             elif key == "state":
                 self._state = str(value)
+                if self._state == "disabled":
+                    self._squash = 0.0
+                    self._pressed = False
+                    self._cancel_animation()
                 redraw = True
             elif key == "font":
                 self._font = value
@@ -1316,6 +1662,407 @@ class RoundedButton(tk.Canvas):
         if key == "fg":
             return self._fg
         return super().cget(key)
+
+
+# ============================================================================
+# 二之一、高亮卡的拟光氛围（媒体播放时由淡到深）
+# ============================================================================
+
+class AmbientGlowFrame(tk.Frame):
+    """
+    带“拟光”边缘的高亮卡容器（目前用于媒体栏）。
+
+    为什么不用 Canvas 画渐变：媒体行里有 Combobox、复选圆点、三个圆角按钮，
+    全部用 Canvas 重排会破坏现有的 pack 布局和可访问性。这里用三层 1px
+    边框叠出光晕：外深、内浅，再由内容框自己的描边收口 —— 远看像一圈
+    柔光，近看仍然是一个普通 Frame，DPI / 字号 / 主题重建都不需要特殊处理。
+
+    播放开始后 `set_active(True)` 会让光晕用约 1 秒从底色过渡到强调色；
+    暂停 / 停止则慢慢退回，不闪烁。
+    """
+
+    def __init__(self, parent, card: dict, **kw) -> None:
+        self.card = dict(card or {})
+        self._base = self.card.get("bg") or UI_CARDS["media"]["bg"]
+        self._accent = (self.card.get("tag_bg")
+                        or self.card.get("border") or UI_ACCENT)
+        self._border = self.card.get("border") or UI_LINE
+        super().__init__(parent, bg=self._base, bd=0,
+                         highlightthickness=0, **kw)
+        self._level = 0.0
+        self._target = 0.0
+        self._anim_after = None
+        self._anim_start = 0.0
+        self._anim_from = 0.0
+        self._anim_to = 0.0
+        self._band1 = tk.Frame(self, bg=self._base, padx=1, pady=1)
+        self._band1.pack(fill="both", expand=True)
+        self._band2 = tk.Frame(self._band1, bg=self._base, padx=1, pady=1)
+        self._band2.pack(fill="both", expand=True)
+        self.content = tk.Frame(
+            self._band2, bg=self._base, bd=0,
+            highlightthickness=1, highlightbackground=self._border)
+        self.content.pack(fill="both", expand=True)
+        self._apply_level(0.0)
+
+    @property
+    def intensity(self) -> float:
+        return float(self._level)
+
+    def _apply_level(self, level: float) -> None:
+        """把 0–1 的光强画成外深内浅的三圈色带。"""
+        self._level = max(0.0, min(1.0, float(level)))
+        t = self._level
+        outer = mix_color(self._base, self._accent, 0.43 * t)
+        middle = mix_color(self._base, self._accent, 0.24 * t)
+        inner = mix_color(self._base, self._accent, 0.10 * t)
+        edge = mix_color(self._border, self._accent, 0.62 * t)
+        try:
+            self.configure(bg=outer)
+            self._band1.configure(bg=middle)
+            self._band2.configure(bg=inner)
+            self.content.configure(highlightbackground=edge)
+        except Exception:
+            pass
+
+    def set_active(self, active: bool, animate: bool = True) -> None:
+        """播放时点亮，暂停/停止时收回；重复调用相同目标不会重启动画。"""
+        self.set_level(1.0 if active else 0.0, animate=animate)
+
+    def set_level(self, level: float, animate: bool = True) -> None:
+        """
+        设置 0–1 的光强。
+
+        真实媒体会话“正在播放” = 1；“只有窗口标题能证明有歌名”（网易云这类
+        不发布会话的播放器）= 0.5，光更含蓄；暂停/没有媒体 = 0。
+        """
+        try:
+            target = max(0.0, min(1.0, float(level)))
+        except (TypeError, ValueError):
+            target = 0.0
+        if abs(target - self._target) < 0.01:
+            return
+        self._target = target
+        self._cancel_animation()
+        if not animate:
+            self._apply_level(target)
+            return
+        self._anim_from = self._level
+        self._anim_to = target
+        self._anim_start = time.perf_counter()
+        self._glow_tick()
+
+    def _cancel_animation(self) -> None:
+        if self._anim_after is not None:
+            try:
+                self.after_cancel(self._anim_after)
+            except Exception:
+                pass
+            self._anim_after = None
+
+    def _glow_tick(self) -> None:
+        self._anim_after = None
+        try:
+            if not self.winfo_exists():
+                return
+        except Exception:
+            return
+        span = 0.95 if self._anim_to > self._anim_from else 0.65
+        progress = min(1.0, max(0.0, (time.perf_counter() - self._anim_start)
+                               / span))
+        eased = 1.0 - (1.0 - progress) ** 3
+        self._apply_level(self._anim_from
+                          + (self._anim_to - self._anim_from) * eased)
+        if progress < 1.0:
+            try:
+                self._anim_after = self.after(33, self._glow_tick)
+            except Exception:
+                self._anim_after = None
+
+    # 不绑 `<Destroy>`：Tkinter 在销毁控件时会先 auto-delete 绑定命令，
+    # 再让 `Misc.destroy()` 遍历 `_tclCommands`，两者撞在一起会抛
+    # “can't delete Tcl command”，把 root.destroy 整个中断（实测）。
+    # 改在 `destroy()` 里先取消 after 定时器，时序可控。
+    def destroy(self) -> None:
+        self._cancel_animation()
+        _discard_widget_commands(self)
+        try:
+            super().destroy()
+        except tk.TclError:
+            pass
+
+
+# ============================================================================
+# 二之二、右键菜单（自绘 Toplevel，才能跟界面透明度一起变）
+# ============================================================================
+
+class PopupMenu(tk.Toplevel):
+    """
+    一个轻量的自绘菜单，接口兼容本项目用到的 `tk.Menu` 子集。
+
+    为什么不继续用 `tk.Menu`：Windows 原生菜单是系统窗口，Tk 的
+    `-alpha` 管不到它，用户把界面调到 70% 时只有菜单还是实心的一块。
+    这里用 Toplevel 画菜单，因此能一起透明、跟随主题，还能做悬停高亮
+    与键盘导航。支持 `add_command / add_separator / index / type /
+    entrycget / entryconfigure / tk_popup / grab_release`，够现有三处使用。
+    """
+
+    def __init__(self, parent, tearoff=0, font=None, **kw) -> None:
+        super().__init__(parent, **kw)
+        self.withdraw()
+        self.overrideredirect(True)
+        self.attributes("-topmost", True)
+        self.configure(bg=UI_LINE)
+        self._font = font or UI_FONT
+        self._items: list[dict] = []
+        self._rows: list[dict] = []
+        self._body = None
+        self._selected = -1
+        self._closing = False
+        self._grab = False
+        self.bind("<Escape>", lambda _e: self._close(), add="+")
+        self.bind("<Button-1>", self._on_toplevel_click, add="+")
+        self.bind("<Button-3>", lambda _e: self._close(), add="+")
+        self.bind("<Up>", lambda _e: self._move(-1), add="+")
+        self.bind("<Down>", lambda _e: self._move(1), add="+")
+        self.bind("<Home>", lambda _e: self._select(0), add="+")
+        self.bind("<End>", lambda _e: self._select(len(self._items) - 1), add="+")
+        self.bind("<Return>", lambda _e: self._choose_selected(), add="+")
+        self.bind("<KP_Enter>", lambda _e: self._choose_selected(), add="+")
+
+    # -- 兼容 tk.Menu 的构建接口 --
+    def add_command(self, label: str = "", command=None, **kw) -> int:
+        self._items.append({"kind": "command", "label": str(label),
+                            "command": command,
+                            "state": str(kw.get("state", "normal"))})
+        self._invalidate()
+        return len(self._items) - 1
+
+    def add_separator(self, **kw) -> int:
+        self._items.append({"kind": "separator", "label": "",
+                            "command": None, "state": "normal"})
+        self._invalidate()
+        return len(self._items) - 1
+
+    def add_cascade(self, label: str = "", menu=None, **kw) -> int:
+        """本项目没用到级联；保留一个明确的空实现，避免误以为支持。"""
+        self._items.append({"kind": "cascade", "label": str(label),
+                            "command": None, "state": "disabled"})
+        self._invalidate()
+        return len(self._items) - 1
+
+    def _invalidate(self) -> None:
+        if getattr(self, "_body", None) is not None:
+            try:
+                self._body.destroy()
+            except Exception:
+                pass
+        self._body = None
+        self._rows = []
+
+    def index(self, index):
+        if str(index) == "end":
+            return len(self._items) - 1 if self._items else None
+        try:
+            value = int(index)
+        except (TypeError, ValueError):
+            return None
+        return value if 0 <= value < len(self._items) else None
+
+    def type(self, index) -> str:
+        pos = self.index(index)
+        return self._items[pos]["kind"] if pos is not None else ""
+
+    def entrycget(self, index, option: str):
+        pos = self.index(index)
+        if pos is None:
+            return ""
+        item = self._items[pos]
+        if str(option) == "label":
+            return item["label"]
+        if str(option) == "state":
+            return item["state"]
+        if str(option) == "command":
+            return item["command"]
+        return ""
+
+    def entryconfigure(self, index, cnf=None, **kw) -> None:
+        pos = self.index(index)
+        if pos is None:
+            return
+        if isinstance(cnf, dict):
+            kw.update(cnf)
+        item = self._items[pos]
+        if "label" in kw:
+            item["label"] = str(kw["label"])
+        if "state" in kw:
+            item["state"] = str(kw["state"])
+        if "command" in kw:
+            item["command"] = kw["command"]
+        self._invalidate()
+
+    entryconfig = entryconfigure
+
+    # -- 绘制与交互 --
+    def _build(self) -> None:
+        self._invalidate()
+        body = tk.Frame(self, bg=UI_BG, padx=4, pady=4,
+                        highlightthickness=1, highlightbackground=UI_LINE)
+        body.pack(fill="both", expand=True)
+        self._body = body
+        self._rows = []
+        for i, item in enumerate(self._items):
+            if item["kind"] == "separator":
+                tk.Frame(body, bg=UI_LINE, height=1).pack(
+                    fill="x", padx=6, pady=3)
+                continue
+            disabled = item["state"] == "disabled" or item["kind"] != "command"
+            row = tk.Frame(body, bg=UI_BG,
+                           cursor="arrow" if disabled else "hand2")
+            row.pack(fill="x")
+            label = tk.Label(
+                row, text=item["label"], font=self._font, bg=UI_BG,
+                fg=(UI_MUTED if disabled else UI_INK), anchor="w",
+                padx=10, pady=5,
+                cursor="arrow" if disabled else "hand2")
+            label.pack(fill="x")
+            entry = {"index": i, "row": row, "label": label,
+                     "disabled": disabled}
+            self._rows.append(entry)
+            if not disabled:
+                for widget in (row, label):
+                    widget.bind("<Enter>",
+                                lambda _e, n=len(self._rows) - 1:
+                                self._paint(n, True), add="+")
+                    widget.bind("<Leave>",
+                                lambda _e, n=len(self._rows) - 1:
+                                self._paint(n, False), add="+")
+                    widget.bind("<ButtonRelease-1>",
+                                lambda _e, pos=i: self._choose(pos), add="+")
+
+    def _paint(self, row_pos: int, hover: bool) -> None:
+        if not (0 <= row_pos < len(self._rows)):
+            return
+        entry = self._rows[row_pos]
+        if entry["disabled"]:
+            return
+        selected = (entry["index"] == self._selected)
+        bg = UI_SELECT_BG if (hover or selected) else UI_BG
+        fg = UI_SELECT_FG if (hover or selected) else UI_INK
+        try:
+            entry["row"].configure(bg=bg)
+            entry["label"].configure(bg=bg, fg=fg)
+        except Exception:
+            pass
+
+    def _select(self, row_pos: int) -> None:
+        command_rows = [i for i, e in enumerate(self._rows) if not e["disabled"]]
+        if not command_rows:
+            return
+        row_pos = min(max(0, row_pos), len(self._rows) - 1)
+        while row_pos not in command_rows and row_pos < len(self._rows) - 1:
+            row_pos += 1
+        self._selected = self._rows[row_pos]["index"]
+        for i in range(len(self._rows)):
+            self._paint(i, False)
+
+    def _move(self, delta: int) -> None:
+        command_rows = [e["index"] for e in self._rows if not e["disabled"]]
+        if not command_rows:
+            return
+        if self._selected in command_rows:
+            pos = command_rows.index(self._selected) + delta
+            pos = min(max(0, pos), len(command_rows) - 1)
+        else:
+            pos = 0 if delta > 0 else len(command_rows) - 1
+        self._selected = command_rows[pos]
+        for i in range(len(self._rows)):
+            self._paint(i, False)
+
+    def _choose_selected(self) -> None:
+        if self._selected >= 0:
+            self._choose(self._selected)
+
+    def _choose(self, item_index: int) -> None:
+        if not (0 <= item_index < len(self._items)):
+            return
+        item = self._items[item_index]
+        if item["kind"] != "command" or item["state"] == "disabled":
+            return
+        callback = item["command"]
+        self._close()
+        if callable(callback):
+            callback()
+
+    def _on_toplevel_click(self, event) -> None:
+        """全局 grab 下，点在菜单外时事件也会送到这里。"""
+        if self._closing:
+            return
+        try:
+            x, y = int(event.x_root), int(event.y_root)
+            if not (self.winfo_rootx() <= x < self.winfo_rootx()
+                    + self.winfo_width()
+                    and self.winfo_rooty() <= y < self.winfo_rooty()
+                    + self.winfo_height()):
+                self._close()
+        except Exception:
+            pass
+
+    def tk_popup(self, x: int, y: int, entry: str = "") -> None:
+        """弹出并阻塞到选中/关闭（与 tk.Menu.tk_popup 的调用方式一致）。"""
+        if self._closing:
+            return
+        self._build()
+        try:
+            self.update_idletasks()
+            width = max(180, self.winfo_reqwidth())
+            height = max(20, self.winfo_reqheight())
+            screen_w = self.winfo_screenwidth()
+            screen_h = self.winfo_screenheight()
+            px = max(0, min(int(x), max(0, screen_w - width - 4)))
+            py = max(0, min(int(y), max(0, screen_h - height - 4)))
+            self.geometry(f"{width}x{height}+{px}+{py}")
+            apply_window_opacity(self)
+            self.deiconify()
+            self.lift()
+            try:
+                self.grab_set_global()
+                self._grab = True
+            except Exception:
+                try:
+                    self.grab_set()
+                    self._grab = True
+                except Exception:
+                    self._grab = False
+            self.focus_force()
+            self.wait_window()
+        finally:
+            self.grab_release()
+
+    def grab_release(self) -> None:
+        self._grab = False
+        try:
+            super().grab_release()
+        except Exception:
+            pass
+
+    def _close(self) -> None:
+        if self._closing:
+            return
+        self._closing = True
+        self.grab_release()
+        try:
+            self.destroy()
+        except Exception:
+            pass
+
+    def destroy(self) -> None:
+        self._closing = True
+        self.grab_release()
+        try:
+            super().destroy()
+        except Exception:
+            pass
 
 
 # ============================================================================
@@ -2403,7 +3150,7 @@ class ProgramCatalogPane:
 
     def _show_more_menu(self) -> None:
         """程序目录的「⋯」菜单：低频动作集中在这里，主行保持清爽。"""
-        menu = tk.Menu(self.app.root, tearoff=0, font=UI_FONT)
+        menu = PopupMenu(self.app.root, font=UI_FONT)
         menu.add_command(label="重新扫描", command=self.rescan)
         menu.add_command(label="导出 CSV…", command=self.export_csv)
         menu.add_command(label="最近使用…", command=self.choose_recent)
@@ -2433,7 +3180,7 @@ class ProgramCatalogPane:
         if not items:
             return
         item = items[0]
-        menu = tk.Menu(self.app.root, tearoff=0)
+        menu = PopupMenu(self.app.root, font=UI_FONT)
         menu.add_command(label=f"打开　{item.name}",
                          command=lambda: self.launch_selected())
         menu.add_command(label="用参数启动…",
@@ -3383,20 +4130,28 @@ class _SettingsWindow:
                  history_days: int = HISTORY_DAYS_DEFAULT,
                  language: str = "zh",
                  font_size: int = UI_FONT_SIZE,
-                 theme: str = THEME_DEFAULT) -> None:
+                 theme: str = THEME_DEFAULT,
+                 opacity: int = UI_OPACITY_DEFAULT) -> None:
         self.app = app
         self.result: dict | None = None
+        #: 透明度滑杆要能预览到主窗口和所有已打开浮层；测试里的 FakeApp
+        #: 不一定有 `root`，所以退回构造参数 parent。
+        self._root = getattr(app, "root", parent)
+        self._opacity_before = normalize_opacity(opacity)
         self.top = tk.Toplevel(parent)
         top = self.top
         top.title(i18n.t("settings.title"))
         top.configure(bg=UI_BG)
         top.transient(parent)
         scale = float(getattr(app, "dpi_scale", 1.0) or 1.0)
+        self._scale = scale
         sw, sh = parent.winfo_screenwidth(), parent.winfo_screenheight()
         win_w = min(int(980 * scale), int(sw * 0.94))
-        win_h = min(int(740 * scale), int(sh * 0.88))
+        # 2026-10-21 新增「界面透明度」后，常规页比原来长了一截；
+        # 740 的旧高度在 150% 下会把最后一行说明压到滚动区域外。
+        win_h = min(int(840 * scale), int(sh * 0.90))
         top.geometry(f"{win_w}x{win_h}")
-        top.minsize(min(int(860 * scale), win_w), min(int(560 * scale), win_h))
+        top.minsize(min(int(860 * scale), win_w), min(int(600 * scale), win_h))
         # 点 × 必须走 _cancel：取消 AI 用量面板的定时器，并按“未保存”返回。
         top.protocol("WM_DELETE_WINDOW", self._cancel)
 
@@ -3446,7 +4201,8 @@ class _SettingsWindow:
         canvas.bind("<Configure>",
                     lambda e: canvas.itemconfigure(win_id, width=e.width))
         self._build_general(wrap, close_mode, tray_available, start_minimized,
-                            history_days, language, font_size, theme)
+                            history_days, language, font_size, theme,
+                            self._opacity_before)
 
         self.usage = _AiUsagePanel(self.nb, app)
         self.nb.add(self.usage.frame, text=i18n.pick("AI 用量", "AI usage"))
@@ -3465,6 +4221,7 @@ class _SettingsWindow:
         w, h = top.winfo_width(), top.winfo_height()
         top.geometry(f"+{max(0, (sw - w) // 2)}+{max(0, (sh - h) // 3)}")
         set_dark_title_bar(top)
+        apply_window_opacity(top, self._opacity_before)
         try:
             top.grab_set()
         except tk.TclError:
@@ -3472,7 +4229,8 @@ class _SettingsWindow:
         top.focus_force()
 
     def _build_general(self, wrap, close_mode, tray_available, start_minimized,
-                       history_days, language, font_size, theme) -> None:
+                       history_days, language, font_size, theme,
+                       opacity=UI_OPACITY_DEFAULT) -> None:
         """常规页：所有会写盘 / 写注册表的设置。"""
         # ---- 1) 开机自启动 ----
         self.autostart = tk.BooleanVar(value=bool(core.get_autostart()))
@@ -3578,7 +4336,59 @@ class _SettingsWindow:
                  font=SMALL_FONT, bg=UI_BG, fg=UI_MUTED,
                  anchor="w", justify="left", wraplength=640).pack(anchor="w", fill="x")
 
+        # ---- 8) 界面透明度（整窗，含二级浮层）----
+        tk.Label(wrap, text=i18n.pick("界面透明度", "Window opacity"),
+                 font=UI_FONT, bg=UI_BG, fg=UI_INK,
+                 anchor="w").pack(anchor="w", pady=(14, 0))
+        opacity_row = tk.Frame(wrap, bg=UI_BG)
+        opacity_row.pack(anchor="w", fill="x", pady=(2, 0))
+        self.opacity = tk.IntVar(value=normalize_opacity(opacity))
+        self.opacity_text = tk.StringVar(
+            value=f"{normalize_opacity(opacity)}%")
+        ttk.Scale(
+            opacity_row, from_=UI_OPACITY_MIN, to=UI_OPACITY_MAX,
+            variable=self.opacity, command=self._on_opacity_change,
+            style="Opacity.Horizontal.TScale", length=280).pack(side="left")
+        tk.Label(opacity_row, textvariable=self.opacity_text, font=UI_FONT,
+                 bg=UI_BG, fg=UI_ACCENT, anchor="w", width=6).pack(
+            side="left", padx=(8, 6))
+        ttk.Button(opacity_row, text="恢复 100%", width=10,
+                   command=lambda: self._set_opacity_value(UI_OPACITY_MAX)
+                   ).pack(side="left")
+        tk.Label(wrap, text=i18n.pick(
+                     "默认 100%；最低 45%，只淡到仍能看见窗口边缘，不会整窗消失。"
+                     "主界面、设置/历史/AI 窗口、右键菜单、搜索建议、操作下拉和"
+                     "媒体多选会一起变化；高亮卡（含播放时的媒体拟光）也一起。"
+                     "系统原生的下拉列表不归 WinMon 绘制，不在承诺范围内。",
+                     "Default 100%; the minimum is 45%, where the window edge is "
+                     "still visible and the app cannot vanish. The main window, "
+                     "settings/history/AI windows, context menus, search results, "
+                     "action popups, and media picker all follow it — including "
+                     "highlight cards and the media glow. Native system dropdowns "
+                     "are not owned by WinMon and are not covered."),
+                 font=SMALL_FONT, bg=UI_BG, fg=UI_MUTED,
+                 anchor="w", justify="left",
+                 wraplength=int(760 * max(1.0, float(getattr(
+                     self, "_scale", 1.0) or 1.0)))).pack(
+            anchor="w", fill="x")
+
         # 状态行在窗口底部（三个标签页共用），由 `__init__` 统一创建。
+
+    def _on_opacity_change(self, _value=None) -> None:
+        """拖动时立刻预览；不写设置，取消会恢复打开设置前的透明度。"""
+        try:
+            pct = normalize_opacity(round(float(self.opacity.get())))
+        except (TypeError, ValueError, tk.TclError):
+            pct = self._opacity_before
+        self.opacity_text.set(f"{pct}%")
+        try:
+            apply_opacity_to_windows(self._root, pct)
+        except Exception:
+            pass
+
+    def _set_opacity_value(self, value) -> None:
+        self.opacity.set(normalize_opacity(value))
+        self._on_opacity_change()
 
     def select(self, section: str = "general", guide_section: str = "") -> None:
         try:
@@ -3628,7 +4438,9 @@ class _SettingsWindow:
                        "font_size": self._font_by_label.get(
                            self.font_size.get(), UI_FONT_SIZE),
                        "theme": self._theme_by_label.get(
-                           self.theme.get(), THEME_DEFAULT)}
+                           self.theme.get(), THEME_DEFAULT),
+                       "ui_opacity": normalize_opacity(
+                           round(float(self.opacity.get())))}
         self._close_panels()
         try:
             self.top.destroy()
@@ -3637,6 +4449,12 @@ class _SettingsWindow:
 
     def _cancel(self) -> None:
         self.result = None
+        # 透明度是**实时预览**的；取消必须把打开设置前的值还回去，
+        # 否则用户点了「取消」，界面却停在新透明度上。
+        try:
+            apply_opacity_to_windows(self._root, self._opacity_before)
+        except Exception:
+            pass
         self._close_panels()
         try:
             self.top.destroy()
@@ -4988,6 +5806,16 @@ _GUIDE_CONTENT = {
                   "「AI 用量」和「说明」。"),
             ("p", "颜色可选普通（白底）或深色（黑底）；保存后立即生效。"
                   "深色模式下媒体行、AI 卡会换成同色系的深色高亮，不会刺眼。"),
+            ("p", "「设置 → 常规 → 界面透明度」默认 100%，最低 45%：只淡到仍能看见"
+                  "窗口边缘，不会整窗消失。主界面、设置/历史/AI 窗口、右键菜单、"
+                  "搜索建议、操作下拉和媒体多选会一起变化；高亮卡和播放时的媒体拟光"
+                  "也一起变。系统原生的下拉列表不归 WinMon 绘制，不在承诺范围内。"),
+            ("h", "按键手感与拟光"),
+            ("p", "主界面的圆角按钮按下时会轻微压扁、下移，松手后用阻尼回弹（会"
+                  "过冲一点再收住），像按到有弹性的键帽。顶部高光和底部投影是"
+                  "Canvas 当场画的 3D 效果，不是图片。"),
+            ("p", "媒体栏真的开始播放后，卡片边缘会出现一圈由淡到深的拟光；"
+                  "暂停或停止播放后慢慢收回。它只表示“正在播放”，不表示音量或进度。"),
             ("h", "媒体这一行"),
             ("p", "WinMon 先读 Windows 的媒体会话，显示“应用：曲名 · 状态”。"),
             ("p", "有些播放器（例如网易云音乐）不向系统发布会话，WinMon 会退一步"
@@ -5088,6 +5916,19 @@ _GUIDE_CONTENT = {
             ("p", "Color can be Light (white) or Dark (black). It applies "
                   "immediately. Colored highlights such as the media and AI cards stay "
                   "visible in dark mode."),
+            ("p", "Settings → General → Window opacity defaults to 100% and stops at "
+                  "45%, where the window edge is still visible and the app cannot "
+                  "vanish. The main window, settings/history/AI windows, context menus, "
+                  "search suggestions, action popups, and media picker all follow it, "
+                  "including highlight cards and the media glow. Native system "
+                  "dropdowns are not owned by WinMon and are not covered."),
+            ("h", "Button feel and ambient light"),
+            ("p", "Rounded buttons compress and move down slightly while pressed, then "
+                  "spring back with damped overshoot like a soft keycap. The top "
+                  "highlight and bottom shadow are drawn by Canvas; no images."),
+            ("p", "When media actually starts playing, the media card grows a soft "
+                  "ambient rim that fades from pale to deep; it retracts on pause or "
+                  "stop. It means “playing”, not volume or progress."),
             ("h", "The media line"),
             ("p", "WinMon first reads the Windows media session: “app: track · state”."),
             ("p", "Some players (e.g. NetEase Cloud Music) do not publish a session, "
@@ -6410,6 +7251,14 @@ class WinMonApp:
         except Exception:
             self.theme_pref = THEME_DEFAULT
         self.theme_resolved = apply_theme(self.theme_pref)
+        # 透明度也要在控件建好前读：root 一映射就应当是用户上次的透明度，
+        # 不能先闪一下 100% 再变淡。
+        try:
+            self.opacity_pref = read_ui_opacity(_settings_path())
+        except Exception:
+            self.opacity_pref = UI_OPACITY_DEFAULT
+        set_ui_opacity(self.opacity_pref)
+        apply_window_opacity(root, self.opacity_pref)
         root.title(i18n.t("app.title", ver=APP_VER))
         # 标题栏 / 任务栏也用同一枚图标；托盘与快捷方式共用 winmon.ico。
         try:
@@ -6425,6 +7274,27 @@ class WinMonApp:
                 root, self.theme_resolved == THEME_DARK))
         except Exception:
             pass
+
+    def _install_opacity_watcher(self) -> None:
+        """
+        主窗口只绑一次 `<Map>`：任何新出现的 Toplevel（含自绘菜单）一映射
+        就套用当前透明度，不用逐个窗口记得调用。
+
+        `bind_all` 的回调很轻（只在 event.widget 是 Tk/Toplevel 时才碰
+        Win32 属性），不会影响每帧预览。
+        """
+        if getattr(self, "_opacity_watcher_bound", False):
+            return
+        self._opacity_watcher_bound = True
+        try:
+            self.root.bind_all("<Map>", self._on_window_map_opacity, add="+")
+        except Exception:
+            pass
+
+    def _on_window_map_opacity(self, event=None) -> None:
+        widget = getattr(event, "widget", None)
+        if isinstance(widget, (tk.Tk, tk.Toplevel)):
+            apply_window_opacity(widget)
 
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
@@ -6570,6 +7440,8 @@ class WinMonApp:
 
         self._build_ui()
         self._bind_events()
+        self._install_opacity_watcher()
+        apply_opacity_to_windows(root, self.ui_opacity.get())
         self.load_settings()
         # 英文启动：控件是按中文文案建的，读完设置后统一重译一次
         if i18n.get_language() != "zh":
@@ -6670,6 +7542,8 @@ class WinMonApp:
         #: 界面颜色：普通（白底）/ 深色（黑底）。存 slug，显示当前语言标签。
         self.theme_mode = tk.StringVar(
             value=theme_display(getattr(self, "theme_pref", THEME_DEFAULT)))
+        #: 整窗透明度（45–100，默认 100）；改设置时同步给所有 Toplevel。
+        self.ui_opacity = tk.IntVar(value=normalize_opacity(UI_OPACITY))
         #: 实时总览的**排列顺序**（B.3）：存**窗口标题**而不是 hwnd（hwnd 重启就变）
         self.gallery_order_saved: list[str] = []
         #: 托盘图标 / 托盘消息窗口 / 是否正在轮询托盘消息 / 托盘是否真的可用
@@ -6837,6 +7711,17 @@ class WinMonApp:
                   foreground=[("selected", UI_SELECT_FG)])
         style.configure("TScrollbar", background=UI_LINE, troughcolor=base_bg,
                         bordercolor=line, arrowcolor=accent)
+        # 透明度滑杆：默认 clam 的滑槽/滑块在深色底上像一条灰滚动条；
+        # 单独给它强调色滑块和细槽，一眼能看出这是“可拖的百分比”。
+        style.configure("Opacity.Horizontal.TScale", background=base_bg,
+                        troughcolor=UI_LINE, bordercolor=line,
+                        lightcolor=accent, darkcolor=accent,
+                        arrowcolor=accent, sliderrelief="flat")
+        style.map("Opacity.Horizontal.TScale",
+                  background=[("active", base_bg)],
+                  troughcolor=[("active", UI_SELECT_BG)],
+                  lightcolor=[("active", UI_ACCENT_DARK)],
+                  darkcolor=[("active", UI_ACCENT_DARK)])
         self._install_check_indicators(style)
         # 主界面里还有少量 tk.Label/tk.Frame 没有显式背景；统一成白底黑字。
         # 高亮卡片都显式设置了 bg/fg，不会被这些默认值覆盖。
@@ -7079,7 +7964,7 @@ class WinMonApp:
                   foreground=UI_MUTED, anchor="w").pack(fill="x", padx=10)
 
         # ---- 右键菜单 ----
-        self.menu = tk.Menu(self.root, tearoff=0, font=UI_FONT)
+        self.menu = PopupMenu(self.root, font=UI_FONT)
         self.menu.add_command(label="显示实时画面", command=self.action_show_preview)
         self.menu.add_command(label="加入实时总览", command=self.gallery_add_selected)
         self.menu.add_separator()
@@ -7340,9 +8225,13 @@ class WinMonApp:
         # 来源说明（“从窗口标题读的”）不再挤在这一行：用户 2026-10-19 指出，
         # 这类技术细节应当收进说明窗口。主界面只留应用名 + 曲名 + 状态。
         media = UI_CARDS["media"]
-        mbar = tk.Frame(self.root, bg=media["bg"], highlightbackground=media["border"],
-                        highlightthickness=1, padx=8, pady=3)
-        mbar.pack(fill="x", padx=8, pady=(0, 4))
+        #: 媒体卡的“拟光”外框：没有媒体播放时它只是 3px 的卡片边，
+        #: 一旦真的在播，边缘从浅到深亮起（由 `_sync_media_ambience()` 驱动）。
+        self.media_glow = AmbientGlowFrame(self.root, media)
+        self.media_glow.pack(fill="x", padx=8, pady=(0, 4))
+        mbar = tk.Frame(self.media_glow.content, bg=media["bg"],
+                        padx=8, pady=3)
+        mbar.pack(fill="x")
         tk.Label(mbar, text="媒体", font=SMALL_BOLD_FONT,
                  bg=media["tag_bg"], fg=media["tag_fg"], padx=7, pady=1).pack(
             side="left", padx=(0, 8))
@@ -7712,18 +8601,25 @@ class WinMonApp:
 
     @staticmethod
     def _media_text_width() -> int:
-        """媒体行的字符宽度：每大一号收 8 个字符，给右边按钮让位。"""
-        return max(42, 62 - max(0, UI_FONT_SIZE - 9) * 8)
+        """
+        媒体行的字符宽度：每大一号收 10 个字符，给右边控件让位。
+
+        旧值 12 号时仍有 42 字符；1080×660 下曲名标签会占掉 426px，
+        播放器下拉框只剩 174px，中文自动项被截成「（自动：正在放的那个」。
+        收到 32 字符后，下拉框能完整显示。
+        """
+        return max(30, 62 - max(0, UI_FONT_SIZE - 9) * 10)
 
     @staticmethod
     def _media_combo_width() -> int:
         """
-        播放器下拉框宽度：字号变大时略收，但仍要放得下「自动：正在放的那个」。
+        播放器下拉框宽度：字号变大时略微**增加**，因为中文是方块字。
 
-        旧公式每大一号收 1 字，12 号时只剩 15，自动项会被截成「（自动：正在放的…」；
-        媒体曲名标签已经按字号收过宽度，这里不需要再收得那么狠。
+        旧公式每大一号减 1 字，方向正好反了：字体变大时「（自动：正在放的那个）」
+        占的像素更多，宽度反而被收窄。现在 12 号给 21 字，配合曲名标签收窄，
+        1080×660 下也能完整显示。
         """
-        return max(14, 18 - max(0, UI_FONT_SIZE - 9) // 2)
+        return max(14, 18 + max(0, UI_FONT_SIZE - 9))
 
     def _sync_media_width(self) -> None:
         self.MEDIA_TEXT_WIDTH = self._media_text_width()
@@ -7741,6 +8637,28 @@ class WinMonApp:
         try:
             self.media_play_btn.configure(
                 text="⏸" if getattr(self, "_media_playing", False) else "▶")
+        except Exception:
+            pass
+
+    def _sync_media_ambience(self, animate: bool = True) -> None:
+        """
+        媒体栏的拟光：**真的在播放**才点亮，暂停/找不到就收回。
+
+        为什么用 `_media_found and _media_playing`：只“读到了会话”但状态是暂停，
+        不该装作正在放；错误路径会把两者都清掉，光也会自动退回去。
+        """
+        glow = getattr(self, "media_glow", None)
+        if glow is None:
+            return
+        try:
+            if (getattr(self, "_media_found", False)
+                    and getattr(self, "_media_playing", False)):
+                level = 1.0                 # 真会话且状态为“正在播放”
+            elif getattr(self, "_media_source", "") == "title":
+                level = 0.5                 # 标题兜底：确实有歌名，但不知道暂停与否
+            else:
+                level = 0.0
+            glow.set_level(level, animate=bool(animate))
         except Exception:
             pass
 
@@ -7797,8 +8715,10 @@ class WinMonApp:
             err = (data or {}).get("error") or "读取失败"
             self._set_media_line(f"媒体会话读取失败：{err}")
             self._media_playing = False
+            self._media_found = False
             self._media_last_pick = {}
             self._sync_media_play_button()
+            self._sync_media_ambience()
             return
         info = core.media_session_summary(data.get("sessions") or [],
                                          self._app_key_for_media())
@@ -7815,12 +8735,18 @@ class WinMonApp:
             hint = self._title_hint_when_no_session()
             if hint:
                 self._set_media_line(hint)
+                # 标题兜底也说明“有媒体内容”；给半档拟光，别装作完整会话。
+                self._sync_media_ambience()
                 return
             app = self._picked_media_app()
             self._set_media_line(
                 f"（{app.label} 没有在播放的媒体）" if app
                 else "（没有程序在播放媒体）")
+            self._sync_media_ambience()
             return
+        # 会话找到了：现在才写光强，避免“无会话→先归零→标题兜底再亮起”
+        # 每 4 秒抖一下。
+        self._sync_media_ambience()
         # 曲名 · 歌手 · 状态 —— 前面**冠上正在放它的那个程序名**（用户第 2 条：
         # "明确哪个程序它是啥、运行了啥"）。会话里的 app 常是家族名（Edge 报 MSEdge），
         # 能换成用户选的显示名就换。
@@ -8196,6 +9122,15 @@ class WinMonApp:
             if saved_font in [v for v, _l in FONT_SIZE_CHOICES] and hasattr(
                     self, "font_size"):
                 self.font_size.set(str(saved_font))
+            # 透明度：`_load_saved_ui_preferences` 已按同一份文件设置过；
+            # 这里再对齐界面变量，并在值确实变了时立刻应用到所有窗口。
+            saved_opacity = normalize_opacity(
+                data.get("ui_opacity", data.get("opacity", UI_OPACITY)))
+            self.opacity_pref = saved_opacity
+            if hasattr(self, "ui_opacity"):
+                self.ui_opacity.set(saved_opacity)
+            if saved_opacity != UI_OPACITY:
+                apply_opacity_to_windows(self.root, saved_opacity)
             for var, key in ((self.show_hidden, "show_hidden"),
                              (self.show_no_window, "show_no_window"),
                              (self.only_windowed, "only_windowed"),
@@ -8312,6 +9247,10 @@ class WinMonApp:
                 "font_size": font_size,
                 "theme": normalize_theme_mode(
                     getattr(self, "theme_pref", THEME_DEFAULT)),
+                # 整窗透明度（45–100；默认 100，不写这个键时按 100 处理）
+                "ui_opacity": normalize_opacity(
+                    getattr(getattr(self, "ui_opacity", None), "get",
+                            lambda: UI_OPACITY)()),
                 # 工作区快照 + 应用时的附加选项
                 "workspaces": self.workspaces,
                 "ws_minimize_others": bool(self.ws_minimize_others.get()),
@@ -12031,6 +12970,7 @@ class WinMonApp:
             self.preview.btn_pause.configure(
                 text="继续刷新" if self.paused else "暂停刷新")
             self._sync_media_play_button()
+            self._sync_media_ambience(animate=False)
             self._sync_action_rail_spacing()
         except Exception:
             pass
@@ -12061,10 +13001,11 @@ class WinMonApp:
         except Exception:
             tab_index = 0
         try:
+            old_opacity = normalize_opacity(self.ui_opacity.get())
             dlg = _SettingsWindow(
                 self.root, self, self.close_mode.get(), self._tray_available(),
                 bool(self.start_minimized.get()), int(self.history_days.get()),
-                old_lang, old_font, old_theme)
+                old_lang, old_font, old_theme, old_opacity)
         except Exception as exc:
             self._set_status(f"打不开设置：{type(exc).__name__}: {exc}")
             return
@@ -12085,6 +13026,10 @@ class WinMonApp:
         new_lang = i18n.set_language(got.get("language", old_lang))
         self.language.set(new_lang)
         self.font_size.set(str(new_font))
+        new_opacity = normalize_opacity(got.get("ui_opacity", old_opacity))
+        self.ui_opacity.set(new_opacity)
+        self.opacity_pref = new_opacity
+        apply_opacity_to_windows(self.root, new_opacity)
         self.theme_pref = new_theme
         self.theme_mode.set(theme_display(new_theme))
         theme_changed = (new_theme != old_theme
@@ -12128,10 +13073,12 @@ class WinMonApp:
         color = theme_display(new_theme)
         self._set_status(f"设置已保存 —— {tip}{boot}；"
                          f"颜色 {color}；字号 {new_font}；"
+                         f"透明度 {new_opacity}%；"
                          f"日志保留 {self.history_days.get()} 天{pruned}；"
                          f"开机自启动：{'开' if got['autostart'] else '关'}")
         self.log_action("设置", "系统设置",
                         f"{tip}{boot}；颜色 {color}；字号 {new_font}；"
+                        f"透明度 {new_opacity}%；"
                         f"日志保留 {self.history_days.get()} 天；"
                         f"自启动={'开' if got['autostart'] else '关'}")
 
