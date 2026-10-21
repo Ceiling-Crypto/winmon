@@ -1180,6 +1180,16 @@ AI 工作区 →「打开助手…」打开窗口（或 `--ai-assist`）。**助
 
 ![塞壬唱片专辑取色方案](docs/siren-palette-options.png)
 
+追加三张指定专辑的取色（09–11）：
+
+| 方案 | 参考专辑 | 页面 | 信号色 | 第二色 | 说明 |
+| --- | --- | --- | --- | --- | --- |
+| 冰川 / 信号红 | [雪山降临](https://monster-siren.hypergryph.com/music/8922) | `#F4F8FB` | `#C94327` | `#2C9FBF` | 冰蓝只做页面底，红做主操作；冷蓝和红同屏像雪线警报 |
+| 夏末 / 橄榄橙 | [夏日远去之后](https://monster-siren.hypergryph.com/music/5198) | `#FAF6EA` | `#B84E17` | `#5F7330` | 奶油纸白 + 野餐橙 + 橄榄绿，暖而不腻 |
+| 海沫 / 绛红 | [未许之地](https://monster-siren.hypergryph.com/music/7763) | `#F4F9F8` | `#9E1B22` | `#246E6A` | 海沫青 + 绛红 + 沙金，像旧印刷品 |
+
+![追加三张专辑取色](docs/siren-palette-three.png)
+
 ### 字体与圆角
 
 正文使用现代无衬线字体，按本机可用性依次尝试
