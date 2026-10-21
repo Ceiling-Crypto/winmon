@@ -275,6 +275,15 @@ class TestLightThemeAndPreviewFirst(unittest.TestCase):
         self.assertLessEqual(pane.photo_w, cw * 2,
                              "放大不能超过预览区，避免把画面裁掉")
 
+    def test_preview_accepts_raw_png_without_base64(self):
+        """CPU 优化：上屏链路直接传原始 PNG 字节，仍要兼容旧 base64 调用。"""
+        pane = self.app.preview
+        self.addCleanup(pane.clear)
+        png = self.core.bgr_to_png(bytes(100 * 50 * 3), 100, 50)
+        pane.set_png(png)
+        self.assertIsNotNone(pane.base_photo)
+        self.assertEqual((pane.base_w, pane.base_h), (100, 50))
+
     def test_png_encoder_preserves_bgr_channels(self):
         """蓝底 BGR 必须解成 RGB 蓝色；编码错通道会让整个预览变黑。"""
         import tkinter as tk

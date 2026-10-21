@@ -200,6 +200,24 @@ class TestMainWindowLayout(unittest.TestCase):
                 self.assertEqual(bad[:3], [],
                                  f"第 {i} 个标签页（{nb.tab(i, 'text')}）有控件被挤坏：{bad[:3]}")
 
+    def test_preview_header_never_lets_pause_cover_the_fps(self):
+        """长标题/长元信息下，FPS 和暂停按钮都必须留在预览区内。"""
+        self.app.notebook.select(0)
+        pane = self.app.preview
+        pane.set_title("WinMon 1.0 继续开发 — 一个很长很长的窗口标题")
+        pane.set_meta("DeepSeek Harness.exe · PID 12396 · 1941×1243 · 运行中 · "
+                      "C:\\Users\\ceiling\\AppData\\Local\\Programs\\DeepSeek Harness.exe")
+        pane.set_stats("实时 · 10 FPS · 后台省电")
+        self.root.update()
+        right_edge = pane.frame.winfo_rootx() + pane.frame.winfo_width()
+        for name, widget in (("暂停", pane.btn_pause), ("FPS", pane.lbl_stats)):
+            self.assertLessEqual(
+                widget.winfo_rootx() + widget.winfo_width(), right_edge + 1,
+                f"{name}被挤到预览区外面")
+        # 两者是上下堆叠，不再有“按钮盖住 FPS”的相交。
+        pause_bottom = pane.btn_pause.winfo_rooty() + pane.btn_pause.winfo_height()
+        self.assertGreaterEqual(pane.lbl_stats.winfo_rooty(), pause_bottom - 1)
+
     def test_gallery_drag_is_wired_on_the_whole_tile(self):
         """
         总览墙的拖拽排序：**按下、移动、松手必须绑在同一批控件上**。

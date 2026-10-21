@@ -1345,7 +1345,7 @@ est_tokens ≈ ceil(ascii_chars / 4 + cjk_chars / 1.6 + 24)
 
 **接入状态必须写在界面上**（阶段 7）：`Budget.summary` 从账本里取
 `last_mcp / mcp_calls`，界面按优先级显示
-`已接入 MCP（客户端）` > `直连就绪（模型）` > `未接入（可复制）`；
+`已接入 MCP（客户端）` > `直连就绪（模型）` > `未接入 · 可复制现场`；
 "15 分钟内没有真实 MCP 调用"就不冒充已连接。
 
 **三种使用定位**（`winmon_ai_assist.json` 的 `mode`）：

@@ -185,6 +185,33 @@ class TestMainUiHierarchy(unittest.TestCase):
         self.assertEqual(str(self.app.ai_workspace._state_label.cget("bg")),
                          self.winmon.UI_CARDS["ai"]["state_ok_bg"])
 
+    def test_clipboard_mode_shows_an_actionable_copy_button(self):
+        """“未接入”不是按键；真正的动作是旁边的「复制现场」。"""
+        for name in ("_ai_status_snapshot", "_ai_provider_snapshot",
+                     "_ai_connection_snapshot"):
+            self.addCleanup(lambda n=name: self.app.__dict__.pop(n, None))
+        self.app._ai_status_snapshot = lambda: {
+            "provider_tokens": 0, "tokenizer_tokens": 0, "estimated_tokens": 0}
+        self.app._ai_provider_snapshot = lambda: {"enabled": False}
+        self.app._ai_connection_snapshot = lambda: {
+            "kind": "clipboard", "ai": "Claude Desktop"}
+        with mock.patch.object(self.app, "_ai_handoff") as handoff:
+            self.app._update_ai_bar({"primary": {
+                "name": "Claude Desktop", "kind": "desktop", "proc": "claude.exe"}})
+            self.root.update()
+            self.assertEqual(self.app.ai_copy_btn.winfo_manager(), "grid",
+                             "未接入时应出现「复制现场」")
+            self.app.ai_copy_btn.invoke()
+            handoff.assert_called_once_with()
+
+        self.app._ai_connection_snapshot = lambda: {
+            "kind": "mcp", "client": "Claude Desktop"}
+        self.app._update_ai_bar({"primary": {
+            "name": "Claude Desktop", "kind": "desktop", "proc": "claude.exe"}})
+        self.root.update()
+        self.assertEqual(self.app.ai_copy_btn.winfo_manager(), "",
+                         "接上 MCP 后不该再显示复制按钮")
+
     def _settings_window(self):
         with mock.patch.object(self.winmon.core, "get_autostart", return_value=False):
             dlg = self.winmon._SettingsWindow(

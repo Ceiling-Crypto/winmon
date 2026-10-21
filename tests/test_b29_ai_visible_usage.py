@@ -48,7 +48,7 @@ class TestVisibleAiBar(unittest.TestCase):
         text = ai.format_ai_bar(primary, status, info)
         self.assertIn("智谱清言", text)
         self.assertIn("网页", text)
-        self.assertIn("1 分 12 秒", text)
+        self.assertIn("近30分前台 1 分 12 秒", text)
         self.assertIn("真实 428", text)
         self.assertIn("精确 0", text)
         self.assertIn("估算 1,200", text)

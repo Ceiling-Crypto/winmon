@@ -1049,6 +1049,31 @@ class TestP2TrayGalleryAndRestore(unittest.TestCase):
         self.assertEqual(len(requested), 1, "正常状态下总览不取帧了")
         self.assertEqual(requested[0][0], ("tile", 0x11))
 
+    def test_preview_stops_when_user_is_on_another_tab(self):
+        """不在实时预览页时不该继续抓屏；切回来要自动恢复。"""
+        app = winmon.WinMonApp.__new__(winmon.WinMonApp)
+        app.root = _Root(state="normal")
+        app.preview_key = 0x123
+        app.paused = False
+        app.fps_choice = _Var("很流畅 10 FPS")
+        app._last_preview_req = None
+        app.preview = types.SimpleNamespace(canvas_size=lambda: (640, 400))
+        app.win_by_hwnd = {0x123: _StubWin(hwnd=0x123, rect_w=800, rect_h=600)}
+        forgotten: list = []
+        requested: list = []
+        app.worker = types.SimpleNamespace(forget=lambda key: forgotten.append(key),
+                                           request=lambda *a, **k: requested.append(a))
+        tab = {"index": 5}
+        app.notebook = types.SimpleNamespace(index=lambda _which: tab["index"])
+
+        winmon.WinMonApp._request_preview_frame(app)
+        self.assertEqual(requested, [], "不在预览页还在抓屏")
+        self.assertIn(("win", 0x123), forgotten)
+
+        tab["index"] = 0
+        winmon.WinMonApp._request_preview_frame(app)
+        self.assertEqual(len(requested), 1, "切回预览页没有恢复取帧")
+
     def test_restore_from_tray_forces_one_frame_and_tolerates_no_preview(self):
         """
         恢复显示后必须**补一帧**：隐藏期间 `_request_preview_frame` 直接 return，

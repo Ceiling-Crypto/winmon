@@ -91,6 +91,28 @@ class TestIdentifySessions(unittest.TestCase):
         self.assertGreaterEqual(res["primary"]["foreground_seconds_30m"], 59.0)
         self.assertEqual(res["primary"]["activations_30m"], 1)
 
+    def test_tracker_is_a_true_rolling_30_minute_window(self):
+        """旧实现会在 30 分处永久顶格；现在离开后旧时长要能过期。"""
+        tracker = ai.AiTracker(window_seconds=1800)
+        key = "desktop:Claude Desktop"
+        tracker.observe(0.0, key)
+        tracker.observe(600.0, key)
+        tracker.observe(600.0, "")          # 切走
+        tracker.observe(2401.0, "")         # 切走后已过 30 分钟
+        seconds, acts, _fresh = tracker.stats(key, 2401.0)
+        self.assertLess(seconds, 5.0, "30 分钟前的区间没有被滚掉")
+        self.assertEqual(acts, 0, "激活次数也应按同一 30 分钟窗口过期")
+
+    def test_tracker_activation_count_also_expires(self):
+        tracker = ai.AiTracker(window_seconds=1800)
+        key = "web:ChatGPT"
+        tracker.observe(0.0, key)
+        tracker.observe(100.0, "")
+        tracker.observe(200.0, key)
+        self.assertEqual(tracker.stats(key, 200.0)[1], 2)
+        self.assertEqual(tracker.stats(key, 2200.0)[1], 0,
+                         "30 分钟前的激活次数不应继续算")
+
     def test_pin_overrides_scores(self):
         wins = [win(1, 10, "Claude", "claude.exe"),
                 win(2, 20, "ChatGPT - Microsoft Edge", "msedge.exe")]

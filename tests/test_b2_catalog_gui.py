@@ -266,6 +266,39 @@ class TestCatalogPane(unittest.TestCase):
         self.pane.toggle_favorite_selected()
         self.assertIn("请先选择", self.app.status)
 
+    def test_batch_favorite_applies_to_all_selected(self):
+        """多选后收藏要对每个选中项生效，而不是只处理第一项。"""
+        self.pane.tree.selection_set(self._iid_of("Steam"),
+                                     self._iid_of("Word"))
+        self.pane._on_selection_changed()
+        self.pane.toggle_favorite_selected()
+        self.assertTrue(self.app.program_prefs.is_favorite(r"X:\steam\steam.exe"))
+        self.assertTrue(self.app.program_prefs.is_favorite(
+            r"C:\Program Files\Microsoft Office\root\WINWORD.EXE"))
+        self.assertIn("2 个", self.app.status)
+
+        self.pane.tree.selection_set(self._iid_of("Steam"),
+                                     self._iid_of("Word"))
+        self.pane.toggle_favorite_selected()
+        self.assertFalse(self.app.program_prefs.is_favorite(r"X:\steam\steam.exe"))
+        self.assertFalse(self.app.program_prefs.is_favorite(
+            r"C:\Program Files\Microsoft Office\root\WINWORD.EXE"))
+
+    def test_selection_footer_shows_count_and_gesture_hint(self):
+        self.pane.tree.selection_set(self._iid_of("Steam"),
+                                     self._iid_of("Word"))
+        self.pane._on_selection_changed()
+        text = self.pane.sel_info.cget("text")
+        self.assertIn("已选 2 个", text)
+        self.assertIn("双击", text)
+
+    def test_running_tag_does_not_hide_selection(self):
+        """运行中不能再用“选中同款蓝底”，否则点击看起来没反应。"""
+        running_bg = self.pane.tree.tag_configure("running", "background")
+        self.assertNotEqual(str(running_bg), self.winmon.UI_SELECT_BG)
+        self.assertTrue(self.pane.tree.bind("<Return>"), "Enter 应能打开选中程序")
+        self.assertTrue(self.pane.tree.bind("<Double-1>"), "双击应仍可用")
+
     # -- 最近使用 --
     def test_recent_filter_and_order(self):
         prefs = self.app.program_prefs
@@ -318,6 +351,21 @@ class TestCatalogPane(unittest.TestCase):
         self.assertFalse(self.app.program_prefs.is_recent(r"X:\steam\steam.exe"),
                          "启动失败不该记入最近使用")
         self.assertTrue(self.app.actions, "启动失败也要留一条痕（如实报告）")
+
+    def test_running_program_uses_robust_activate_window(self):
+        """运行中的程序不能只调 SetForegroundWindow：前台锁一拒绝就像没反应。"""
+        steam = self.pane.items[0]
+        steam.pid = os.getpid()
+        self.app.hwnd_of_pid = lambda _pid: 4242
+        self.pane.tree.selection_set(self._iid_of("Steam"))
+        with mock.patch.object(core, "is_process_alive", return_value=True), \
+                mock.patch.object(core, "activate_window",
+                                  return_value=(True, "已切换到前台")) as activate:
+            self.pane.launch_selected()
+            self._pump(lambda: bool(self.app.actions))
+        activate.assert_called_once()
+        self.assertEqual(activate.call_args.args[0], 4242)
+        self.assertIn("切到前台", self.app.status)
 
     # -- 手动类别 --
     def test_set_category_via_dialog(self):

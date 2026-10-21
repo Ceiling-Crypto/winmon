@@ -28,6 +28,7 @@ import subprocess
 import threading
 import time
 import uuid
+from collections import deque
 from dataclasses import dataclass, field
 
 import winmon_core as core
@@ -275,40 +276,76 @@ def session_key_for_window(wi, procs: dict | None = None) -> str:
 
 class AiTracker:
     """
-    前台时长累计器（只记内存，不落盘）。
+    前台时长累计器（只记内存，不落盘），统计口径是**滚动 30 分钟**。
 
     调用方（GUI）每 700ms 喂一次"当前前台窗口属于哪个 AI"即可。
     命令行 / MCP 是**一次性**查询，没有历史，所以 `foreground_seconds` 为 0 ——
     这不是错误，工具描述里会写清楚"累计时长需要 WinMon 界面在跑"。
+
+    为什么不是"总累计再截到 30 分钟"：那样用满 30 分钟后数字会永远卡在
+    "30 分 0 秒"，离开一段时间也不会回落，看起来就像"计时一会儿动一会儿不动"。
+    这里保存每段前台区间，`stats()` 只累加最近 30 分钟内的部分：
+      · AI 一直在前台的 30 分钟内，数字按秒增长；
+      · 切到 WinMon / 别的窗口时停止增长（前台口径本来就该如此）；
+      · 超过 30 分钟的旧区间自动过期，不会永久顶格。
     """
 
     def __init__(self, window_seconds: float = 1800.0) -> None:
         self.window_seconds = float(window_seconds)
         self._key = ""
         self._since = 0.0
-        self._seconds: dict[str, float] = {}
-        self._activations: dict[str, int] = {}
+        #: 已结束的前台区间 `(start, end, key)`，按时间有序。
+        self._segments: deque = deque()
+        #: 每次"切到某个 AI"的时间点，用于统计窗口内激活次数。
+        self._activation_times: dict[str, deque] = {}
         self._last_seen: dict[str, float] = {}
+
+    def _prune(self, now: float) -> None:
+        cutoff = now - self.window_seconds
+        while self._segments and self._segments[0][1] <= cutoff:
+            self._segments.popleft()
+        for key in list(self._activation_times):
+            q = self._activation_times[key]
+            while q and q[0] < cutoff:
+                q.popleft()
+            if not q:
+                self._activation_times.pop(key, None)
+
+    def current_key(self) -> str:
+        """此刻正在计时的 AI key（空串 = 前台不是 AI）。"""
+        return self._key
 
     def observe(self, now: float, key: str) -> None:
         """喂一拍：`key` 为空表示前台不是 AI。"""
-        if self._key:
-            self._seconds[self._key] = self._seconds.get(self._key, 0.0) + max(
-                0.0, now - self._since)
+        now = float(now)
+        if self._key and now > self._since:
+            self._segments.append((self._since, now, self._key))
+        key = key or ""
         if key:
             if key != self._key:
-                self._activations[key] = self._activations.get(key, 0) + 1
+                self._activation_times.setdefault(key, deque()).append(now)
             self._last_seen[key] = now
-        self._key = key or ""
+        self._key = key
         self._since = now
+        self._prune(now)
+
+    def _seconds_for(self, key: str, now: float) -> float:
+        cutoff = now - self.window_seconds
+        total = 0.0
+        for start, end, seg_key in self._segments:
+            if seg_key != key or end <= cutoff:
+                continue
+            total += end - max(start, cutoff)
+        if self._key == key and now > self._since:
+            total += now - max(self._since, cutoff)
+        return min(self.window_seconds, max(0.0, total))
 
     def stats(self, key: str, now: float) -> tuple:
-        """返回 `(前台秒数, 激活次数, 新鲜度 0~1)`；秒数按 30 分钟窗口截断。"""
-        seconds = self._seconds.get(key, 0.0)
-        if self._key == key and now > self._since:
-            seconds += now - self._since
-        seconds = min(seconds, self.window_seconds)
-        acts = self._activations.get(key, 0)
+        """返回 `(最近 30 分钟前台秒数, 激活次数, 新鲜度 0~1)`。"""
+        now = float(now)
+        self._prune(now)
+        seconds = self._seconds_for(key, now)
+        acts = len(self._activation_times.get(key) or ())
         last = self._last_seen.get(key, 0.0)
         if not last:
             fresh = 0.0
@@ -1239,8 +1276,8 @@ def format_ai_summary(primary: dict | None, status: dict | None,
         identity += p("）", ")")
         secs = primary.get("foreground_seconds_30m") or 0
         if secs:
-            identity += p(f" · 前台 {_format_seconds(secs)}",
-                          f" · foreground {_format_seconds(secs)}")
+            identity += p(f" · 近30分前台 {_format_seconds(secs)}",
+                          f" · 30m foreground {_format_seconds(secs)}")
     else:
         identity = p("未识别到外部 AI", "no external AI detected")
 
@@ -1266,7 +1303,9 @@ def format_ai_summary(primary: dict | None, status: dict | None,
         connection_text += (f" ({model})" if model else "")
         status_kind = "direct"
     elif kind == "clipboard":
-        connection_text = p("未接入（可复制）", "not connected (clipboard)")
+        # 这不是一个可以点的“按键”，只是接入状态：
+        # 没有 MCP、也没有直连，只能用剪贴板把现场交给当前 AI。
+        connection_text = p("未接入 · 可复制现场", "not connected · copy handoff")
         status_kind = "clipboard"
 
     mode_text = ""
@@ -1335,7 +1374,7 @@ def format_sessions_detail(res: dict | None) -> str:
     lines = [f"主 AI：{primary.get('name')}（{primary.get('kind')}，"
              f"置信度 {primary.get('confidence')}）",
              f"  进程：{primary.get('proc') or '?'}  PID {primary.get('pid')}",
-             f"  前台：{_format_seconds(primary.get('foreground_seconds_30m'))}"
+             f"  近30分前台：{_format_seconds(primary.get('foreground_seconds_30m'))}"
              f" / 激活 {primary.get('activations_30m', 0)} 次",
              f"  依据：{primary.get('source') or '?'}"
              + ("（用户指定）" if primary.get("pinned") else "")]

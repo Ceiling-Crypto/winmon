@@ -47,6 +47,7 @@ import sys
 import threading
 import time
 import tkinter as tk
+import zlib
 from tkinter import filedialog, messagebox, simpledialog, ttk
 
 import winmon_ai as ai
@@ -144,26 +145,29 @@ THEME_RESOLVED = THEME_DEFAULT
 
 _THEME_PALETTES = {
     THEME_LIGHT: {
+        # 2026-10-21 视觉升级：白底不变，但把灰蓝的“旧工具感”换成
+        # 更中性的 slate + 一个更干净的蓝色强调色。UI_BG 仍是纯白，
+        # 这样标题栏、Treeview 和大量 tk.Frame 的底色不需要逐处改。
         "UI_BG": "#ffffff",
         "UI_SURFACE": "#ffffff",
-        "UI_SURFACE_ALT": "#f2f5f9",
-        "UI_INK": "#111827",
-        "UI_MUTED": "#5b6573",
-        "UI_LINE": "#d3dae4",
-        "UI_ACCENT": "#1f5f8b",
-        "UI_ACCENT_DARK": "#174a6c",
+        "UI_SURFACE_ALT": "#f7f9fc",
+        "UI_INK": "#0f172a",
+        "UI_MUTED": "#64748b",
+        "UI_LINE": "#e2e8f0",
+        "UI_ACCENT": "#2563eb",
+        "UI_ACCENT_DARK": "#1d4ed8",
         "UI_ON_ACCENT": "#ffffff",
-        "UI_INDICATOR": "#2f7fc1",
-        "UI_INDICATOR_BORDER": "#1f5f8b",
-        "UI_HOVER_BG": "#dde8f4",
-        "UI_SELECT_BG": "#d6e8f7",
-        "UI_SELECT_FG": "#111827",
-        "UI_OK": "#1b7a3a",
-        "UI_WARN": "#9a6700",
-        "UI_DANGER": "#c0392b",
-        "UI_PURPLE": "#7b3fa0",
-        "UI_HEADING": "#40566b",
-        "UI_PLACEHOLDER": "#5f6b7a",
+        "UI_INDICATOR": "#3b82f6",
+        "UI_INDICATOR_BORDER": "#2563eb",
+        "UI_HOVER_BG": "#eff6ff",
+        "UI_SELECT_BG": "#dbeafe",
+        "UI_SELECT_FG": "#0f172a",
+        "UI_OK": "#15803d",
+        "UI_WARN": "#b45309",
+        "UI_DANGER": "#dc2626",
+        "UI_PURPLE": "#7c3aed",
+        "UI_HEADING": "#475569",
+        "UI_PLACEHOLDER": "#64748b",
         #: 媒体行右侧的 3 个按键：深绿底 + 白字，在浅绿/深青卡片上都有对比。
         "UI_MEDIA_BTN_BG": "#0f6b5c",
         "UI_MEDIA_BTN_FG": "#ffffff",
@@ -171,12 +175,14 @@ _THEME_PALETTES = {
         #: 高亮卡片不是写死的浅色块：深色主题换成同色系的深底亮字，
         #: 否则纯黑页面里会突然出现几大块刺眼的浅色补丁。
         "UI_CARDS": {
-            "media": {"bg": "#eef8f4", "fg": "#103b36", "muted": "#5a6b7b",
-                      "border": "#a9d8ce", "tag_bg": "#0f6b5c", "tag_fg": "#ffffff"},
-            "ai": {"bg": "#edf5fb", "fg": "#12354d", "muted": "#5b7285",
-                   "border": "#b9d6ee", "tag_bg": "#1f5f8b", "tag_fg": "#ffffff",
-                   "state_ok_bg": "#e7f6ec", "state_ok_fg": "#17663f",
-                   "state_warn_bg": "#fff4d6", "state_warn_fg": "#7a5a00"},
+            # 卡片从“整块浅绿/浅蓝”收成近白底 + 彩色标签：
+            # 信息层级更清楚，也不会和选中行、状态条抢颜色。
+            "media": {"bg": "#f7fbf9", "fg": "#0f2f2a", "muted": "#5f746e",
+                      "border": "#d7e7e1", "tag_bg": "#0f6b5c", "tag_fg": "#ffffff"},
+            "ai": {"bg": "#f8fafc", "fg": "#0f2740", "muted": "#60758a",
+                   "border": "#dbe4ee", "tag_bg": "#2563eb", "tag_fg": "#ffffff",
+                   "state_ok_bg": "#ecfdf3", "state_ok_fg": "#166534",
+                   "state_warn_bg": "#fffbeb", "state_warn_fg": "#92400e"},
             "connect": {"ok_bg": "#e7f6ec", "ok_fg": "#17663f", "ok_border": "#8fc9a4",
                         "warn_bg": "#fff4df", "warn_fg": "#7a5a00",
                         "warn_border": "#e2bd7a"},
@@ -1006,26 +1012,37 @@ class PreviewPane:
         self.frame.columnconfigure(0, weight=1)
 
         head = ttk.Frame(self.frame)
-        head.grid(row=0, column=0, sticky="ew", padx=6, pady=(6, 2))
-        head.columnconfigure(1, weight=1)
-        self.lbl_title = ttk.Label(head, text="（未选择程序）", font=BOLD_FONT, anchor="w")
-        self.lbl_title.grid(row=0, column=0, columnspan=2, sticky="ew")
-        self.lbl_meta = ttk.Label(head, text="", font=UI_FONT, foreground=UI_MUTED, anchor="w")
-        self.lbl_meta.grid(row=1, column=0, sticky="ew")
-        self.lbl_stats = ttk.Label(head, text="", font=MONO_FONT, foreground=UI_OK, anchor="e")
-        self.lbl_stats.grid(row=1, column=1, sticky="e")
-        #: 暂停刷新移到标题右侧：底部留给操作栏，
-        #: 右侧预览变窄时也不会把暂停键挤成一条线。
-        self.btn_pause = ttk.Button(head, text="暂停刷新", width=9,
+        head.grid(row=0, column=0, sticky="ew", padx=8, pady=(8, 2))
+        head.columnconfigure(0, weight=1)
+        # 标题/元信息在左，暂停按钮与 FPS 在右，**右侧单独一列**。
+        # 旧版把 FPS 放在标题的同一列、暂停键又在第三列：标题一长，
+        # 网格就会把 FPS 挤到暂停键下面（实机截图里已经重叠）。
+        text_col = ttk.Frame(head)
+        text_col.grid(row=0, column=0, sticky="ew")
+        text_col.columnconfigure(0, weight=1)
+        # width=1 是刻意的：让标题/元信息不要按全文长度去“撑”父容器。
+        # 不设的话，长标题会把右侧的暂停键和 FPS 顶到窗口外（实机复现）。
+        self.lbl_title = ttk.Label(text_col, text="（未选择程序）",
+                                   font=BOLD_FONT, anchor="w", width=1)
+        self.lbl_title.grid(row=0, column=0, sticky="ew")
+        self.lbl_meta = ttk.Label(text_col, text="", font=UI_FONT,
+                                  foreground=UI_MUTED, anchor="w", width=1)
+        self.lbl_meta.grid(row=1, column=0, sticky="ew", pady=(1, 0))
+        right_col = ttk.Frame(head)
+        right_col.grid(row=0, column=1, sticky="ne", padx=(8, 0))
+        self.btn_pause = ttk.Button(right_col, text="暂停刷新", width=9,
                                     command=self.app.toggle_pause)
-        self.btn_pause.grid(row=0, column=2, rowspan=2, sticky="e", padx=(6, 0))
+        self.btn_pause.pack(anchor="e")
+        self.lbl_stats = ttk.Label(right_col, text="", font=MONO_FONT,
+                                   foreground=UI_OK, anchor="e")
+        self.lbl_stats.pack(anchor="e", pady=(2, 0))
 
-        holder = tk.Frame(self.frame, bg=UI_SURFACE_ALT, bd=1, relief="solid",
-                          highlightbackground=UI_LINE)
-        holder.grid(row=1, column=0, sticky="nsew", padx=6, pady=4)
+        holder = tk.Frame(self.frame, bg=UI_SURFACE, bd=0,
+                          highlightbackground=UI_LINE, highlightthickness=1)
+        holder.grid(row=1, column=0, sticky="nsew", padx=8, pady=4)
         holder.rowconfigure(0, weight=1)
         holder.columnconfigure(0, weight=1)
-        self.canvas = tk.Canvas(holder, bg=UI_SURFACE_ALT, highlightthickness=0)
+        self.canvas = tk.Canvas(holder, bg=UI_SURFACE, highlightthickness=0)
         self.canvas.grid(row=0, column=0, sticky="nsew")
         self.img_item = self.canvas.create_image(0, 0, anchor="nw")
         self.canvas.bind("<Configure>", self._on_canvas_resize)
@@ -1138,9 +1155,22 @@ class PreviewPane:
         self.canvas.coords(self.img_item, x, y)
 
     def set_png(self, png: bytes) -> None:
-        """显示一张 PNG；Tk 在 C 层解码，帧率比十六进制像素串高得多。"""
+        """
+        显示一张 PNG；Tk 在 C 层解码，帧率比十六进制像素串高得多。
+
+        `png` 可以是**原始 PNG 字节**，也可以是旧的 base64 字节（测试/兼容调用）。
+        原始字节少一次 base64 编码，Tk 也能直接按二进制串解码：本机 900×600
+        实测 16.9ms → 8.9ms/帧（2026-10-21 的 CPU 优化）。
+        """
+        data = png
+        if isinstance(png, (bytes, bytearray)) and not bytes(png).startswith(
+                b"\x89PNG\r\n\x1a\n"):
+            try:
+                data = base64.b64decode(png)
+            except Exception:
+                return
         try:
-            img = tk.PhotoImage(master=self.canvas, data=png)
+            img = tk.PhotoImage(master=self.canvas, data=data)
         except tk.TclError:
             return
         self.base_photo = img
@@ -1299,10 +1329,12 @@ class PreviewPane:
         self.close_actions()
 
     def set_title(self, text: str) -> None:
-        self.lbl_title.configure(text=text)
+        # 标题单行显示：太长时先自己收 `…`，避免把右侧的暂停/FPS 挤出网格。
+        self.lbl_title.configure(text=fit_media_text(text, 76))
 
     def set_meta(self, text: str) -> None:
-        self.lbl_meta.configure(text=text)
+        # 元信息也单行收尾，避免“路径/进程名很长”时把右侧列顶出去。
+        self.lbl_meta.configure(text=fit_media_text(text, 82))
 
     def set_stats(self, text: str) -> None:
         self.lbl_stats.configure(text=text)
@@ -1975,23 +2007,74 @@ class ProgramCatalogPane:
         tv.column("dir", width=330, anchor="w")
         vs = ttk.Scrollbar(self.frame, orient="vertical", command=tv.yview)
         tv.configure(yscrollcommand=vs.set)
-        tv.grid(row=3, column=0, sticky="nsew", padx=(6, 0), pady=(0, 6))
-        vs.grid(row=3, column=1, sticky="ns", pady=(0, 6))
-        tv.tag_configure("running", background=UI_SELECT_BG, foreground=UI_SELECT_FG)
+        tv.grid(row=3, column=0, sticky="nsew", padx=(6, 0), pady=(0, 4))
+        vs.grid(row=3, column=1, sticky="ns", pady=(0, 4))
+        # 运行中只用绿色文字 + 状态列，不再铺整行蓝底：
+        # 蓝底原先和选中行同色，导致“点运行中的程序”看不出任何选中反馈，
+        # 也会让 Ctrl/Shift 多选看起来像没生效。
+        tv.tag_configure("running", foreground=UI_OK)
         tv.tag_configure("missing", foreground=UI_DANGER)
-        tv.tag_configure("group", background=UI_SURFACE_ALT)
-        tv.tag_configure("fav", foreground="#9a6700")
-        tv.bind("<Double-1>", lambda e: self.launch_selected())
-        tv.bind("<<TreeviewSelect>>", lambda e: self._sync_fav_button())
+        tv.tag_configure("group", background=UI_SURFACE_ALT, foreground=UI_MUTED)
+        tv.tag_configure("fav", foreground="#b45309")
+        tv.bind("<Double-1>", self._on_double_click)
+        tv.bind("<Return>", lambda _e: self.launch_selected())
+        tv.bind("<KP_Enter>", lambda _e: self.launch_selected())
+        tv.bind("<<TreeviewSelect>>", lambda e: self._on_selection_changed())
         # 右键菜单（B.4）：以前程序目录没有右键菜单，只能靠底部那几个按钮；
         # 这里补上"用参数启动 / 以管理员打开"，参数启动是本次新增的能力入口。
         tv.bind("<Button-3>", self._on_right_click)
+
+        # 底部一行只做两件事：显示“已选几个”，并把双击/Enter/多选手势写清楚。
+        # 程序目录没有预览区，单击后如果只改一行底色，很容易被当成“点了没反应”。
+        self.sel_info = ttk.Label(
+            self.frame, text="双击 / Enter 打开 · 按住 Ctrl / Shift 多选",
+            font=SMALL_FONT, foreground=UI_MUTED, anchor="w")
+        self.sel_info.grid(row=4, column=0, columnspan=2, sticky="ew",
+                           padx=6, pady=(0, 4))
         # 只给两个开关挂 trace（类别走多选面板，点「应用」时自己刷新并保存）
         self.only_favorites.trace_add("write", lambda *_: self._on_filter_changed())
         self.only_recent.trace_add("write", lambda *_: self._on_filter_changed())
 
     def _on_filter_changed(self) -> None:
         self.apply_filter()
+
+    def _on_selection_changed(self) -> None:
+        """选中行变化：更新收藏按钮 + 底部“已选 N 个”的即时反馈。"""
+        self._sync_fav_button()
+        try:
+            items = self._selected_items()
+            if not items:
+                text = "双击 / Enter 打开 · 按住 Ctrl / Shift 多选"
+            elif len(items) == 1:
+                text = f"已选：{items[0].name} · 双击 / Enter 打开"
+            else:
+                names = "、".join(x.name for x in items[:3])
+                if len(items) > 3:
+                    names += f" 等 {len(items)} 个"
+                text = (f"已选 {len(items)} 个：{names} · 双击 / Enter 打开")
+            self.sel_info.configure(text=fit_media_text(text, 62))
+        except Exception:
+            pass
+
+    def _on_double_click(self, event):
+        """双击：分组表头折叠/展开，程序行才启动。"""
+        try:
+            if self.tree.identify_region(event.x, event.y) in ("heading", "separator"):
+                return "break"
+            row = self.tree.identify_row(event.y)
+            if not row:
+                return "break"
+            if row in self.category_row:
+                self.tree.item(row, open=not bool(self.tree.item(row, "open")))
+                return "break"
+            if row in self.row_of_item:
+                if row not in self.tree.selection():
+                    self.tree.selection_set(row)
+                    self.tree.focus(row)
+                self.launch_selected()
+        except Exception:
+            pass
+        return "break"
 
     def _show_more_menu(self) -> None:
         """程序目录的「⋯」菜单：低频动作集中在这里，主行保持清爽。"""
@@ -2256,7 +2339,7 @@ class ProgramCatalogPane:
         fav_total = prefs.favorite_count()
         rec_total = prefs.recent_count()
         self.filter_info.configure(text=f"收藏 {fav_total} · 最近 {rec_total}")
-        self._sync_fav_button()
+        self._on_selection_changed()
         # 当前显示数量放状态栏：面板里那几行工具区宽度紧张，放不下计数标签
         try:
             self.app._set_status(f"程序目录 {len(self.items)} 项，当前显示 {len(items)} 项"
@@ -2268,7 +2351,8 @@ class ProgramCatalogPane:
         """收藏按钮的文字跟着选中项的状态变（☆/★）。"""
         items = self._selected_items()
         try:
-            if items and self.prefs().is_favorite(items[0].target, items[0].name):
+            if items and all(self.prefs().is_favorite(it.target, it.name)
+                             for it in items):
                 self.btn_fav.configure(text="★ 已收藏")
             else:
                 self.btn_fav.configure(text="☆ 收藏")
@@ -2278,45 +2362,66 @@ class ProgramCatalogPane:
     def toggle_favorite_selected(self) -> None:
         items = self._selected_items()
         if not items:
-            self.app._set_status("请先选择一个程序，再点收藏")
+            self.app._set_status("请先选择程序（Ctrl / Shift 可多选），再点收藏")
             return
         prefs = self.prefs()
-        it = items[0]
-        now_fav = prefs.toggle_favorite(it.target, it.name)
+        # 多选时按“全部已收藏 → 全部取消；否则全部加入”处理。
+        # 不要只 toggle 第一项：那正是“多选看起来没生效”的经典坑。
+        all_fav = all(prefs.is_favorite(it.target, it.name) for it in items)
+        for it in items:
+            if all_fav:
+                prefs.remove_favorite(it.target, it.name)
+            else:
+                prefs.add_favorite(it.target, it.name)
         self.app._save_settings_soon()
         self.apply_filter()
-        self.app._set_status(f"{it.name}：{'已加入收藏' if now_fav else '已取消收藏'}")
+        if len(items) == 1:
+            self.app._set_status(
+                f"{items[0].name}：{'已取消收藏' if all_fav else '已加入收藏'}")
+        else:
+            self.app._set_status(
+                f"{'已取消收藏' if all_fav else '已收藏'} {len(items)} 个程序")
 
     def set_category_selected(self, clear: bool = False) -> None:
         """把选中项手动归到某个类别（或清除手动设置，回到自动分类）。"""
         items = self._selected_items()
         if not items:
-            self.app._set_status("请先选择一个程序，再设置类别")
+            self.app._set_status("请先选择程序（Ctrl / Shift 可多选），再设置类别")
             return
         prefs = self.prefs()
-        it = items[0]
+        n = len(items)
         if clear:
-            prefs.set_category(it.target, "", it.name)
+            for it in items:
+                prefs.set_category(it.target, "", it.name)
             self.app._save_settings_soon()
             self.apply_filter()
             self.app._set_status(
-                f"{it.name}：已恢复自动分类（"
-                f"{core.CATEGORY_LABELS[core.category_of_item(it)]}）")
+                "已恢复自动分类" if n == 1
+                else f"已恢复 {n} 个程序的自动分类")
             return
         labels = [core.CATEGORY_LABELS[k] for k in core.CATEGORY_ORDER]
-        box = _ChoiceDialog(self.app.root, f"设置类别 — {it.name}",
-                            "把这个程序归到哪一类？", labels,
-                            current=core.CATEGORY_LABELS[
-                                core.category_of_item(it, prefs.category_override(
-                                    it.target, it.name))])
+        title = (f"设置类别 — {items[0].name}" if n == 1
+                 else f"设置类别 — 已选 {n} 个程序")
+        current = ""
+        if n == 1:
+            current = core.CATEGORY_LABELS[
+                core.category_of_item(items[0], prefs.category_override(
+                    items[0].target, items[0].name))]
+        box = _ChoiceDialog(
+            self.app.root, title,
+            "把这些程序归到哪一类？" if n > 1 else "把这个程序归到哪一类？",
+            labels, current=current)
         chosen = box.show()
         if chosen is None:
             return
         key = next((k for k, text in core.CATEGORY_LABELS.items() if text == chosen), "")
-        prefs.set_category(it.target, key, it.name)
+        for it in items:
+            prefs.set_category(it.target, key, it.name)
         self.app._save_settings_soon()
         self.apply_filter()
-        self.app._set_status(f"{it.name}：类别已设为「{chosen}」")
+        self.app._set_status(
+            f"{items[0].name}：类别已设为「{chosen}」" if n == 1
+            else f"{n} 个程序：类别已设为「{chosen}」")
 
     def _icon_for(self, it, icons: "IconProvider"):
         """程序目录的图标：按 exe 路径缓存，避免每次重建都重新提取。"""
@@ -2394,17 +2499,20 @@ class ProgramCatalogPane:
         def worker():
             for it in items:
                 if it.pid and core.is_process_alive(it.pid) and not extra_args:
-                    # 带参数时不走"已在运行就切前台"——明确要再开一个
+                    # 带参数时不走"已在运行就切前台"——明确要再开一个。
+                    # 切前台不要只调 SetForegroundWindow：Windows 前台锁会拒绝，
+                    # 表现就是“运行中的程序点了没反应”。activate_window 会
+                    # AttachThreadInput + 还原 + 重试，并回读是否真的成功。
                     hwnd = self.app.hwnd_of_pid(it.pid)
                     if hwnd:
-                        try:
-                            core.user32.SetForegroundWindow(core.w.HWND(hwnd))
+                        ok, msg = core.activate_window(hwnd, retries=2, settle=0.2)
+                        if ok:
                             msg = "已在运行，已切到前台"
-                        except Exception:
-                            msg = "已在运行（切前台失败）"
+                        else:
+                            msg = f"已在运行，但切前台失败：{msg}"
                     else:
-                        msg = "已在运行"
-                    ok = True
+                        ok = True
+                        msg = "已在后台运行（没有可见窗口）"
                 else:
                     ok, msg = core.launch_item(it, as_admin=as_admin,
                                                extra_args=extra_args)
@@ -2482,7 +2590,11 @@ class ProgramCatalogPane:
         items = self._selected_items()
         if not items:
             return
-        self.app._copy(items[0].target)
+        if len(items) == 1:
+            self.app._copy(items[0].target)
+            return
+        self.app._copy("\n".join(it.target for it in items))
+        self.app._set_status(f"已复制 {len(items)} 个程序的路径")
 
     def export_csv(self) -> None:
         if not self.filtered:
@@ -3517,6 +3629,10 @@ class _AiUsagePanel:
                             "不是你客户端的完整账单。",
                  font=SMALL_FONT, bg=UI_BG, fg=UI_MUTED, anchor="w",
                  justify="left").pack(fill="x", pady=(4, 0))
+        tk.Label(wrap, text="“近30分前台”只累计 AI 窗口在最前面的时间；"
+                            "切到 WinMon 或别的窗口时会暂停。",
+                 font=SMALL_FONT, bg=UI_BG, fg=UI_MUTED, anchor="w",
+                 justify="left").pack(fill="x", pady=(1, 0))
 
     def _build_hero(self, wrap) -> None:
         colors = UI_CARDS["ai"]
@@ -3741,6 +3857,20 @@ class _AiUsagePanel:
                 detail += f" · 置信度 {float(conf):.2f}"
             except (TypeError, ValueError):
                 pass
+        try:
+            secs = int(float(primary.get("foreground_seconds_30m") or 0))
+        except (TypeError, ValueError):
+            secs = 0
+        if secs:
+            detail += (f" · 近30分前台 {secs // 60} 分 {secs % 60} 秒"
+                       if secs >= 60 else f" · 近30分前台 {secs} 秒")
+        acts = 0
+        try:
+            acts = int(primary.get("activations_30m") or 0)
+        except (TypeError, ValueError):
+            pass
+        if acts:
+            detail += f" · 激活 {acts} 次"
         self.ai_name_text.set(name)
         self.ai_detail_text.set(detail)
 
@@ -6164,16 +6294,18 @@ class WinMonApp:
         style.configure("TLabelframe.Label", background=base_bg, foreground=accent)
         style.configure("TButton", font=UI_FONT, background=UI_SURFACE_ALT,
                         foreground=ink, bordercolor=line, relief="flat",
-                        padding=(6, 2))
+                        padding=(8, 4))
         style.map("TButton",
                   background=[("active", UI_HOVER_BG), ("pressed", UI_LINE),
                               ("disabled", UI_SURFACE_ALT)],
                   foreground=[("disabled", UI_MUTED)])
         style.configure("Accent.TButton", font=UI_FONT, background=accent,
                         foreground=UI_ON_ACCENT, bordercolor=UI_ACCENT_DARK,
-                        relief="flat", padding=(8, 3))
+                        relief="flat", padding=(10, 4))
+        # 强调按钮悬停时用**更深的蓝**，不是把底色换成浅灰蓝：
+        # 旧映射是 active=UI_HOVER_BG + 白字，悬停瞬间几乎看不见字。
         style.map("Accent.TButton",
-                  background=[("active", UI_HOVER_BG), ("pressed", UI_ACCENT_DARK)],
+                  background=[("active", UI_ACCENT_DARK), ("pressed", UI_ACCENT_DARK)],
                   foreground=[("disabled", UI_MUTED)])
         # 媒体行右侧的 3 个按键（播放/暂停、上一首、下一首）单独一套高对比样式：
         # 它们仍在**彩色高亮卡片**上，不能用深色页面的默认按钮色，否则会糊成一块。
@@ -6216,18 +6348,20 @@ class WinMonApp:
                   foreground=[("readonly", ink), ("disabled", UI_MUTED)],
                   selectbackground=[("readonly", UI_BG)],
                   selectforeground=[("readonly", ink)])
-        style.configure("TNotebook", background=base_bg, bordercolor=line)
-        style.configure("TNotebook.Tab", font=UI_FONT, padding=(14, 6),
-                        background=panel_bg, foreground=UI_HEADING)
+        style.configure("TNotebook", background=base_bg, bordercolor=line,
+                        tabmargins=(6, 4, 6, 0))
+        style.configure("TNotebook.Tab", font=UI_FONT, padding=(16, 7),
+                        background=panel_bg, foreground=UI_MUTED)
         style.map("TNotebook.Tab",
                   background=[("selected", UI_BG), ("active", UI_HOVER_BG)],
-                  foreground=[("selected", ink), ("active", ink)])
-        style.configure("Treeview", font=UI_FONT, rowheight=ICON_SIZE + 6,
+                  foreground=[("selected", accent), ("active", ink)])
+        style.configure("Treeview", font=UI_FONT, rowheight=ICON_SIZE + 8,
                         background=UI_SURFACE, fieldbackground=UI_SURFACE,
                         foreground=ink, bordercolor=line)
         style.configure("Treeview.Heading",
                         font=("Microsoft YaHei UI", UI_FONT_SIZE, "bold"),
-                        background=panel_bg, foreground=accent, relief="flat")
+                        background=panel_bg, foreground=UI_HEADING, relief="flat",
+                        padding=(6, 4))
         style.map("Treeview.Heading", background=[("active", UI_HOVER_BG)])
         style.map("Treeview",
                   background=[("selected", UI_SELECT_BG)],
@@ -6329,12 +6463,15 @@ class WinMonApp:
         # 被压成「移除」、「加入总览」被压到 1px 彻底看不见 —— 而它们的右边缘仍在
         # 窗口内，所以"越界"类检查完全发现不了。现在动作收进 `_build_action_rail`，
         # 顶部只留搜索和过滤；`test_a5` 的 `_squeezed()` 守这条约定。
-        bar = ttk.Frame(self.root, padding=(8, 6))
+        bar = ttk.Frame(self.root, padding=(10, 6))
         bar.pack(fill="x")
-        ttk.Label(bar, text="搜索：", font=UI_FONT).pack(side="left")
-        ent = ttk.Entry(bar, textvariable=self.search_text, width=20, font=UI_FONT)
+        ttk.Label(bar, text="搜索", font=UI_FONT,
+                  foreground=UI_MUTED).pack(side="left", padx=(0, 4))
+        ent = ttk.Entry(bar, textvariable=self.search_text, width=22, font=UI_FONT)
         ent.pack(side="left", padx=(0, 8))
         ent.bind("<KeyRelease>", lambda e: self.refresh_windows())
+        ttk.Separator(bar, orient="vertical").pack(side="left", fill="y",
+                                                  padx=(0, 6))
 
         ttk.Checkbutton(bar, text="仅显示有窗口", variable=self.only_windowed,
                         command=self.refresh_windows).pack(side="left", padx=2)
@@ -6352,13 +6489,16 @@ class WinMonApp:
         #
         # 2026-10-20 删掉「预览大小」：它实际只是抓取分辨率，画面仍由画布
         # 缩放，导致选“小”反而被放大成一张巨图。现在抓取尺寸自动跟随面板。
-        bar2 = ttk.Frame(self.root, padding=(8, 0))
+        bar2 = ttk.Frame(self.root, padding=(10, 0, 10, 4))
         bar2.pack(fill="x")
-        ttk.Label(bar2, text="刷新速度：", font=UI_FONT).pack(side="left")
+        ttk.Label(bar2, text="刷新速度", font=UI_FONT,
+                  foreground=UI_MUTED).pack(side="left", padx=(0, 4))
         ttk.Combobox(bar2, textvariable=self.fps_choice, state="readonly", width=14,
                      values=[f[0] for f in FPS_CHOICES], font=UI_FONT).pack(side="left", padx=2)
+        ttk.Separator(bar2, orient="vertical").pack(side="left", fill="y",
+                                                   padx=(8, 6))
         ttk.Checkbutton(bar2, text="跟随选择", variable=self.follow_selection).pack(
-            side="left", padx=(10, 2))
+            side="left", padx=(2, 2))
         ttk.Checkbutton(bar2, text="总览实时刷新", variable=self.live_gallery).pack(
             side="left", padx=2)
 
@@ -6504,23 +6644,25 @@ class WinMonApp:
         self._rail_title = tk.Label(rail, text=i18n.pick("操作", "Actions"),
                                     font=SMALL_BOLD_FONT,
                                     bg=rail_bg, fg=UI_MUTED, anchor="w")
-        self._rail_title.pack(fill="x", padx=10, pady=(8, 2))
+        self._rail_title.pack(fill="x", padx=10, pady=(10, 3))
         self._rail_groups: list[tk.Label] = []
         self._rail_buttons: list[tk.Button] = []
 
         def group(title):
-            lbl = tk.Label(rail, text=title, font=SMALL_FONT,
+            lbl = tk.Label(rail, text=title, font=SMALL_BOLD_FONT,
                            bg=rail_bg, fg=UI_MUTED, anchor="w")
-            lbl.pack(fill="x", padx=10, pady=(6, 1))
+            lbl.pack(fill="x", padx=10, pady=(8, 2))
             self._rail_groups.append(lbl)
 
         def action(label, command):
+            # 白底 + 1px 边 + 浅蓝悬停：比一整列灰块更轻，也和主界面的卡片语言一致。
             btn = tk.Button(rail, text=label, font=UI_FONT, fg=ink, bg=button_bg,
-                            activebackground=UI_SELECT_BG, activeforeground=UI_SELECT_FG,
-                            relief="flat", borderwidth=0, highlightthickness=0,
-                            anchor="w", padx=10, pady=2, cursor="hand2",
-                            command=command)
-            btn.pack(fill="x", padx=8, pady=1)
+                            activebackground=UI_HOVER_BG, activeforeground=UI_ACCENT_DARK,
+                            relief="flat", borderwidth=0,
+                            highlightthickness=1, highlightbackground=UI_LINE,
+                            highlightcolor=UI_ACCENT, anchor="w",
+                            padx=9, pady=3, cursor="hand2", command=command)
+            btn.pack(fill="x", padx=6, pady=1)
             self._rail_buttons.append(btn)
 
         group(i18n.pick("监控", "Monitor"))
@@ -6772,14 +6914,21 @@ class WinMonApp:
         card = UI_CARDS["ai"]
         bg = card["bg"]
         bar = tk.Frame(self.root, bg=bg, highlightbackground=card["border"],
-                       highlightthickness=1, padx=8, pady=4)
-        bar.pack(fill="x", padx=8, pady=(0, 4))
+                       highlightthickness=1, padx=10, pady=5)
+        bar.pack(fill="x", padx=8, pady=(0, 5))
+        bar.columnconfigure(1, weight=1)
         tk.Label(bar, text="AI", font=SMALL_BOLD_FONT,
-                 bg=card["tag_bg"], fg=card["tag_fg"], padx=8, pady=2).pack(
-            side="left", padx=(0, 8), anchor="n")
+                 bg=card["tag_bg"], fg=card["tag_fg"], padx=8, pady=2).grid(
+            row=0, column=0, sticky="nw", padx=(0, 8))
         body = tk.Frame(bar, bg=bg)
-        body.pack(side="left", fill="x", expand=True)
+        body.grid(row=0, column=1, sticky="ew")
         body.columnconfigure(0, weight=1)
+        #: “未接入”时唯一可做的事：把现场复制给当前 AI。
+        #: 按钮只在该状态出现；接上 MCP / 直连后自动收起，避免多一个无效动作。
+        self.ai_copy_btn = ttk.Button(bar, text="复制现场", width=8,
+                                      command=self._ai_copy_handoff)
+        self.ai_copy_btn.grid(row=0, column=2, sticky="ne", padx=(8, 0))
+        self.ai_copy_btn.grid_remove()
         self.ai_text = tk.StringVar(value="AI：正在识别…")
         self.ai_identity_text = tk.StringVar(value="正在识别当前 AI…")
         self.ai_identity_label = tk.Label(
@@ -8213,15 +8362,30 @@ class WinMonApp:
             primary = (res or {}).get("primary")
             status = self._ai_status_snapshot()
             info = self._ai_provider_snapshot()
+            # provider snapshot 正常会带 connection；测试替身/半成品 app 可能没有，
+            # 这时再单独取一次，不能因此把 MCP/剪贴板状态判丢。
+            connection = (info.get("connection")
+                          if isinstance(info, dict) else None) \
+                or self._ai_connection_snapshot()
             #: 完整整句仍保留：状态栏/日志/复制场景还在用，测试也钉着它。
-            self.ai_text.set(ai.format_ai_bar(primary, status, info))
-            parts = ai.format_ai_summary(primary, status, info)
+            self.ai_text.set(ai.format_ai_bar(primary, status, info,
+                                               connection=connection))
+            parts = ai.format_ai_summary(primary, status, info,
+                                          connection=connection)
             self.ai_identity_text.set(parts["identity"])
+            timer_text = ""
+            if primary:
+                try:
+                    pkey = f"{primary.get('kind')}:{primary.get('name')}"
+                    timer_text = ("前台计时中" if self._ai_tracker.current_key() == pkey
+                                  else "前台计时暂停")
+                except Exception:
+                    timer_text = ""
             state = " ｜ ".join(
                 item for item in (parts["connection"], parts["mode"],
-                                  parts["follow"]) if item)
+                                  parts["follow"], timer_text) if item)
             self.ai_state_text.set(state or i18n.pick(
-                "未接入（可复制）", "not connected (clipboard)"))
+                "未接入 · 可复制现场", "not connected · copy handoff"))
             self.ai_usage_text.set(parts["usage"])
             card = UI_CARDS["ai"]
             connected = parts["status_kind"] in ("mcp", "direct")
@@ -8231,6 +8395,12 @@ class WinMonApp:
             else:
                 self.ai_state_label.configure(
                     bg=card["state_warn_bg"], fg=card["state_warn_fg"])
+            # “未接入”时把「复制现场」按钮摆出来；接上后收起。
+            if hasattr(self, "ai_copy_btn"):
+                if primary and parts["status_kind"] == "clipboard":
+                    self.ai_copy_btn.grid()
+                else:
+                    self.ai_copy_btn.grid_remove()
             workspace = getattr(self, "ai_workspace", None)
             if workspace is not None:
                 workspace.sync_state(connected)
@@ -8656,6 +8826,10 @@ class WinMonApp:
                 pass
         self._ai_assist = ai.save_assist(data)
         return self._ai_assist
+
+    def _ai_copy_handoff(self) -> None:
+        """主界面 AI 卡上的「复制现场」按钮。"""
+        self._ai_handoff()
 
     def _ai_handoff(self, question: str = "") -> bool:
         """
@@ -9573,6 +9747,7 @@ class WinMonApp:
             return
         self.preview_key = hwnd
         self._last_preview_req = None
+        self._preview_frame_sig = None
         title = wi.title if len(wi.title) <= 80 else wi.title[:79] + "…"
         self.preview.set_title(title or wi.real_name)
         self._refresh_preview_header()
@@ -9583,6 +9758,7 @@ class WinMonApp:
             self.worker.forget(("win", self.preview_key))
             self.preview_key = None
         self._last_preview_req = None
+        self._preview_frame_sig = None
         self.preview.clear("请选择右侧窗口列表中的程序")
 
     def _refresh_preview_header(self) -> None:
@@ -9636,23 +9812,68 @@ class WinMonApp:
         self._last_preview_req = None
         self._request_preview_frame()
 
+    def _winmon_is_foreground(self) -> bool:
+        """WinMon 自己是不是前台窗口（用来决定预览是否降频）。"""
+        try:
+            if not getattr(self, "_own_hwnd", 0):
+                self._own_hwnd = int(core.user32.GetAncestor(
+                    core.w.HWND(self.root.winfo_id()), core.GA_ROOT) or 0)
+            return bool(self._own_hwnd) and int(self._fg_hwnd or 0) == self._own_hwnd
+        except Exception:
+            return True
+
+    def _preview_is_visible(self) -> bool:
+        """预览页真的在屏幕上：窗口没最小化/隐藏，且当前标签页就是实时预览。"""
+        try:
+            if str(self.root.state()) in ("withdrawn", "iconic"):
+                return False
+        except Exception:
+            pass
+        try:
+            return self.notebook.index("current") == 0
+        except Exception:
+            return True
+
+    def _preview_fps_text(self) -> str:
+        text = f"实时 · {self._current_fps():.0f} FPS"
+        if not self._winmon_is_foreground():
+            # 后台只跑 2 FPS；标签如实说明，避免用户以为预览坏了。
+            text += " · 后台省电"
+        return text
+
     def _request_preview_frame(self, force: bool = False) -> None:
-        """向捕获线程登记预览需求（参数无变化时不重复提交）。"""
+        """
+        向捕获线程登记预览需求（参数无变化时不重复提交）。
+
+        CPU 优化（2026-10-21）：
+          · 不在「实时预览」页 / 窗口最小化 / 隐藏到托盘 → 取消取帧；
+          · WinMon 不是前台时 → 最多 2 FPS，避免人在别的窗口干活时还在
+            满帧抓屏 + PNG 编码；
+          · 回到前台/切回预览页时自动恢复用户选的帧率。
+        """
         hwnd = getattr(self, "preview_key", None)
         if hwnd is None:
             return
-        # P2 优化：隐藏到托盘时画面没人看，不取帧（恢复时会 force 一帧）
-        try:
-            if str(self.root.state()) == "withdrawn":
-                return
-        except Exception:
-            pass
+        if not self._preview_is_visible():
+            if not getattr(self, "_preview_suspended", False):
+                self._preview_suspended = True
+                self._last_preview_req = None
+                try:
+                    self.worker.forget(("win", hwnd))
+                except Exception:
+                    pass
+            return
+        if getattr(self, "_preview_suspended", False):
+            self._preview_suspended = False
+            self._last_preview_req = None
         wi = self.win_by_hwnd.get(hwnd)
         if not wi:
             return
         ow, oh = self._current_out_size()
         sw, sh = max(16, wi.rect_w), max(16, wi.rect_h)
         interval = 1.0 if self.paused else self._current_interval_s()
+        if not self._winmon_is_foreground():
+            interval = max(interval, 0.5)
         req = (hwnd, ow, oh, sw, sh, round(interval, 3))
         if not force and req == self._last_preview_req:
             return
@@ -9663,6 +9884,13 @@ class WinMonApp:
 
     def _on_tab_changed(self) -> None:
         idx = self.notebook.index("current")
+        # 离开实时预览页：立刻取消取帧，不等下一次 16ms 泵。
+        if idx != 0 and getattr(self, "preview_key", None) is not None:
+            self._preview_suspended = True
+            try:
+                self.worker.forget(("win", self.preview_key))
+            except Exception:
+                pass
         if idx == 1:
             self._sync_gallery_requests()
         elif idx == 2:
@@ -9809,7 +10037,7 @@ class WinMonApp:
         **工作线程内部**，只会把它静默弄死 —— 实测表现是程序目录面板永远停在
         "正在扫描程序目录…"，没有任何提示（`tests/shot.py`、自动化驱动、
         以及"定时器正在跑但主循环刚好在退出"的时刻都会碰到）。
-        这里统一走一条队列，由主线程的定时泵 `_pump_frames`（10ms 一次）取走执行，
+        这里统一走一条队列，由主线程的定时泵 `_pump_frames`（16ms 一次）取走执行，
         与项目里其它后台线程（窗口操作 / 媒体读取）的做法一致。
         """
         if threading.current_thread() is threading.main_thread():
@@ -9850,7 +10078,9 @@ class WinMonApp:
         if self._pump_counter % 40 == 0:
             self._sync_gallery_requests()
             self._update_overview_text()
-        self.root.after(10, self._pump_frames)
+        # 16ms ≈ 60Hz：足够把 30 FPS 的帧及时送到界面，又比 10ms 少 37.5%
+        # 的空转唤醒。CPU 优化（2026-10-21）。
+        self.root.after(16, self._pump_frames)
 
     def _apply_frame(self, key, frame, error) -> None:
         kind, ident = key
@@ -9858,6 +10088,7 @@ class WinMonApp:
             if ident != self.preview_key:
                 return
             if error or frame is None:
+                self._preview_frame_sig = None
                 self.preview.set_stats("取帧失败")
                 if error:
                     self.preview.set_hint(f"无法捕获画面：{error}")
@@ -9866,6 +10097,7 @@ class WinMonApp:
             # 个别受保护 / 硬件加速窗口会“成功”返回一整张黑图。不要假装正常：
             # 至少告诉用户为什么看不到，而不是留一块静默的黑框。
             if raw and raw.count(0) == len(raw):
+                self._preview_frame_sig = None
                 self.preview.set_stats("画面为空")
                 self.preview.clear(
                     "当前窗口没有可显示的画面\n\n"
@@ -9873,12 +10105,21 @@ class WinMonApp:
                     "先切换到该窗口再试，或换一个窗口。")
                 self.preview.set_hint("")
                 return
+            # 静止画面不重复编码/上屏：抓屏仍在跑（FPS 照常统计），但省掉
+            # 每帧 PNG 编码 + Tk 解码。AI 窗口、文档这类静态画面收益最大；
+            # 视频/游戏每帧都变，CRC 不同，仍按用户选的帧率走。
+            sig = zlib.crc32(raw)
+            if sig == getattr(self, "_preview_frame_sig", None):
+                self._record_frame()
+                self.preview.set_stats(self._preview_fps_text())
+                return
             # PNG 由 Tk 在 C 层解码；比 put(十六进制串) 快一个数量级，
             # 且可以按画布原生分辨率显示，不再抽样降清晰度。
-            self.preview.set_png(base64.b64encode(
-                core.bgr_to_png(raw, ow, oh)))
+            # 直接传原始 PNG 字节：省掉每帧 base64 编码，Tk 解码也更快。
+            self.preview.set_png(core.bgr_to_png(raw, ow, oh))
+            self._preview_frame_sig = sig
             self._record_frame()
-            self.preview.set_stats(f"实时 · {self._current_fps():.0f} FPS")
+            self.preview.set_stats(self._preview_fps_text())
             self._update_overview_text()
         elif kind == "tile":
             if ident not in self.gallery_keys:
@@ -11317,7 +11558,7 @@ def ai_usage_cli(as_json: bool = False) -> int:
     elif cfg is not None and not cfg.validate():
         connection = f"直连就绪（{cfg.model}）"
     else:
-        connection = "未接入（可复制）"
+        connection = "未接入 · 可复制现场"
     mode = str(ai.load_assist().get("mode") or "local")
     if as_json:
         print(json.dumps({"sessions": sessions, "budget": status,
