@@ -124,13 +124,41 @@ FONT_SIZE_MAX = 12
 FONT_SIZE_CHOICES = tuple((size, str(size))
                           for size in range(FONT_SIZE_MIN, FONT_SIZE_MAX + 1))
 UI_FONT_SIZE = FONT_SIZE_DEFAULT
-UI_FONT = ("Microsoft YaHei UI", UI_FONT_SIZE)
-BOLD_FONT = ("Microsoft YaHei UI", UI_FONT_SIZE + 1, "bold")
-SMALL_FONT = ("Microsoft YaHei UI", max(8, UI_FONT_SIZE - 1))
-SMALL_BOLD_FONT = ("Microsoft YaHei UI", max(8, UI_FONT_SIZE - 1), "bold")
-TITLE_FONT = ("Microsoft YaHei UI", UI_FONT_SIZE + 2, "bold")
-BIG_TITLE_FONT = ("Microsoft YaHei UI", UI_FONT_SIZE + 4, "bold")
+#: 2026-10-21 用户要求：界面改用现代无衬线字体，不要停留在旧版雅黑的工具感。
+#: 优先取常见的现代中文无衬线体；都没有时回退到 Windows 自带的 Segoe/雅黑。
+#: 真正开窗时 `_load_saved_ui_preferences()` 会再按本机字体实测一次。
+UI_FONT_CANDIDATES = ("MiSans", "HarmonyOS Sans SC", "Noto Sans SC",
+                      "Source Han Sans SC", "Segoe UI Variable Text",
+                      "Microsoft YaHei UI")
+UI_FONT_FAMILY = "Noto Sans SC"
+UI_FONT = (UI_FONT_FAMILY, UI_FONT_SIZE)
+BOLD_FONT = (UI_FONT_FAMILY, UI_FONT_SIZE + 1, "bold")
+SMALL_FONT = (UI_FONT_FAMILY, max(8, UI_FONT_SIZE - 1))
+SMALL_BOLD_FONT = (UI_FONT_FAMILY, max(8, UI_FONT_SIZE - 1), "bold")
+TITLE_FONT = (UI_FONT_FAMILY, UI_FONT_SIZE + 2, "bold")
+BIG_TITLE_FONT = (UI_FONT_FAMILY, UI_FONT_SIZE + 4, "bold")
 MONO_FONT = ("Consolas", max(9, UI_FONT_SIZE))
+
+
+def resolve_ui_font_family(root=None) -> str:
+    """返回本机可用的第一顺位现代无衬线字体；探测失败就用默认值。"""
+    try:
+        families = {str(name) for name in tkfont.families(root)}
+    except Exception:
+        return UI_FONT_FAMILY
+    for candidate in UI_FONT_CANDIDATES:
+        if candidate in families:
+            return candidate
+    return "Microsoft YaHei UI"
+
+
+def set_ui_font_family(family: str) -> str:
+    """改全局字体家族，并同步所有字体描述；已有控件由调用方重设/重建。"""
+    global UI_FONT_FAMILY
+    value = str(family or "").strip()
+    UI_FONT_FAMILY = value or UI_FONT_FAMILY
+    set_font_size(UI_FONT_SIZE)
+    return UI_FONT_FAMILY
 
 # ---- 界面颜色（普通 / 深色）----
 #
@@ -260,7 +288,117 @@ _THEME_PALETTES = {
     },
 }
 
-#: 设置里显示的顺序；值在保存时写成稳定的 slug（light / dark）。
+#: 2026-10-21：**旧色板原样保留**。用户说“之前的颜色代码先不动，待我决议”，
+#: 所以这里不覆盖、不删除旧值，只把新色板另存一份并通过下面的别名启用。
+#: 想回退时只要把 `_THEME_PALETTES = _THEME_PALETTES_LEGACY` 一行换回来。
+_THEME_PALETTES_LEGACY = _THEME_PALETTES
+
+#: 现代色板：克莱因蓝 #002FA7 作为主强调色，冷白/墨蓝作中性色；
+#: 高亮卡从“浅色补丁”改成低饱和的薄雾底 + 同色系状态色，和页面同一套语言。
+#: 注意：媒体按钮仍保留深青（对比度最好）；MCP/KEY 的浅色前景沿用旧值，
+#: 因为它们是各自卡片的视觉锚点，换了反而会和旁边状态条打架。
+_THEME_PALETTES_MODERN = {
+    THEME_LIGHT: {
+        "UI_BG": "#ffffff",
+        "UI_SURFACE": "#ffffff",
+        "UI_SURFACE_ALT": "#f4f6fc",
+        "UI_INK": "#0b1020",
+        "UI_MUTED": "#5f6b85",
+        "UI_LINE": "#e4e8f3",
+        "UI_ACCENT": "#002fa7",
+        "UI_ACCENT_DARK": "#001e6b",
+        "UI_ON_ACCENT": "#ffffff",
+        "UI_INDICATOR": "#2f55d4",
+        "UI_INDICATOR_BORDER": "#002fa7",
+        "UI_HOVER_BG": "#edf2ff",
+        "UI_SELECT_BG": "#e3e9ff",
+        "UI_SELECT_FG": "#0b1020",
+        "UI_OK": "#087a5b",
+        "UI_WARN": "#a35a00",
+        "UI_DANGER": "#c62828",
+        "UI_PURPLE": "#6d28d9",
+        "UI_HEADING": "#475467",
+        "UI_PLACEHOLDER": "#667085",
+        "UI_MEDIA_BTN_BG": "#0f6b5c",
+        "UI_MEDIA_BTN_FG": "#ffffff",
+        "UI_MEDIA_BTN_ACTIVE": "#0b584b",
+        "UI_CARDS": {
+            "media": {"bg": "#f2faf7", "fg": "#0a2b25", "muted": "#52746c",
+                      "border": "#d3e8e1", "tag_bg": "#0f6b5c", "tag_fg": "#ffffff"},
+            "ai": {"bg": "#f4f7ff", "fg": "#0b1b3a", "muted": "#5a6b8c",
+                   "border": "#d8e1fa", "tag_bg": "#002fa7", "tag_fg": "#ffffff",
+                   "state_ok_bg": "#eaf8f1", "state_ok_fg": "#0a6b4f",
+                   "state_warn_bg": "#fff7e6", "state_warn_fg": "#8a4b00"},
+            "connect": {"ok_bg": "#e9f8f0", "ok_fg": "#0a6b4f", "ok_border": "#a7d8c3",
+                        "warn_bg": "#fff6e3", "warn_fg": "#7a4a00",
+                        "warn_border": "#e8c98f"},
+            "mcp": {"bg": "#f2f8ff", "fg": "#1f6f9e", "muted": "#4b6473",
+                    "border": "#9cc8e2", "accent": "#1f6f9e",
+                    "code_bg": "#ffffff", "code_fg": "#1f3340"},
+            "key": {"bg": "#fff9ec", "fg": "#a86b00", "muted": "#7a6240",
+                    "border": "#d8b36d", "accent": "#a86b00", "warn": "#a33b1f",
+                    "state": "#8a5a00"},
+            "workspace": {"bg": "#f4f7fa", "fg": "#26425c", "muted": "#536377",
+                          "border": "#c8d5e2", "accent": "#395c7a"},
+            "behavior": {"bg": "#f1f9f5", "fg": "#24513f", "muted": "#5a7167",
+                         "border": "#bfdccc", "accent": "#0f6b5c"},
+            "proactive": {"bg": "#f7f3ff", "fg": "#513a72", "muted": "#6a5b7e",
+                          "border": "#d9c8f0", "accent": "#6d28d9"},
+        },
+    },
+    THEME_DARK: {
+        "UI_BG": "#000000",
+        "UI_SURFACE": "#0b0c12",
+        "UI_SURFACE_ALT": "#15171f",
+        "UI_INK": "#ffffff",
+        "UI_MUTED": "#b6bed0",
+        "UI_LINE": "#2a2e3b",
+        "UI_ACCENT": "#7f9bff",
+        "UI_ACCENT_DARK": "#4f6fe8",
+        "UI_ON_ACCENT": "#060b18",
+        "UI_INDICATOR": "#6f8bff",
+        "UI_INDICATOR_BORDER": "#a9bcff",
+        "UI_HOVER_BG": "#1a1d28",
+        "UI_SELECT_BG": "#1c2a55",
+        "UI_SELECT_FG": "#ffffff",
+        "UI_OK": "#5be3a7",
+        "UI_WARN": "#ffc65c",
+        "UI_DANGER": "#ff8a8a",
+        "UI_PURPLE": "#c4b5fd",
+        "UI_HEADING": "#c3cfe3",
+        "UI_PLACEHOLDER": "#8e9ab0",
+        "UI_MEDIA_BTN_BG": "#0f6b5c",
+        "UI_MEDIA_BTN_FG": "#ffffff",
+        "UI_MEDIA_BTN_ACTIVE": "#0b584b",
+        "UI_CARDS": {
+            "media": {"bg": "#0c2a25", "fg": "#e4fff8", "muted": "#a6d3c7",
+                      "border": "#2f7e6d", "tag_bg": "#2fa98e", "tag_fg": "#04120e"},
+            "ai": {"bg": "#0c1b33", "fg": "#eaf2ff", "muted": "#a6badb",
+                   "border": "#2f528c", "tag_bg": "#7f9bff", "tag_fg": "#071020",
+                   "state_ok_bg": "#0b3528", "state_ok_fg": "#88f0c0",
+                   "state_warn_bg": "#3a2a06", "state_warn_fg": "#ffd98a"},
+            "connect": {"ok_bg": "#0c3327", "ok_fg": "#8cf2c5", "ok_border": "#2a7a5b",
+                        "warn_bg": "#3a2b0a", "warn_fg": "#ffd98a",
+                        "warn_border": "#7a5a16"},
+            "mcp": {"bg": "#0b2233", "fg": "#d6efff", "muted": "#8fb8cf",
+                    "border": "#2d7196", "accent": "#8dd3ff",
+                    "code_bg": "#071721", "code_fg": "#d6efff"},
+            "key": {"bg": "#2f240b", "fg": "#ffe6b0", "muted": "#c8ab78",
+                    "border": "#8a671d", "accent": "#f0b64a", "warn": "#ff9b7a",
+                    "state": "#ffd071"},
+            "workspace": {"bg": "#171b20", "fg": "#dbe7f2", "muted": "#a6b6c4",
+                          "border": "#4b5c6b", "accent": "#a9c3d6"},
+            "behavior": {"bg": "#10291f", "fg": "#d5f5e3", "muted": "#9bc6ae",
+                         "border": "#346c55", "accent": "#73d6a7"},
+            "proactive": {"bg": "#24182f", "fg": "#eadcff", "muted": "#c3addd",
+                          "border": "#67468f", "accent": "#c4a6ff"},
+        },
+    },
+}
+
+#: 当前生效的新色板；`_THEME_PALETTES_LEGACY` 是用户决议前的回退路径。
+_THEME_PALETTES = _THEME_PALETTES_MODERN
+
 _THEME_LABELS = {
     "zh": (
         (THEME_LIGHT, "普通（白底）"),
@@ -362,6 +500,11 @@ def set_dark_title_bar(widget, dark: bool | None = None) -> None:
         widget._winmon_dark_want = want
     except Exception:
         pass
+    # 标题栏和窗口外框一起走 DWM 圆角；Win10 上这个调用失败会静默跳过。
+    try:
+        set_rounded_window_corners(widget)
+    except Exception:
+        pass
     if getattr(widget, "_winmon_dark_map_bound", False):
         return
     try:
@@ -371,6 +514,27 @@ def set_dark_title_bar(widget, dark: bool | None = None) -> None:
             lambda _e: set_dark_title_bar(
                 widget, getattr(widget, "_winmon_dark_want", want)),
             add="+")
+    except Exception:
+        pass
+
+
+def set_rounded_window_corners(widget) -> None:
+    """
+    让 Windows 11 把整个顶层窗口（含标题栏）裁成圆角。
+
+    Tk 自己不能给窗口外框做 border-radius；DWM 的
+    `DWMWA_WINDOW_CORNER_PREFERENCE`（33）从 Win11 起可用，值 2 = ROUND。
+    Win10 会返回失败，静默跳过即可 —— 不能为了圆角把老系统弄崩。
+    """
+    try:
+        hwnd = core.user32.GetAncestor(
+            core.w.HWND(widget.winfo_id()), core.GA_ROOT)
+        if not hwnd:
+            return
+        preference = ctypes.c_int(2)
+        ctypes.windll.dwmapi.DwmSetWindowAttribute(
+            core.w.HWND(hwnd), 33, ctypes.byref(preference),
+            ctypes.sizeof(preference))
     except Exception:
         pass
 
@@ -388,12 +552,12 @@ def set_font_size(size) -> int:
     except (TypeError, ValueError):
         value = FONT_SIZE_DEFAULT
     UI_FONT_SIZE = value if value in valid else FONT_SIZE_DEFAULT
-    UI_FONT = ("Microsoft YaHei UI", UI_FONT_SIZE)
-    BOLD_FONT = ("Microsoft YaHei UI", UI_FONT_SIZE + 1, "bold")
-    SMALL_FONT = ("Microsoft YaHei UI", max(8, UI_FONT_SIZE - 1))
-    SMALL_BOLD_FONT = ("Microsoft YaHei UI", max(8, UI_FONT_SIZE - 1), "bold")
-    TITLE_FONT = ("Microsoft YaHei UI", UI_FONT_SIZE + 2, "bold")
-    BIG_TITLE_FONT = ("Microsoft YaHei UI", UI_FONT_SIZE + 4, "bold")
+    UI_FONT = (UI_FONT_FAMILY, UI_FONT_SIZE)
+    BOLD_FONT = (UI_FONT_FAMILY, UI_FONT_SIZE + 1, "bold")
+    SMALL_FONT = (UI_FONT_FAMILY, max(8, UI_FONT_SIZE - 1))
+    SMALL_BOLD_FONT = (UI_FONT_FAMILY, max(8, UI_FONT_SIZE - 1), "bold")
+    TITLE_FONT = (UI_FONT_FAMILY, UI_FONT_SIZE + 2, "bold")
+    BIG_TITLE_FONT = (UI_FONT_FAMILY, UI_FONT_SIZE + 4, "bold")
     MONO_FONT = ("Consolas", max(9, UI_FONT_SIZE))
     return UI_FONT_SIZE
 
@@ -609,6 +773,13 @@ def apply_font_size_live(root, size) -> None:
         return
     set_font_size(size)
     for widget in _walk_widgets(root):
+        # 自绘控件（标签栏等）没有标准 font 选项，用这个钩子自己重算布局。
+        refresh = getattr(widget, "_refresh_font", None)
+        if callable(refresh):
+            try:
+                refresh()
+            except Exception:
+                pass
         try:
             spec = widget.cget("font")
         except Exception:
@@ -638,7 +809,7 @@ def apply_font_size_live(root, size) -> None:
         style.configure("Treeview", font=UI_FONT,
                         rowheight=max(ICON_SIZE + 6, UI_FONT_SIZE * 3))
         style.configure("Treeview.Heading",
-                        font=("Microsoft YaHei UI", UI_FONT_SIZE, "bold"))
+                        font=(UI_FONT_FAMILY, UI_FONT_SIZE, "bold"))
         style.configure("TNotebook.Tab", font=UI_FONT, padding=(14, 6))
         for name in ("TButton", "TLabel", "TEntry", "TCombobox", "TCheckbutton",
                      "TRadiobutton", "TMenubutton", "TLabelframe.Label",
@@ -1180,8 +1351,9 @@ class RoundedButton(tk.Canvas):
     def __init__(self, parent, text: str = "", command=None, *,
                  kind: str = "secondary", bg: str | None = None,
                  width: int | None = None, height: int | None = None,
-                 radius: int = 10, font=None, padx: int = 12,
-                 anchor: str = "center", style: str = "", **kw) -> None:
+                 radius: int = 15, font=None, padx: int = 12,
+                 anchor: str = "center", style: str = "", lead: str = "",
+                 **kw) -> None:
         self._text = str(text)
         self._command = command
         self._kind = str(kind or "secondary")
@@ -1189,10 +1361,11 @@ class RoundedButton(tk.Canvas):
         self._font = font or UI_FONT
         self._padx = max(4, int(padx))
         self._anchor = anchor if anchor in ("center", "w", "e") else "center"
+        #: 左侧的小色条（动作栏用来区分“监控 / 工作台 / AI / 设置”，不是图标）。
+        self._lead = str(lead or "")
         self._state = str(kw.pop("state", "normal") or "normal")
         self._hover = False
         self._pressed = False
-        self._has_focus = False
         self._radius = max(4, int(radius))
         self._fixed_width = int(width) if width else None
         self._req_height = int(height) if height else 0
@@ -1218,8 +1391,7 @@ class RoundedButton(tk.Canvas):
         self.bind("<Leave>", self._on_leave, add="+")
         self.bind("<ButtonPress-1>", self._on_press, add="+")
         self.bind("<ButtonRelease-1>", self._on_release, add="+")
-        self.bind("<FocusIn>", self._on_focus_in, add="+")
-        self.bind("<FocusOut>", self._on_focus_out, add="+")
+        # 焦点只保留键盘可达性，不再画虚线/描边 —— 用户点名要去掉点击后的框。
         self.bind("<Return>", lambda _e: self._invoke_event(), add="+")
         self.bind("<KP_Enter>", lambda _e: self._invoke_event(), add="+")
         self.bind("<space>", lambda _e: self._invoke_event(), add="+")
@@ -1254,38 +1426,66 @@ class RoundedButton(tk.Canvas):
             text_w = self._font_obj.measure(self._text)
         except Exception:
             text_w = len(self._text) * 10
-        return max(44, text_w + self._padx * 2)
+        return max(44, text_w + self._padx * 2 + (12 if self._lead else 0))
 
     def _configure_palette(self) -> None:
+        """
+        按钮配色：不再画“灰色方块 + 边框”，而是近白/深色浮片 + 柔和投影。
+
+        强调按钮用克莱因蓝；媒体键保留深青（与卡片对比最好）；次级按钮
+        只在悬停时浮起半档，靠投影和位移表达层次，符合“边框换成大范围
+        低透明阴影”的要求。
+        """
         kind = self._kind
+        light_bg = color_luminance(self._bg) > 0.55
         if kind == "accent":
             self._fill = UI_ACCENT
-            self._hover_fill = UI_ACCENT_DARK
+            self._hover_fill = mix_color(UI_ACCENT, "#ffffff", 0.10)
             self._pressed_fill = UI_ACCENT_DARK
             self._fg = UI_ON_ACCENT
-            self._border = UI_ACCENT_DARK
+            self._lead = self._lead or UI_ON_ACCENT
             self._disabled_fill = UI_SURFACE_ALT
+            self._shadow_tint = UI_ACCENT
         elif kind == "media":
             self._fill = UI_MEDIA_BTN_BG
-            self._hover_fill = UI_MEDIA_BTN_ACTIVE
+            self._hover_fill = mix_color(UI_MEDIA_BTN_BG, "#ffffff", 0.08)
             self._pressed_fill = UI_MEDIA_BTN_ACTIVE
             self._fg = UI_MEDIA_BTN_FG
-            self._border = UI_MEDIA_BTN_ACTIVE
             self._disabled_fill = UI_LINE
+            self._shadow_tint = UI_MEDIA_BTN_BG
+        elif kind == "rail":
+            if light_bg:
+                self._fill = mix_color(self._bg, "#ffffff", 0.92)
+                self._hover_fill = "#ffffff"
+                self._pressed_fill = mix_color(UI_SELECT_BG, "#ffffff", 0.18)
+            else:
+                # 深色底上不要“白块”：用一层极淡的蓝灰玻璃，和黑底拉开半档。
+                self._fill = mix_color(mix_color(self._bg, UI_ACCENT, 0.10),
+                                       "#ffffff", 0.10)
+                self._hover_fill = mix_color(self._fill, "#ffffff", 0.10)
+                self._pressed_fill = mix_color(self._fill, UI_ACCENT, 0.22)
+            self._fg = UI_INK
+            self._disabled_fill = UI_SURFACE_ALT
+            self._shadow_tint = UI_ACCENT
         elif kind == "ghost":
-            self._fill = self._bg
-            self._hover_fill = UI_HOVER_BG
-            self._pressed_fill = UI_SELECT_BG
+            # 不是“透明到看不见”：给一层和页面只差半档的薄底 + 柔影，
+            # 白底上仍能看出可点的胶囊，但不会像旧版灰块那样抢视线。
+            self._fill = mix_color(self._bg, UI_SURFACE_ALT,
+                                   0.90 if light_bg else 0.85)
+            self._hover_fill = mix_color(self._bg, "#ffffff",
+                                         0.95 if light_bg else 0.10)
+            self._pressed_fill = mix_color(UI_SELECT_BG, "#ffffff",
+                                           0.18 if light_bg else 0.0)
             self._fg = UI_INK
-            self._border = UI_LINE
             self._disabled_fill = UI_SURFACE_ALT
+            self._shadow_tint = UI_ACCENT
         else:
-            self._fill = UI_SURFACE_ALT
-            self._hover_fill = UI_HOVER_BG
-            self._pressed_fill = UI_SELECT_BG
+            self._fill = mix_color(self._bg, "#ffffff", 0.82 if light_bg else 0.05)
+            self._hover_fill = mix_color(self._bg, "#ffffff", 0.95 if light_bg else 0.10)
+            self._pressed_fill = mix_color(UI_HOVER_BG, "#ffffff", 0.30 if light_bg else 0.0)
             self._fg = UI_INK
-            self._border = UI_LINE
             self._disabled_fill = UI_SURFACE_ALT
+            self._shadow_tint = "#0b1020" if light_bg else "#000000"
 
     def _rounded_points(self, x1, y1, x2, y2, r):
         return [
@@ -1294,33 +1494,38 @@ class RoundedButton(tk.Canvas):
             x1, y2, x1, y2 - r, x1, y1 + r, x1, y1,
         ]
 
+    def _shadow_color(self, strength: float) -> str:
+        """把阴影色与按钮所在底色混合，模拟低透明度的大范围投影。"""
+        base = self._bg
+        tint = self._shadow_tint or "#0b1020"
+        if color_luminance(base) < 0.30:
+            # 深色页上黑色阴影不可见；改用一点冷白提亮，像环境光。
+            tint = "#ffffff"
+            strength *= 0.35
+        return mix_color(base, tint, max(0.0, min(0.22, strength)))
+
     @staticmethod
     def _edge_colors(fill: str) -> tuple[str, str, str]:
-        """
-        由底色推出一组 3D 边：顶面高光、底部暗唇、投影。
-
-        浅色按钮投影压暗，深色按钮投影会“压成黑”，所以深色时改成提亮一条
-        细边 —— 看起来像光从上方扫过，而不是一块没有厚度的色卡。
-        """
+        """由底色推出顶部高光、底部内阴影和文字投影。"""
         lum = color_luminance(fill)
         if lum < 0.32:
-            highlight = mix_color(fill, "#ffffff", 0.20)
-            lip = mix_color(fill, "#ffffff", 0.10)
-            shadow = mix_color(fill, "#ffffff", 0.05)
+            highlight = mix_color(fill, "#ffffff", 0.24)
+            lip = mix_color(fill, "#000000", 0.24)
+            shadow = mix_color(fill, "#000000", 0.34)
         else:
-            highlight = mix_color(fill, "#ffffff", 0.52)
-            lip = mix_color(fill, "#000000", 0.22)
-            shadow = mix_color(fill, "#000000", 0.16)
+            highlight = mix_color(fill, "#ffffff", 0.62)
+            lip = mix_color(fill, "#000000", 0.10)
+            shadow = mix_color(fill, "#000000", 0.22)
         return highlight, lip, shadow
 
     def _draw(self) -> None:
         """
-        画按钮：投影 + 底唇 + 主体 + 顶面高光 + 文字。
+        画按钮：大范围低透明投影 + 圆角浮片 + 顶部高光 + 文字。
 
-        按下时整个“按钮块”会略微压扁、下移，阴影同步缩短；松手后由
-        `_animate_release()` 用阻尼正弦弹回（会过冲一点，再收住）。
-        这是纯 Canvas 绘制，不需要图片，也没有额外窗口，所以 150% DPI
-        与字号切换后仍然清晰。
+        按键的圆角是**胶囊形**的（半径跟着高度走），按下时整块压扁、松手后
+        由阻尼正弦弹回 —— 形变沿着圆角发生，看起来像一颗有弹性的果冻键帽，
+        而不是在一张方卡片上换颜色。所有层都是 Canvas 绘制，没有图片，
+        DPI / 字号 / 主题切换后仍然清晰。
         """
         try:
             width = int(self.winfo_width() or 0)
@@ -1336,70 +1541,81 @@ class RoundedButton(tk.Canvas):
                 self._pressed_fill if self._pressed else
                 self._hover_fill if self._hover else self._fill)
             fg = UI_MUTED if disabled else self._fg
-            border = UI_LINE if disabled else (
-                UI_ACCENT if self._has_focus else self._border)
-            highlight, lip, shadow = self._edge_colors(fill)
+            highlight, lip, _shadow = self._edge_colors(fill)
             self.delete("all")
 
             # 果冻形变：横向略胀、纵向略压；松手后的负值代表回弹过冲。
-            squash = max(-0.8, min(1.4, float(self._squash or 0.0)))
-            sx = 1.0 + 0.032 * squash
-            sy = 1.0 - 0.070 * squash
-            hover_lift = -0.8 if (self._hover and not disabled
-                                  and squash <= 0.02) else 0.0
-            margin_x = 2.0
+            squash = max(-0.85, min(1.4, float(self._squash or 0.0)))
+            sx = 1.0 + 0.046 * squash
+            sy = 1.0 - 0.096 * squash
+            hovering = self._hover and not disabled and squash <= 0.02
+            hover_lift = -1.2 if hovering else 0.0
+            margin_x = 2.5
             body_w = max(8.0, (width - margin_x * 2) * sx)
-            body_h = max(8.0, (height - 5.0) * sy)
+            body_h = max(8.0, (height - 6.0) * sy)
             cx = width / 2.0
-            body_top = 1.0 + hover_lift + 1.4 * max(0.0, squash) \
-                - 0.7 * max(0.0, -squash)
+            body_top = (2.0 + hover_lift + 1.8 * max(0.0, squash)
+                        - 1.5 * max(0.0, -squash))
+            body_top = max(1.0, min(height - 7.0, body_top))
             x1 = cx - body_w / 2.0
             x2 = cx + body_w / 2.0
             y1 = body_top
-            y2 = min(height - 2.5, body_top + body_h)
-            r = max(1.0, min(self._radius, (y2 - y1) / 2.0 - 0.5,
-                             (x2 - x1) / 2.0 - 0.5))
+            y2 = min(height - 3.0, body_top + body_h)
+            r = max(1.0, min(self._radius, (y2 - y1) / 2.0,
+                             (x2 - x1) / 2.0))
 
-            # 投影：按钮向下“离开”底板，阴影在下方；按下时阴影缩到最近。
-            shadow_gap = 2.6 - 1.0 * max(0.0, squash) + 0.5 * max(0.0, -squash)
-            self.create_polygon(
-                self._rounded_points(x1 + 0.6, y1 + shadow_gap,
-                                     x2 + 0.6, y2 + shadow_gap,
-                                     max(1.0, r * 0.96)),
-                smooth=True, splinesteps=24, fill=shadow, outline="",
-                tags=("jelly-shadow",))
-            # 底唇：比主体深一档，制造“有厚度”的 3D 错觉。
-            self.create_polygon(
-                self._rounded_points(x1, y1 + 1.8, x2, y2 + 1.8,
-                                     max(1.0, r * 0.98)),
-                smooth=True, splinesteps=24, fill=lip, outline="",
-                tags=("jelly-lip",))
-            # 主体。
+            # 大范围低透明阴影：三层同形、逐层扩大，越靠外越淡。
+            # 它替代了早期 WinForms/WPF 那种硬描边，也让按钮“浮”在页面上。
+            if not disabled:
+                spread = 2.0 + (0.8 if hovering else 0.0) \
+                    - 1.0 * max(0.0, squash) + 0.8 * max(0.0, -squash)
+                for grow, gap, strength in ((7.0, 3.4, 0.030),
+                                            (4.5, 2.7, 0.050),
+                                            (2.2, 2.0, 0.075)):
+                    self.create_polygon(
+                        self._rounded_points(
+                            x1 - grow, y1 - grow * 0.30 + gap,
+                            x2 + grow, y2 + grow * 0.30 + gap,
+                            r + grow * 0.72),
+                        smooth=True, splinesteps=28,
+                        fill=self._shadow_color(strength), outline="",
+                        tags=("jelly-shadow",))
+            # 主体：一颗完整的圆角胶囊。焦点不再额外画描边，避免点击后出现
+            # 类似虚线框的“选中框”；键盘仍可 Tab 到按钮并回车触发。
             self.create_polygon(
                 self._rounded_points(x1, y1, x2, y2, r),
-                smooth=True, splinesteps=24, fill=fill, outline=border,
-                width=2 if self._has_focus else 1,
+                smooth=True, splinesteps=28, fill=fill,
+                outline=mix_color(fill, self._bg, 0.10), width=1,
                 tags=("jelly-body",))
-            # 顶面高光 / 底部内阴影：一条就够，太多线会脏。
+            # 顶部高光 / 底部内阴影：各一条细线，薄而有弹性，不压成厚塑料块。
             if x2 - x1 > 12 and y2 - y1 > 8:
                 self.create_line(
-                    x1 + r * 0.55, y1 + 1.2, x2 - r * 0.55, y1 + 1.2,
+                    x1 + r * 0.62, y1 + 1.35, x2 - r * 0.62, y1 + 1.35,
                     fill=highlight, width=1, tags=("jelly-highlight",))
                 self.create_line(
-                    x1 + r * 0.55, y2 - 1.4, x2 - r * 0.55, y2 - 1.4,
+                    x1 + r * 0.68, y2 - 1.45, x2 - r * 0.68, y2 - 1.45,
                     fill=lip, width=1, tags=("jelly-shade",))
 
-            text = self._display_text(max(8, int(width - self._padx * 2)))
+            lead_w = 12 if (self._lead and self._anchor == "w") else 0
+            if self._lead and self._anchor == "w":
+                # 小圆点只做分组锚记，不做图标；比竖条更轻，不会像感叹号。
+                lx = self._padx + 2.0
+                ly = (y1 + y2) / 2.0
+                self.create_oval(lx - 2.2, ly - 2.2, lx + 2.2, ly + 2.2,
+                                 fill=self._lead, outline="",
+                                 tags=("jelly-lead",))
+
+            text = self._display_text(
+                max(8, int(width - self._padx * 2 - lead_w)))
             if self._anchor == "w":
-                x, anchor = self._padx, "w"
+                x, anchor = self._padx + lead_w, "w"
             elif self._anchor == "e":
                 x, anchor = width - self._padx, "e"
             else:
                 x, anchor = width / 2, "center"
-            ty = (y1 + y2) / 2.0 + (0.6 if squash > 0.35 else 0.0)
-            # 浅色字在深色按钮上先画一层极浅的暗影，3D 感会更实；
-            # 深色字在浅底上不画，免得出现“重影”。
+            ty = (y1 + y2) / 2.0 + (0.5 if squash > 0.35 else 0.0)
             if color_luminance(fg) > 0.62 and color_luminance(fill) < 0.55:
+                # 浅色字在深色键帽上先叠一层极轻的暗影，回弹时文字不会“飘”。
                 self.create_text(
                     x, ty + 1.0, text=text, anchor=anchor,
                     fill=mix_color(fill, "#000000", 0.42), font=self._font)
@@ -1437,7 +1653,7 @@ class RoundedButton(tk.Canvas):
         self._anim_kind = "release"
         self._anim_start = time.perf_counter()
         # 快速点一下时形变还没到 1；保留当前幅度，回弹才不会“从 0 突然跳到 1”。
-        self._release_amp = max(0.35, min(1.0, float(self._squash or 0.0)))
+        self._release_amp = max(0.45, min(1.0, float(self._squash or 0.0)))
         self._jelly_tick()
 
     def _jelly_tick(self) -> None:
@@ -1450,15 +1666,16 @@ class RoundedButton(tk.Canvas):
         elapsed = max(0.0, time.perf_counter() - self._anim_start)
         done = False
         if self._anim_kind == "press":
-            progress = min(1.0, elapsed / 0.075)
+            progress = min(1.0, elapsed / 0.070)
             eased = 1.0 - (1.0 - progress) ** 3
             self._squash = self._anim_from + (1.0 - self._anim_from) * eased
             done = progress >= 1.0
         elif self._anim_kind == "release":
-            tau = min(1.0, elapsed / 0.46)
-            # 阻尼正弦：1 → 过零 → 轻微反冲 → 收住，像手指离开键帽。
-            self._squash = (self._release_amp * math.exp(-5.2 * tau)
-                            * math.cos(11.8 * tau))
+            tau = min(1.0, elapsed / 0.56)
+            # 阻尼正弦：1 → 过零 → 明显过冲 → 收住，像手指离开键帽。
+            # 旧参数阻尼太大，回弹只够动 1–2px；这里减小衰减、拉长周期。
+            self._squash = (self._release_amp * math.exp(-4.0 * tau)
+                            * math.cos(9.8 * tau))
             if tau >= 1.0:
                 self._squash = 0.0
                 done = True
@@ -1549,14 +1766,6 @@ class RoundedButton(tk.Canvas):
         if was_pressed and self._state != "disabled" and (
                 event is None or self._inside(event)):
             self.invoke()
-
-    def _on_focus_in(self, _event=None) -> None:
-        self._has_focus = True
-        self._draw()
-
-    def _on_focus_out(self, _event=None) -> None:
-        self._has_focus = False
-        self._draw()
 
     def _invoke_event(self):
         if self._state != "disabled":
@@ -1665,20 +1874,330 @@ class RoundedButton(tk.Canvas):
 
 
 # ============================================================================
-# 二之一、高亮卡的拟光氛围（媒体播放时由淡到深）
+# 二之一、柔和圆角容器 / 标签（把“默认方框”换成浮片）
 # ============================================================================
 
-class AmbientGlowFrame(tk.Frame):
+def _container_bg(parent) -> str:
+    """读父容器底色；读不到就按页面白底处理。"""
+    for key in ("bg", "background"):
+        try:
+            value = str(parent.cget(key))
+            if value:
+                return value
+        except Exception:
+            continue
+    return UI_BG
+
+
+class SoftPanel(tk.Frame):
     """
-    带“拟光”边缘的高亮卡容器（目前用于媒体栏）。
+    带大范围低透明阴影的圆角浮片。
 
-    为什么不用 Canvas 画渐变：媒体行里有 Combobox、复选圆点、三个圆角按钮，
-    全部用 Canvas 重排会破坏现有的 pack 布局和可访问性。这里用三层 1px
-    边框叠出光晕：外深、内浅，再由内容框自己的描边收口 —— 远看像一圈
-    柔光，近看仍然是一个普通 Frame，DPI / 字号 / 主题重建都不需要特殊处理。
+    为什么用 Frame + Canvas：直接把 ttk.Frame 变圆角会破坏内部 pack/grid；
+    这里让 Canvas 只做背景，内容仍是一个普通 Frame，布局与可访问性不变。
+    `content` 是放子控件的容器，圆角由背景 Canvas 绘制。
+    """
 
-    播放开始后 `set_active(True)` 会让光晕用约 1 秒从底色过渡到强调色；
-    暂停 / 停止则慢慢退回，不闪烁。
+    def __init__(self, parent, fill: str, *, radius: int = 16,
+                 shadow: int = 4, pad: int | None = None,
+                 border: str | None = None, **kw) -> None:
+        self._panel_bg = _container_bg(parent)
+        super().__init__(parent, bg=self._panel_bg, bd=0,
+                         highlightthickness=0, **kw)
+        self.fill = str(fill or UI_SURFACE)
+        self._radius = max(4, int(radius))
+        self._shadow = max(0, int(shadow))
+        self._border = border
+        inset = max(2, self._shadow + 1)
+        self._pad = max(inset + 1, int(pad if pad is not None else inset + 3))
+        self.canvas = tk.Canvas(self, bg=self._panel_bg, bd=0,
+                                highlightthickness=0)
+        self.canvas.place(x=0, y=0, relwidth=1, relheight=1)
+        self.content = tk.Frame(self, bg=self.fill, bd=0,
+                                highlightthickness=0)
+        self.content.pack(fill="both", expand=True,
+                          padx=self._pad, pady=self._pad)
+        self.bind("<Configure>", lambda _e: self._redraw(), add="+")
+
+    def _rounded_points(self, x1, y1, x2, y2, r):
+        return RoundedButton._rounded_points(self, x1, y1, x2, y2, r)
+
+    def _shadow_color(self, strength: float) -> str:
+        lum = color_luminance(self._panel_bg)
+        tint = "#0b1020" if lum > 0.35 else "#ffffff"
+        if lum < 0.30:
+            strength *= 0.35
+        return mix_color(self._panel_bg, tint, max(0.0, min(0.2, strength)))
+
+    def _redraw(self) -> None:
+        try:
+            width = int(self.winfo_width())
+            height = int(self.winfo_height())
+            if width <= 2 or height <= 2:
+                return
+            self.canvas.delete("all")
+            x1, y1 = float(self._shadow + 1), float(self._shadow + 1)
+            x2, y2 = float(width - self._shadow - 1), float(height - self._shadow - 1)
+            x2, y2 = max(x1 + 8, x2), max(y1 + 8, y2)
+            r = max(4.0, min(float(self._radius), (x2 - x1) / 2.0,
+                             (y2 - y1) / 2.0))
+            for grow, gap, strength in ((4.0, 2.6, 0.045),
+                                        (2.2, 1.8, 0.070)):
+                self.canvas.create_polygon(
+                    self._rounded_points(x1 - grow, y1 + gap,
+                                         x2 + grow, y2 + gap, r + grow * 0.7),
+                    smooth=True, splinesteps=26,
+                    fill=self._shadow_color(strength), outline="")
+            outline = self._border or mix_color(self.fill, self._panel_bg, 0.10)
+            self.canvas.create_polygon(
+                self._rounded_points(x1, y1, x2, y2, r),
+                smooth=True, splinesteps=26, fill=self.fill,
+                outline=outline, width=1)
+            if x2 - x1 > 20:
+                self.canvas.create_line(
+                    x1 + r * 0.6, y1 + 1.1, x2 - r * 0.6, y1 + 1.1,
+                    fill=mix_color(self.fill, "#ffffff", 0.55
+                                   if color_luminance(self.fill) > 0.45 else 0.16),
+                    width=1)
+        except Exception:
+            pass
+
+
+class RoundedBadge(tk.Canvas):
+    """小号圆角标签（“媒体”“AI”），比默认方形 Label 更贴合新的圆角语言。"""
+
+    def __init__(self, parent, text: str, *, fill: str, fg: str,
+                 bg: str | None = None, font=None, padx: int = 8,
+                 height: int = 20, **kw) -> None:
+        self._text = str(text)
+        self._fill = fill
+        self._fg = fg
+        self._bg = bg if bg is not None else _container_bg(parent)
+        self._font = font or SMALL_BOLD_FONT
+        self._padx = max(4, int(padx))
+        self._height = max(16, int(height))
+        self._font_obj = tkfont.Font(root=parent, font=self._font)
+        width = self._font_obj.measure(self._text) + self._padx * 2
+        self._width = max(width, self._height)
+        super().__init__(parent, bg=self._bg, bd=0, highlightthickness=0,
+                         width=self._width, height=self._height, **kw)
+        self.bind("<Configure>", lambda _e: self._draw(), add="+")
+        self._draw()
+
+    def _draw(self) -> None:
+        try:
+            width = max(2, int(self.winfo_width() or self._width))
+            height = max(2, int(self.winfo_height() or self._height))
+            self.delete("all")
+            r = height / 2.0
+            self.create_polygon(
+                RoundedButton._rounded_points(self, 1, 1, width - 1,
+                                              height - 1, r),
+                smooth=True, splinesteps=20, fill=self._fill, outline="")
+            self.create_text(width / 2.0, height / 2.0, text=self._text,
+                             fill=self._fg, font=self._font)
+        except Exception:
+            pass
+
+    def _refresh_font(self) -> None:
+        """字号设置变化时重算标签宽度；Canvas 没有标准 font 选项。"""
+        self._font = SMALL_BOLD_FONT
+        try:
+            self._font_obj = tkfont.Font(root=self, font=self._font)
+            width = self._font_obj.measure(self._text) + self._padx * 2
+            self._width = max(width, self._height)
+            self.configure(width=self._width)
+        except Exception:
+            pass
+        self._draw()
+
+
+# ============================================================================
+# 二之二、主界面标签栏（自绘胶囊，替掉 ttk 的直角 + 虚线焦点框）
+# ============================================================================
+
+class TabStrip(tk.Canvas):
+    """
+    主界面顶部的胶囊标签栏。
+
+    为什么不用原生 ttk.Notebook 标签：clam 的标签是直角，点击后还会出现
+    一圈虚线焦点框；用户明确要求去掉，并且整体要像现代圆角控件。内容仍然
+    由真正的 Notebook 管理（测试和 `_on_tab_changed` 的下标逻辑都不变），
+    这里只隐藏原生标签并画一排胶囊。
+    """
+
+    def __init__(self, parent, notebook: ttk.Notebook, labels, **kw) -> None:
+        self.notebook = notebook
+        self._labels = [str(x) for x in labels]
+        self._selected = 0
+        self._hover = -1
+        self._font = tkfont.Font(root=parent, font=UI_FONT)
+        self._bold = tkfont.Font(root=parent,
+                                 font=(UI_FONT_FAMILY, UI_FONT_SIZE, "bold"))
+        height = max(self._bold.metrics("linespace") + 18, 38)
+        super().__init__(parent, bg=UI_BG, bd=0, highlightthickness=0,
+                         height=height, takefocus=1, **kw)
+        self.bind("<Configure>", lambda _e: self._redraw(), add="+")
+        self.bind("<Button-1>", self._on_click, add="+")
+        self.bind("<Motion>", self._on_motion, add="+")
+        self.bind("<Leave>", self._on_leave, add="+")
+        self.bind("<Left>", lambda _e: self._move(-1), add="+")
+        self.bind("<Right>", lambda _e: self._move(1), add="+")
+        self.bind("<Home>", lambda _e: self._select(0), add="+")
+        self.bind("<End>", lambda _e: self._select(len(self._labels) - 1), add="+")
+        self.bind("<Return>", lambda _e: self._on_click(None), add="+")
+        self.notebook.bind("<<NotebookTabChanged>>", self._on_notebook, add="+")
+        self._sync()
+
+    def _on_notebook(self, _event=None) -> None:
+        self._sync()
+
+    def _sync(self) -> None:
+        try:
+            self._selected = int(self.notebook.index("current"))
+        except Exception:
+            self._selected = 0
+        self._redraw()
+
+    def _refresh_font(self) -> None:
+        self._font.configure(family=UI_FONT_FAMILY, size=UI_FONT_SIZE)
+        self._bold.configure(family=UI_FONT_FAMILY, size=UI_FONT_SIZE,
+                             weight="bold")
+        height = max(self._bold.metrics("linespace") + 18, 38)
+        self.configure(height=height)
+        self._redraw()
+
+    def _layout(self):
+        width = max(1, int(self.winfo_width()))
+        height = max(2, int(self.winfo_height()))
+        lane_h = max(24, height - 6)
+        gap = 6
+        padx = 18
+        widths = []
+        for label in self._labels:
+            widths.append(max(64, self._bold.measure(label) + padx * 2))
+        total = sum(widths) + gap * max(0, len(widths) - 1)
+        limit = max(80, width - 4)
+        if total > limit:
+            padx = max(8, padx - int((total - limit) / max(1, len(widths) * 2)))
+            gap = max(3, gap - 2)
+            widths = [max(48, self._bold.measure(label) + padx * 2)
+                      for label in self._labels]
+            total = sum(widths) + gap * max(0, len(widths) - 1)
+        x = 2
+        y = (height - lane_h) / 2.0
+        rects = []
+        for label, w in zip(self._labels, widths):
+            rects.append((x, y, x + w, y + lane_h, label))
+            x += w + gap
+        return rects, total
+
+    def _redraw(self) -> None:
+        try:
+            if not self.winfo_exists():
+                return
+            self.delete("all")
+            rects, total = self._layout()
+            if not rects:
+                return
+            height = int(self.winfo_height())
+            lane_y = rects[0][1]
+            lane_h = rects[0][3] - rects[0][1]
+            self.create_polygon(
+                RoundedButton._rounded_points(
+                    self, 1, lane_y, total + 3, lane_y + lane_h,
+                    lane_h / 2.0),
+                smooth=True, splinesteps=24, fill=UI_SURFACE_ALT, outline="")
+            for i, (x1, y1, x2, y2, label) in enumerate(rects):
+                selected = i == self._selected
+                hover = i == self._hover and not selected
+                if selected:
+                    # 选中胶囊浮起来：先一层低透明蓝影，再画主色。
+                    self.create_polygon(
+                        RoundedButton._rounded_points(
+                            self, x1 + 1, y1 + 2, x2 + 1, y2 + 2,
+                            (y2 - y1) / 2.0),
+                        smooth=True, splinesteps=20,
+                        fill=mix_color(UI_SURFACE_ALT, UI_ACCENT, 0.24),
+                        outline="")
+                    fill = UI_ACCENT
+                    fg = UI_ON_ACCENT
+                    font = self._bold
+                elif hover:
+                    fill = UI_HOVER_BG
+                    fg = UI_INK
+                    font = self._font
+                else:
+                    fill = ""
+                    fg = UI_MUTED
+                    font = self._font
+                if fill:
+                    self.create_polygon(
+                        RoundedButton._rounded_points(
+                            self, x1, y1, x2, y2, (y2 - y1) / 2.0),
+                        smooth=True, splinesteps=24, fill=fill, outline="")
+                self.create_text((x1 + x2) / 2.0, (y1 + y2) / 2.0,
+                                 text=label, fill=fg, font=font)
+            # 底部一条极淡的分隔光，让标签栏和内容区有层次但不抢色。
+            self.create_line(1, height - 1, max(1, total + 3), height - 1,
+                             fill=mix_color(UI_BG, UI_LINE, 0.55))
+        except Exception:
+            pass
+
+    def _index_at(self, x: float, y: float) -> int:
+        rects, _total = self._layout()
+        for i, (x1, y1, x2, y2, _label) in enumerate(rects):
+            if x1 <= x <= x2 and y1 <= y <= y2:
+                return i
+        return -1
+
+    def _on_click(self, event) -> None:
+        if event is not None:
+            index = self._index_at(float(event.x), float(event.y))
+            if index < 0:
+                return
+        else:
+            index = self._selected
+        self._select(index)
+
+    def _on_motion(self, event) -> None:
+        index = self._index_at(float(event.x), float(event.y))
+        if index != self._hover:
+            self._hover = index
+            self._redraw()
+
+    def _on_leave(self, _event=None) -> None:
+        if self._hover != -1:
+            self._hover = -1
+            self._redraw()
+
+    def _select(self, index: int) -> None:
+        if not 0 <= index < len(self._labels):
+            return
+        try:
+            self.notebook.select(index)
+            self.focus_set()
+        except Exception:
+            pass
+        self._selected = index
+        self._redraw()
+
+    def _move(self, delta: int) -> None:
+        self._select(max(0, min(len(self._labels) - 1,
+                               self._selected + delta)))
+
+
+# ============================================================================
+# 二之三、高亮卡的拟光氛围（媒体播放时由淡到深）
+# ============================================================================
+
+class AmbientGlowFrame(SoftPanel):
+    """
+    带“拟光”边缘的圆角高亮卡容器（媒体栏）。
+
+    旧实现用三层 1px Frame 叠边，四个角始终是直角；现在背景改为 Canvas
+    绘制的圆角色带，内容仍是普通 Frame，媒体行的 Combobox / 按钮布局不受影响。
+    播放开始后外圈从底色过渡到强调色；暂停/停止慢慢退回，不闪烁。
     """
 
     def __init__(self, parent, card: dict, **kw) -> None:
@@ -1687,43 +2206,70 @@ class AmbientGlowFrame(tk.Frame):
         self._accent = (self.card.get("tag_bg")
                         or self.card.get("border") or UI_ACCENT)
         self._border = self.card.get("border") or UI_LINE
-        super().__init__(parent, bg=self._base, bd=0,
-                         highlightthickness=0, **kw)
+        self._outer = self._base
         self._level = 0.0
         self._target = 0.0
         self._anim_after = None
         self._anim_start = 0.0
         self._anim_from = 0.0
         self._anim_to = 0.0
-        self._band1 = tk.Frame(self, bg=self._base, padx=1, pady=1)
-        self._band1.pack(fill="both", expand=True)
-        self._band2 = tk.Frame(self._band1, bg=self._base, padx=1, pady=1)
-        self._band2.pack(fill="both", expand=True)
-        self.content = tk.Frame(
-            self._band2, bg=self._base, bd=0,
-            highlightthickness=1, highlightbackground=self._border)
-        self.content.pack(fill="both", expand=True)
+        super().__init__(parent, self._base, radius=16, shadow=0, pad=7,
+                         border=self._border, **kw)
         self._apply_level(0.0)
+
+    def cget(self, key):
+        # 测试/调用方把 `bg` 当作“当前最外圈光色”；实际容器底仍是父页面底色，
+        # 这样圆角之外才能透出页面，而不是四个白角。
+        if str(key) == "bg":
+            return self._outer
+        return super().cget(key)
 
     @property
     def intensity(self) -> float:
         return float(self._level)
 
-    def _apply_level(self, level: float) -> None:
-        """把 0–1 的光强画成外深内浅的三圈色带。"""
-        self._level = max(0.0, min(1.0, float(level)))
-        t = self._level
-        outer = mix_color(self._base, self._accent, 0.43 * t)
-        middle = mix_color(self._base, self._accent, 0.24 * t)
-        inner = mix_color(self._base, self._accent, 0.10 * t)
-        edge = mix_color(self._border, self._accent, 0.62 * t)
+    def _redraw(self) -> None:
+        """把 0–1 的光强画成外深内浅的三圈圆角色带。"""
         try:
-            self.configure(bg=outer)
-            self._band1.configure(bg=middle)
-            self._band2.configure(bg=inner)
-            self.content.configure(highlightbackground=edge)
+            width = int(self.winfo_width())
+            height = int(self.winfo_height())
+            if width <= 2 or height <= 2:
+                return
+            self.canvas.delete("all")
+            t = self._level
+            rings = (
+                (0.0, self._outer),
+                (1.4, mix_color(self._base, self._accent, 0.24 * t)),
+                (2.8, mix_color(self._base, self._accent, 0.10 * t)),
+            )
+            for inset, color in rings:
+                x1, y1 = inset, inset
+                x2, y2 = width - inset, height - inset
+                rad = max(2.0, 16.0 - inset * 0.7)
+                self.canvas.create_polygon(
+                    self._rounded_points(x1, y1, x2, y2, rad),
+                    smooth=True, splinesteps=26, fill=color, outline="")
+            edge = mix_color(self._border, self._accent, 0.62 * t)
+            self.canvas.create_polygon(
+                self._rounded_points(4.2, 4.2, width - 4.2, height - 4.2,
+                                     13.0),
+                smooth=True, splinesteps=26, fill=self._base,
+                outline=edge, width=1)
+            if width > 24:
+                self.canvas.create_line(
+                    15, 5.2, width - 15, 5.2,
+                    fill=mix_color(self._base, "#ffffff",
+                                   0.45 if color_luminance(self._base) > 0.45
+                                   else 0.12),
+                    width=1)
         except Exception:
             pass
+
+    def _apply_level(self, level: float) -> None:
+        self._level = max(0.0, min(1.0, float(level)))
+        t = self._level
+        self._outer = mix_color(self._base, self._accent, 0.43 * t)
+        self._redraw()
 
     def set_active(self, active: bool, animate: bool = True) -> None:
         """播放时点亮，暂停/停止时收回；重复调用相同目标不会重启动画。"""
@@ -2099,7 +2645,7 @@ class PreviewPane:
         right_col.grid(row=0, column=1, sticky="ne", padx=(8, 0))
         self.btn_pause = RoundedButton(
             right_col, text="暂停刷新", command=self.app.toggle_pause,
-            kind="ghost", bg=UI_BG, width=106, height=30, radius=9)
+            kind="ghost", bg=UI_BG, height=30, radius=15)
         self.btn_pause.pack(anchor="e")
         self.lbl_stats = ttk.Label(right_col, text="", font=MONO_FONT,
                                    foreground=UI_OK, anchor="e")
@@ -2144,11 +2690,11 @@ class PreviewPane:
                   foreground=UI_MUTED).pack(side="left", padx=(0, 4))
         self.action_button = RoundedButton(
             bar, text=self._action_label() + "  ▾", command=self.open_actions,
-            kind="ghost", bg=UI_BG, width=132, height=30, radius=9)
+            kind="ghost", bg=UI_BG, height=30, radius=15)
         self.action_button.pack(side="left")
         self.run_button = RoundedButton(
             bar, text="执行", command=self.run_action, kind="accent",
-            bg=UI_BG, width=68, height=30, radius=9)
+            bg=UI_BG, height=30, radius=15)
         self.run_button.pack(side="left", padx=(6, 0))
         self.action_hint = ttk.Label(bar, text=self._action_hint_text(),
                                      font=SMALL_FONT, foreground=UI_MUTED)
@@ -3071,16 +3617,33 @@ class ProgramCatalogPane:
         tv.heading("source", text="来源")
         tv.heading("state", text="状态")
         tv.heading("dir", text="路径 / 目标")
-        tv.column("#0", width=40, stretch=False, minwidth=40)
-        tv.column("name", width=200, anchor="w")
-        tv.column("category", width=84, anchor="center", stretch=False)
-        tv.column("source", width=62, anchor="center", stretch=False)
-        tv.column("state", width=58, anchor="center", stretch=False)
-        tv.column("dir", width=330, anchor="w")
+        #: 列宽是**物理像素**，不随 DPI 自动放大；不乘缩放的话 150% 下
+        #: 40px 的图标列只够放缩进，图标会压到“程序名称”的第一个字上。
+        #: 另外程序名/路径不再拉伸填满，而是保留足够列宽 + 底部横向滚动条，
+        #: 用户想看清完整路径可以左右拖，而不是让文字互相重叠。
+        catalog_scale = max(1.0, min(3.0, float(
+            getattr(self.app, "dpi_scale", 1.0) or 1.0)))
+        icon_col = int(round(54 * catalog_scale))
+        name_col = int(round(252 * catalog_scale))
+        category_col = int(round(92 * catalog_scale))
+        source_col = int(round(72 * catalog_scale))
+        state_col = int(round(66 * catalog_scale))
+        dir_col = int(round(390 * catalog_scale))
+        tv.column("#0", width=icon_col, stretch=False, minwidth=icon_col)
+        tv.column("name", width=name_col, anchor="w", stretch=False,
+                  minwidth=name_col)
+        tv.column("category", width=category_col, anchor="center", stretch=False)
+        tv.column("source", width=source_col, anchor="center", stretch=False)
+        tv.column("state", width=state_col, anchor="center", stretch=False)
+        tv.column("dir", width=dir_col, anchor="w", stretch=False,
+                  minwidth=dir_col)
         vs = ttk.Scrollbar(self.frame, orient="vertical", command=tv.yview)
-        tv.configure(yscrollcommand=vs.set)
-        tv.grid(row=3, column=0, sticky="nsew", padx=(6, 0), pady=(0, 4))
-        vs.grid(row=3, column=1, sticky="ns", pady=(0, 4))
+        hs = ttk.Scrollbar(self.frame, orient="horizontal", command=tv.xview)
+        tv.configure(yscrollcommand=vs.set, xscrollcommand=hs.set)
+        tv.grid(row=3, column=0, sticky="nsew", padx=(6, 0), pady=(0, 0))
+        vs.grid(row=3, column=1, sticky="ns", pady=(0, 0))
+        hs.grid(row=4, column=0, columnspan=2, sticky="ew", padx=(6, 0))
+        self._catalog_hscroll = hs
         # 运行中只用绿色文字 + 状态列，不再铺整行蓝底：
         # 蓝底原先和选中行同色，导致“点运行中的程序”看不出任何选中反馈，
         # 也会让 Ctrl/Shift 多选看起来像没生效。
@@ -3101,8 +3664,8 @@ class ProgramCatalogPane:
         self.sel_info = ttk.Label(
             self.frame, text="双击 / Enter 打开 · 按住 Ctrl / Shift 多选",
             font=SMALL_FONT, foreground=UI_MUTED, anchor="w")
-        self.sel_info.grid(row=4, column=0, columnspan=2, sticky="ew",
-                           padx=6, pady=(0, 4))
+        self.sel_info.grid(row=5, column=0, columnspan=2, sticky="ew",
+                           padx=6, pady=(2, 4))
         # 只给两个开关挂 trace（类别走多选面板，点「应用」时自己刷新并保存）
         self.only_favorites.trace_add("write", lambda *_: self._on_filter_changed())
         self.only_recent.trace_add("write", lambda *_: self._on_filter_changed())
@@ -4176,13 +4739,23 @@ class _SettingsWindow:
             side="left", fill="x", expand=True)
         btns = tk.Frame(foot, bg=UI_BG)
         btns.pack(side="right")
-        ttk.Button(btns, text="保存 (Enter)", width=13,
-                   command=self._ok).pack(side="right")
-        ttk.Button(btns, text="取消 (Esc)", width=12,
-                   command=self._cancel).pack(side="right", padx=(0, 8))
+        RoundedButton(btns, text="保存 (Enter)", kind="accent",
+                      height=32, radius=16,
+                      command=self._ok).pack(side="right")
+        RoundedButton(btns, text="取消 (Esc)", kind="ghost",
+                      height=32, radius=16,
+                      command=self._cancel).pack(side="right", padx=(0, 8))
 
-        self.nb = ttk.Notebook(top)
-        self.nb.pack(fill="both", expand=True, padx=14, pady=(6, 0))
+        self.nb = ttk.Notebook(top, style="Hidden.TNotebook")
+        # 独立构造设置窗口（自动化/单测）时主窗口可能还没配置过这个隐藏样式；
+        # 这里补一次，避免自绘胶囊和原生标签同时出现。
+        try:
+            _style = ttk.Style(top)
+            _style.layout("Hidden.TNotebook.Tab", [])
+            _style.configure("Hidden.TNotebook", background=UI_BG,
+                             borderwidth=0)
+        except tk.TclError:
+            pass
         self._section_tabs = {"general": 0, "ai": 1, "guide": 2}
 
         general_tab = ttk.Frame(self.nb)
@@ -4208,6 +4781,12 @@ class _SettingsWindow:
         self.nb.add(self.usage.frame, text=i18n.pick("AI 用量", "AI usage"))
         self.guide = _GuidePanel(self.nb, app, "main")
         self.nb.add(self.guide.frame, text=i18n.pick("使用说明", "Guide"))
+        # 设置窗口也用同一套胶囊标签：原生 ttk 标签在浅色底上仍像直角选项卡。
+        self.tab_strip = TabStrip(
+            top, self.nb,
+            [self.nb.tab(i, "text") for i in range(len(self.nb.tabs()))])
+        self.tab_strip.pack(fill="x", padx=14, pady=(6, 2))
+        self.nb.pack(fill="both", expand=True, padx=14, pady=(0, 0))
 
         top.bind("<Return>", lambda e: self._ok())
         top.bind("<KP_Enter>", lambda e: self._ok())
@@ -4877,7 +5456,7 @@ class _AiUsagePanel:
         amount.pack(fill="x", pady=(2, 0))
         self.used_text = tk.StringVar(value="0")
         tk.Label(amount, textvariable=self.used_text,
-                 font=("Microsoft YaHei UI", UI_FONT_SIZE + 9, "bold"),
+                 font=(UI_FONT_FAMILY, UI_FONT_SIZE + 9, "bold"),
                  bg=colors["bg"], fg=colors["fg"], anchor="w").pack(side="left")
         self.budget_text = tk.StringVar(value="")
         tk.Label(amount, textvariable=self.budget_text, font=UI_FONT,
@@ -4895,7 +5474,7 @@ class _AiUsagePanel:
         tk.Label(box, text=title, font=SMALL_FONT, bg=UI_SURFACE_ALT,
                  fg=UI_MUTED, anchor="w").pack(fill="x")
         tk.Label(box, textvariable=var,
-                 font=("Microsoft YaHei UI", UI_FONT_SIZE + 3, "bold"),
+                 font=(UI_FONT_FAMILY, UI_FONT_SIZE + 3, "bold"),
                  bg=UI_SURFACE_ALT, fg=UI_ACCENT, anchor="w").pack(
             fill="x", pady=(1, 0))
 
@@ -7241,6 +7820,11 @@ class WinMonApp:
         except Exception:
             i18n.set_language(i18n.DEFAULT_LANGUAGE)
         # 字号也要在建界面之前读：控件创建时就把字体描述带走了。
+        # 先按本机字体解析一次：Noto Sans SC / MiSans 没有时回退到系统无衬线体。
+        try:
+            set_ui_font_family(resolve_ui_font_family(root))
+        except Exception:
+            set_ui_font_family(UI_FONT_FAMILY)
         try:
             set_font_size(read_font_size(_settings_path()))
         except Exception:
@@ -7269,9 +7853,11 @@ class WinMonApp:
             pass
         try:
             set_dark_title_bar(root, self.theme_resolved == THEME_DARK)
+            set_rounded_window_corners(root)
             # 窗口刚创建时可能还没映射，DWM 属性要等消息循环跑起来再设一次。
             root.after(80, lambda: set_dark_title_bar(
                 root, self.theme_resolved == THEME_DARK))
+            root.after(90, lambda: set_rounded_window_corners(root))
         except Exception:
             pass
 
@@ -7295,6 +7881,7 @@ class WinMonApp:
         widget = getattr(event, "widget", None)
         if isinstance(widget, (tk.Tk, tk.Toplevel)):
             apply_window_opacity(widget)
+            set_rounded_window_corners(widget)
 
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
@@ -7626,17 +8213,27 @@ class WinMonApp:
         style.configure("TLabel", background=base_bg, foreground=ink)
         style.configure("TLabelframe", background=base_bg, bordercolor=line)
         style.configure("TLabelframe.Label", background=base_bg, foreground=accent)
+        # 现代按钮：无硬边、稍大内边距；点击后的虚线焦点框直接从布局里移除。
+        # 按钮仍然可 Tab 聚焦，只是不再在视觉上画一圈点线。
         style.configure("TButton", font=UI_FONT, background=UI_SURFACE_ALT,
                         foreground=ink, bordercolor=line, relief="flat",
-                        padding=(8, 4))
+                        borderwidth=0, padding=(10, 5))
         style.map("TButton",
-                  background=[("active", UI_HOVER_BG), ("pressed", UI_LINE),
+                  background=[("active", UI_HOVER_BG), ("pressed", UI_SELECT_BG),
                               ("disabled", UI_SURFACE_ALT)],
                   foreground=[("disabled", UI_MUTED)])
+        try:
+            style.layout("TButton", [
+                ("Button.border", {"sticky": "nswe", "border": "0",
+                                   "children": [
+                    ("Button.padding", {"sticky": "nswe", "children": [
+                        ("Button.label", {"sticky": "nswe"})]})]})])
+        except tk.TclError:
+            pass
         style.configure("Accent.TButton", font=UI_FONT, background=accent,
                         foreground=UI_ON_ACCENT, bordercolor=UI_ACCENT_DARK,
-                        relief="flat", padding=(10, 4))
-        # 强调按钮悬停时用**更深的蓝**，不是把底色换成浅灰蓝：
+                        relief="flat", borderwidth=0, padding=(12, 5))
+        # 强调按钮悬停时用更深的蓝，不是把底色换成浅灰蓝：
         # 旧映射是 active=UI_HOVER_BG + 白字，悬停瞬间几乎看不见字。
         style.map("Accent.TButton",
                   background=[("active", UI_ACCENT_DARK), ("pressed", UI_ACCENT_DARK)],
@@ -7645,14 +8242,14 @@ class WinMonApp:
         # 它们仍在**彩色高亮卡片**上，不能用深色页面的默认按钮色，否则会糊成一块。
         style.configure("Media.TButton", font=UI_FONT, background=UI_MEDIA_BTN_BG,
                         foreground=UI_MEDIA_BTN_FG, bordercolor=UI_MEDIA_BTN_ACTIVE,
-                        relief="flat", padding=(6, 2))
+                        relief="flat", borderwidth=0, padding=(7, 3))
         style.map("Media.TButton",
                   background=[("active", UI_MEDIA_BTN_ACTIVE),
                               ("pressed", UI_MEDIA_BTN_ACTIVE),
                               ("disabled", UI_LINE)],
                   foreground=[("disabled", UI_MUTED)])
         style.configure("TCheckbutton", background=base_bg, foreground=ink,
-                        padding=(2, 2))
+                        padding=(2, 2), focuscolor=base_bg, focusthickness=0)
         style.map("TCheckbutton",
                   background=[("active", base_bg)],
                   foreground=[("disabled", UI_MUTED)])
@@ -7663,14 +8260,19 @@ class WinMonApp:
                                      ("MediaCard", "media")):
             card = UI_CARDS[card_key]
             style.configure(f"{style_name}.TCheckbutton", background=card["bg"],
-                            foreground=card["fg"], padding=(2, 2))
+                            foreground=card["fg"], padding=(2, 2),
+                            focuscolor=card["bg"], focusthickness=0)
             style.map(f"{style_name}.TCheckbutton",
                       background=[("active", card["bg"]), ("pressed", card["bg"])],
                       foreground=[("disabled", card["muted"])])
-        style.configure("TRadiobutton", background=base_bg, foreground=ink)
+        style.configure("TRadiobutton", background=base_bg, foreground=ink,
+                        focuscolor=base_bg, focusthickness=0)
         style.map("TRadiobutton", background=[("active", base_bg)])
+        # 输入框去掉 3D 内凹边框：现代界面里输入区是“薄底 + 细线”，不是凹槽。
         style.configure("TEntry", fieldbackground=UI_BG, foreground=ink,
-                        insertcolor=ink, bordercolor=line)
+                        insertcolor=ink, bordercolor=line, lightcolor=line,
+                        darkcolor=line, relief="flat", borderwidth=0,
+                        padding=(8, 5))
         # clam 在 Windows 上会给输入框留一块系统白底；显式把 normal 态的
         # fieldbackground / foreground 也映射掉，深色主题才不会出现“白框”。
         style.map("TEntry",
@@ -7678,33 +8280,59 @@ class WinMonApp:
                                    ("readonly", UI_BG),
                                    ("disabled", UI_SURFACE_ALT)],
                   foreground=[("!disabled", ink), ("disabled", UI_MUTED)],
+                  bordercolor=[("focus", UI_ACCENT), ("!focus", line)],
+                  lightcolor=[("focus", UI_ACCENT), ("!focus", line)],
+                  darkcolor=[("focus", UI_ACCENT), ("!focus", line)],
                   background=[("!disabled", UI_BG)])
         style.configure("TCombobox", fieldbackground=UI_BG, foreground=ink,
-                        background=UI_BG, bordercolor=line, arrowcolor=ink)
+                        background=UI_BG, bordercolor=line, lightcolor=line,
+                        darkcolor=line, arrowcolor=ink,
+                        relief="flat", borderwidth=0, padding=(6, 4))
         style.map("TCombobox",
                   fieldbackground=[("readonly", UI_BG),
                                    ("!disabled", UI_BG),
                                    ("disabled", UI_SURFACE_ALT)],
                   foreground=[("readonly", ink), ("!disabled", ink),
                               ("disabled", UI_MUTED)],
+                  bordercolor=[("focus", UI_ACCENT), ("!focus", line)],
+                  lightcolor=[("focus", UI_ACCENT), ("!focus", line)],
+                  darkcolor=[("focus", UI_ACCENT), ("!focus", line)],
                   background=[("readonly", UI_BG), ("!disabled", UI_BG),
                               ("active", UI_HOVER_BG)],
                   selectbackground=[("readonly", UI_BG)],
                   selectforeground=[("readonly", ink)])
+        # 设置/说明窗口仍用 ttk.Notebook；去掉标签上的虚线焦点框。
         style.configure("TNotebook", background=base_bg, bordercolor=line,
-                        tabmargins=(6, 4, 6, 0))
+                        borderwidth=0, tabmargins=(6, 4, 6, 0))
         style.configure("TNotebook.Tab", font=UI_FONT, padding=(16, 7),
-                        background=panel_bg, foreground=UI_MUTED)
+                        background=panel_bg, foreground=UI_MUTED,
+                        focuscolor=base_bg, focusthickness=0)
         style.map("TNotebook.Tab",
                   background=[("selected", UI_BG), ("active", UI_HOVER_BG)],
                   foreground=[("selected", accent), ("active", ink)])
+        try:
+            style.layout("TNotebook.Tab", [
+                ("Notebook.tab", {"sticky": "nswe", "children": [
+                    ("Notebook.padding", {"side": "top", "sticky": "nswe",
+                                          "children": [
+                        ("Notebook.label", {"side": "top", "sticky": ""})]})]})])
+        except tk.TclError:
+            pass
+        # 主界面自己画胶囊标签，原生标签在这里只保留 0 高度（内容/下标逻辑不变）。
+        try:
+            style.configure("Hidden.TNotebook", background=base_bg,
+                            borderwidth=0, tabmargins=(0, 0, 0, 0))
+            style.layout("Hidden.TNotebook.Tab", [])
+        except tk.TclError:
+            pass
         style.configure("Treeview", font=UI_FONT, rowheight=ICON_SIZE + 8,
                         background=UI_SURFACE, fieldbackground=UI_SURFACE,
-                        foreground=ink, bordercolor=line)
+                        foreground=ink, bordercolor=line, borderwidth=0,
+                        relief="flat")
         style.configure("Treeview.Heading",
-                        font=("Microsoft YaHei UI", UI_FONT_SIZE, "bold"),
+                        font=(UI_FONT_FAMILY, UI_FONT_SIZE, "bold"),
                         background=panel_bg, foreground=UI_HEADING, relief="flat",
-                        padding=(6, 4))
+                        borderwidth=0, padding=(8, 6))
         style.map("Treeview.Heading", background=[("active", UI_HOVER_BG)])
         style.map("Treeview",
                   background=[("selected", UI_SELECT_BG)],
@@ -7797,10 +8425,7 @@ class WinMonApp:
                     "sticky": "nswe",
                     "children": [
                         (name, {"side": "left", "sticky": ""}),
-                        ("Checkbutton.focus", {
-                            "side": "left", "sticky": "w",
-                            "children": [("Checkbutton.label", {"sticky": "nswe"})],
-                        }),
+                        ("Checkbutton.label", {"side": "left", "sticky": "nswe"}),
                     ],
                 }),
             ])
@@ -7920,11 +8545,11 @@ class WinMonApp:
 
         main = ttk.Frame(body)
         body.add(main, weight=7)
-        main.rowconfigure(0, weight=1)
+        main.rowconfigure(1, weight=1)
         main.columnconfigure(0, weight=1)
 
-        self.notebook = ttk.Notebook(main)
-        self.notebook.grid(row=0, column=0, sticky="nsew")
+        # 原生 Notebook 只负责内容；顶部标签由自绘胶囊栏提供（无直角/虚线框）。
+        self.notebook = ttk.Notebook(main, style="Hidden.TNotebook")
         self.preview = PreviewPane(self.notebook, self)
         self.gallery = GalleryPane(self.notebook, self)
         self.proc_tree = ProcessTreePane(self.notebook, self)
@@ -7939,6 +8564,11 @@ class WinMonApp:
         self.notebook.add(self.ai_workspace.frame,
                           text=i18n.pick("AI 工作区", "AI workspace"))
         self.workspace.refresh()
+        self.tab_strip = TabStrip(
+            main, self.notebook,
+            [self.notebook.tab(i, "text") for i in range(len(self.notebook.tabs()))])
+        self.tab_strip.grid(row=0, column=0, sticky="ew", padx=4, pady=(2, 4))
+        self.notebook.grid(row=1, column=0, sticky="nsew")
 
         side = ttk.Frame(body)
         body.add(side, weight=3)
@@ -7952,7 +8582,7 @@ class WinMonApp:
         #: 关闭超时后才出现；平时不占位置（pack_forget）。
         self.escalate_btn = RoundedButton(
             bottom, text="改为强制结束", kind="accent", bg=UI_BG,
-            width=132, height=30, radius=9,
+            height=30, radius=15,
             command=self.action_escalate_close)
         ttk.Label(bottom, textvariable=self.overview_text, font=MONO_FONT,
                   foreground=UI_MUTED).pack(side="right")
@@ -7997,57 +8627,62 @@ class WinMonApp:
         """
         左侧动作竖栏（用户 2026-10-19 的方案）：顶部不再摆一排按钮。
 
-        纯白底黑字下，按钮用浅灰底 + 深色字；主体（实时预览）占满剩下的宽度。
+        用户 2026-10-21 又要求这些按钮“轻盈、现代、边框改成大范围低透明阴影”：
+        现在整列是一块带柔光阴影的圆角浮片，每个动作是独立的近白胶囊，
+        左侧的小色条只用来分组，不再用直角灰块和硬边框。
         """
-        rail_bg = UI_BG
+        rail_bg = mix_color(UI_BG, UI_SURFACE_ALT, 0.72)
         # 固定宽度也要跟着 DPI / 字号放大；否则 150% 下 124px 只够放四个汉字，
         # “清理程序文件…”会被自己的按钮裁成省略号（实机截图确认过）。
         rail_scale = max(float(getattr(self, "dpi_scale", 1.0) or 1.0),
                          UI_FONT_SIZE / 9.0)
-        rail_w = max(124, int(round(124 * rail_scale)))
-        rail = tk.Frame(parent, bg=rail_bg, width=rail_w,
-                        highlightbackground=UI_LINE, highlightthickness=0)
-        rail.grid(row=0, column=0, sticky="ns", padx=(8, 6), pady=(0, 4))
-        rail.grid_propagate(False)
+        rail_w = max(132, int(round(132 * rail_scale)))
+        panel = SoftPanel(parent, rail_bg, radius=20, shadow=4, pad=9,
+                          width=rail_w)
+        panel.grid(row=0, column=0, sticky="ns", padx=(8, 6), pady=(0, 4))
+        panel.grid_propagate(False)
+        self._action_rail_panel = panel
+        rail = panel.content
+        rail.configure(bg=rail_bg)
         self.action_rail = rail
         self._rail_title = tk.Label(rail, text=i18n.pick("操作", "Actions"),
                                     font=SMALL_BOLD_FONT,
                                     bg=rail_bg, fg=UI_MUTED, anchor="w")
-        self._rail_title.pack(fill="x", padx=10, pady=(10, 3))
+        self._rail_title.pack(fill="x", padx=4, pady=(6, 3))
         self._rail_groups: list[tk.Label] = []
         self._rail_buttons: list[tk.Button] = []
 
         def group(title):
             lbl = tk.Label(rail, text=title, font=SMALL_BOLD_FONT,
                            bg=rail_bg, fg=UI_MUTED, anchor="w")
-            lbl.pack(fill="x", padx=10, pady=(8, 2))
+            lbl.pack(fill="x", padx=4, pady=(8, 2))
             self._rail_groups.append(lbl)
 
-        def action(label, command):
-            # 圆角 + 浅色描边 + 悬停浅蓝：和主界面的卡片语言一致，不再是直角灰块。
+        def action(label, command, tone=UI_ACCENT):
+            # 圆角胶囊 + 大范围低透明阴影；没有外描边，悬停才浮起半档。
             btn = RoundedButton(
-                rail, text=label, command=command, kind="secondary",
-                bg=rail_bg, height=30, radius=9, anchor="w", padx=10,
-                font=UI_FONT)
-            btn.pack(fill="x", padx=6, pady=1)
+                rail, text=label, command=command, kind="rail",
+                bg=rail_bg, height=32, radius=16, anchor="w", padx=13,
+                lead=tone, font=UI_FONT)
+            btn.pack(fill="x", padx=0, pady=2)
             self._rail_buttons.append(btn)
 
         group(i18n.pick("监控", "Monitor"))
-        action("加入总览", self.gallery_add_selected)
-        action("移除总览", self.gallery_remove_selected)
-        action("刷新列表", self.refresh_all)
+        action("加入总览", self.gallery_add_selected, UI_ACCENT)
+        action("移除总览", self.gallery_remove_selected, UI_ACCENT)
+        action("刷新列表", self.refresh_all, UI_ACCENT)
 
         group(i18n.pick("工作台", "Workbench"))
-        action("操作历史…", self.action_history)
-        action("清理程序文件…", self.action_clean_files)
+        action("操作历史…", self.action_history, UI_MEDIA_BTN_BG)
+        action("清理程序文件…", self.action_clean_files, UI_MEDIA_BTN_BG)
 
         group("AI")
         #: 助手 / 接入 / 用量都收进「AI 工作区」；左栏不再并列两个入口。
-        action("AI 工作区…", self.action_show_ai_workspace)
+        action("AI 工作区…", self.action_show_ai_workspace, UI_PURPLE)
 
         group(i18n.pick("设置", "Settings"))
         #: 设置、AI 用量、使用说明三者合并：主界面只留一个「设置…」入口。
-        action("设置…", self.action_settings)
+        action("设置…", self.action_settings, UI_MUTED)
         self._sync_action_rail_spacing()
 
     def _sync_action_rail_spacing(self) -> None:
@@ -8063,17 +8698,21 @@ class WinMonApp:
         try:
             rail_scale = max(float(getattr(self, "dpi_scale", 1.0) or 1.0),
                              UI_FONT_SIZE / 9.0)
-            self.action_rail.configure(
-                width=max(124, int(round(124 * rail_scale))))
+            panel = getattr(self, "_action_rail_panel", None)
+            if panel is not None:
+                panel.configure(width=max(132, int(round(132 * rail_scale))))
+            else:
+                self.action_rail.configure(
+                    width=max(132, int(round(132 * rail_scale))))
         except Exception:
             pass
         try:
             self._rail_title.pack_configure(
-                pady=(3, 0) if compact else (8, 2))
+                pady=(2, 0) if compact else (6, 3))
             for lbl in self._rail_groups:
                 lbl.pack_configure(pady=(2, 0) if compact else (6, 1))
             for btn in self._rail_buttons:
-                btn.pack_configure(pady=0 if compact else 1)
+                btn.pack_configure(pady=0 if compact else 2)
         except Exception:
             pass
 
@@ -8167,7 +8806,7 @@ class WinMonApp:
                      values=[label for label, _s in core.IDLE_CHECK_CHOICES]).pack(
             side="left", padx=(4, 2))
         RoundedButton(line1, text="清单", kind="ghost", bg=UI_BG,
-                      width=58, height=28, radius=8,
+                      height=28, radius=14,
                       command=self.action_idle_dialog).pack(side="right")
         line2 = ttk.Frame(idle_bar)
         line2.pack(fill="x", pady=(3, 0))
@@ -8210,14 +8849,14 @@ class WinMonApp:
         # 宽度交给字体实测（DPI / 字号变化时按真实文字宽度走），
         # 固定像素宽在 150% 缩放下会把「监视当前窗口」截成「监视当前…」。
         RoundedButton(vbar, text="监视当前窗口", kind="ghost", bg=UI_BG,
-                      height=30, radius=9,
+                      height=30, radius=15,
                       command=self._monitor_current_window).pack(
             side="left", padx=(0, 4))
         RoundedButton(vbar, text="停止监视", kind="ghost", bg=UI_BG,
-                      height=30, radius=9,
+                      height=30, radius=15,
                       command=self.stop_video_watch).pack(side="left", padx=2)
         RoundedButton(vbar, text="直接关闭视频", kind="ghost", bg=UI_BG,
-                      height=30, radius=9,
+                      height=30, radius=15,
                       command=self.action_stop_video).pack(side="left", padx=2)
 
         # ---- 第 2 行：媒体独占一行（做成高亮卡片，一眼看到“是谁在放什么”）----
@@ -8232,8 +8871,9 @@ class WinMonApp:
         mbar = tk.Frame(self.media_glow.content, bg=media["bg"],
                         padx=8, pady=3)
         mbar.pack(fill="x")
-        tk.Label(mbar, text="媒体", font=SMALL_BOLD_FONT,
-                 bg=media["tag_bg"], fg=media["tag_fg"], padx=7, pady=1).pack(
+        RoundedBadge(mbar, text="媒体", fill=media["tag_bg"],
+                     fg=media["tag_fg"], bg=media["bg"],
+                     font=SMALL_BOLD_FONT, padx=9, height=20).pack(
             side="left", padx=(0, 8))
         #: 当前在放什么（曲名 · 歌手 · 状态）。**没有进度** —— 用户已放弃识别进度。
         self.media_text = tk.StringVar(value="（还没读取）")
@@ -8243,7 +8883,7 @@ class WinMonApp:
         self.MEDIA_TEXT_WIDTH = self._media_text_width()
         self.media_label = tk.Label(
             mbar, textvariable=self.media_text,
-            font=("Microsoft YaHei UI", UI_FONT_SIZE, "bold"), anchor="w",
+            font=(UI_FONT_FAMILY, UI_FONT_SIZE, "bold"), anchor="w",
             fg=media["fg"], bg=media["bg"], width=self.MEDIA_TEXT_WIDTH)
         self.media_label.pack(side="left", padx=(0, 8))
         # 右边的控件按"从左到右"的视觉顺序 pack（都是 side="left"，不会互相挤）
@@ -8268,15 +8908,15 @@ class WinMonApp:
         # 播放按钮用三角/暂停符号（▶ / ⏸），不再写「播放」两个汉字。
         self.media_prev_btn = RoundedButton(
             mbar, text="◀◀", kind="media", bg=media["bg"],
-            height=30, radius=9, padx=15, style="Media.TButton",
+            height=30, radius=15, padx=15, style="Media.TButton",
             command=lambda: self.media_prev_next("previous"))
         self.media_play_btn = RoundedButton(
             mbar, text="▶", kind="media", bg=media["bg"],
-            height=30, radius=9, padx=15, style="Media.TButton",
+            height=30, radius=15, padx=15, style="Media.TButton",
             command=self.media_toggle_play)
         self.media_next_btn = RoundedButton(
             mbar, text="▶▶", kind="media", bg=media["bg"],
-            height=30, radius=9, padx=15, style="Media.TButton",
+            height=30, radius=15, padx=15, style="Media.TButton",
             command=lambda: self.media_prev_next("next"))
         self.media_prev_btn.pack(side="left", padx=(0, 2))
         self.media_play_btn.pack(side="left", padx=1)
@@ -8300,12 +8940,13 @@ class WinMonApp:
         """
         card = UI_CARDS["ai"]
         bg = card["bg"]
-        bar = tk.Frame(self.root, bg=bg, highlightbackground=card["border"],
-                       highlightthickness=1, padx=10, pady=5)
-        bar.pack(fill="x", padx=8, pady=(0, 5))
+        panel = SoftPanel(self.root, bg, radius=18, shadow=4, pad=4)
+        panel.pack(fill="x", padx=8, pady=(0, 5))
+        bar = tk.Frame(panel.content, bg=bg, padx=10, pady=5)
+        bar.pack(fill="both", expand=True)
         bar.columnconfigure(1, weight=1)
-        tk.Label(bar, text="AI", font=SMALL_BOLD_FONT,
-                 bg=card["tag_bg"], fg=card["tag_fg"], padx=8, pady=2).grid(
+        RoundedBadge(bar, text="AI", fill=card["tag_bg"], fg=card["tag_fg"],
+                     bg=bg, font=SMALL_BOLD_FONT, padx=9, height=22).grid(
             row=0, column=0, sticky="nw", padx=(0, 8))
         body = tk.Frame(bar, bg=bg)
         body.grid(row=0, column=1, sticky="ew")

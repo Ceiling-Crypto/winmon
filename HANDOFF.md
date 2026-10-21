@@ -3,7 +3,7 @@
 > 用途：在新的对话里快速恢复上下文。读这一份即可继续开发。
 > **正式发布名 `winmon1.0`**（`APP_VER = "1.0"`，查版本：`py winmon.py --version`）。
 > **先读 §一点五「WinMon 的定位与能力边界」** —— 输入注入已明确不再投入。
-> 代码状态：**998 个测试用例全绿**（约 101 秒；`--fast` 941 条约 41 秒）+
+> 代码状态：**1006 个测试用例全绿**（约 105 秒；`--fast` 949 条约 42 秒）+
 > 代码复检 0 新增问题（基线为空）、
 > 自检 8/8、界面冒烟通过、
 > 桌面快捷方式可用、程序目录端到端可用、
@@ -21,10 +21,10 @@
 
 | | |
 | --- | --- |
-| 测试 | **998 用例全绿**（`py tests\run_tests.py`，约 101 秒；含 7 条按环境 skip）；`--fast` 941 条约 41 秒 |
+| 测试 | **1006 用例全绿**（`py tests\run_tests.py`，约 105 秒；含 7 条按环境 skip）；`--fast` 949 条约 42 秒 |
 | 代码复检 | `py tests\lint_check.py` → **新增问题 0**（基线已清空，见 §四） |
 | 自检 / 冒烟 | `py winmon.py --selftest` 8/8 通过；`--smoke` 通过 |
-| 规模 | `winmon_core.py` ~6865 行 / `winmon.py` ~14250 行 / 测试 53 个 .py（39 个测试模块） |
+| 规模 | `winmon_core.py` ~6865 行 / `winmon.py` ~14892 行 / 测试 54 个 .py（40 个测试模块） |
 | 运行方式 | `py winmon.py`（GUI）或双击「winmon1.0」快捷方式；**单实例**：第二个实例会把已有窗口带到前台后自己退出 |
 | 窗口尺寸 | 设计稿 **1160×730**，开窗时**按 DPI 缩放**（本机 150% → 1740×1095；见 §9.15 第 14 条） |
 | 数据文件 | `winmon_settings.json`（界面偏好/收藏）、`winmon_history.log`（操作留痕）、`winmon_catalog.json`（程序目录缓存）、`winmon_media.jsonl`（媒体快照缓存，可删） |
@@ -106,7 +106,7 @@
 | `winmon_mcp.py` | ~800 | **MCP 服务器**：双时代 stdio + 本地 HTTP + 四个只读工具 |
 | `winmon_ai_provider.py` | ~250 | **可选**直连模型 API（默认关；精确 usage；key 只从环境变量读） |
 | `media_session.ps1` | ~230 | 系统媒体会话（GSMTC）桥接脚本（PowerShell + Windows 自带 WinRT 投影；**必须纯 ASCII 无 BOM**） |
-| `tests/` | 53 个 .py | **可重复运行的测试**（998 用例，纯 unittest） + `_marks.py` 慢用例标记 + 开发辅助工具 + `lint_check.py` / `lint_baseline.txt` |
+| `tests/` | 54 个 .py | **可重复运行的测试**（1006 用例，纯 unittest） + `_marks.py` 慢用例标记 + 开发辅助工具 + `lint_check.py` / `lint_baseline.txt` |
 | `启动WinMon.bat` | — | 菜单式启动器（纯 ASCII，避免批处理编码问题） |
 | `scan_windows.py` | — | 命令行窗口清单 |
 | `close_others.py` | — | 批量关闭除当前窗口外的窗口 |
@@ -159,8 +159,8 @@ python winmon.py --videos --open 3 --watch --close-window   :: 完整视频链�
 python winmon.py --version          :: 打印版本（winmon1.0）
 python winmon.py --idle             :: 列出"长期开着、没人用"的程序（只看，不关任何东西）
 python winmon.py --idle --idle-minutes 5   :: 换个闲置阈值（分钟）
-py tests\run_tests.py               :: 全部测试（998 用例，约 101 秒）
-py tests\run_tests.py --fast        :: 快跑（941 用例，约 41 秒；跳过真窗口/抓屏慢用例）
+py tests\run_tests.py               :: 全部测试（1006 用例，约 105 秒）
+py tests\run_tests.py --fast        :: 快跑（949 用例，约 42 秒；跳过真窗口/抓屏慢用例）
 ```
 
 ---
@@ -2959,6 +2959,115 @@ AI 深蓝卡可见；深色接入窗展开后目视无浅色卡残留。
 - `--smoke` 退出 0；150% 深色 65% 桌面截图确认：整窗透明、媒体卡光晕、
   果冻按钮高光/投影都可见；设置页截图确认透明度一栏完整可见。
 
+### 9.26 阶段 8.16：克莱因蓝 / 全面圆角 / 现代字体 / 目录滚动（2026-10-21）
+
+用户这一轮的原话（五条）：
+1. 「按键的圆角设计要为果冻回弹效果服务，点击‘实时预览’等按键出现的虚线框去掉，
+   winmon 的字体采用现代的无衬线字体，目前按键整体没有达到轻盈，回弹的效果」；
+2. 「整个窗口全面倒角，保证 ui 整体匹配而不是类似早期 WinForms 或 WPF 默认控件」；
+3. 「ui 界面的色彩采用上更现代的色彩，比如克莱因蓝，高亮卡片同步优化修改，
+   色彩调和上现代化保证 ui 的和谐度，左下的栏目‘加入总览’这类按键过于粗糙，
+   设计上采用现代科技的轻盈效果，边框改用大范围低透明的阴影」；
+4. 「程序目录出现程序名称会覆盖到图标上，在该栏目加入一条横向的水平线可以左右滑动」；
+5. 「色彩是先改，之前的颜色代码先不动，待我决议」。
+
+#### 一、色彩：新色板是“叠加层”，旧色板原样保留
+
+- 这是第 5 条的关键：**没有改写旧色块**。原 `_THEME_PALETTES` 完整保存为
+  `_THEME_PALETTES_LEGACY`，新表是 `_THEME_PALETTES_MODERN`，当前别名指向新表。
+  用户若否决，只需一行 `_THEME_PALETTES = _THEME_PALETTES_LEGACY` 即可回退。
+- 浅色主强调色改为 International Klein Blue `#002FA7`；悬停更深 `#001E6B`。
+  中性色从 slate 旧灰蓝换成冷白/墨蓝（`#0B1020` / `#5F6B85` / 边框 `#E4E8F3`）。
+- 深色仍保留纯黑页面（`UI_BG=#000000`）与白字，强调色提亮到 `#7F9BFF`，
+  避免 Klein 蓝在纯黑上糊成黑块；高亮卡改深色玻璃底。
+- 高亮卡（media / ai / mcp / key / workspace / behavior / proactive）全部重配；
+  媒体按钮仍用深青 `#0F6B5C`（在浅绿卡上对比最好，且是既有测试锚点）。
+  MCP / KEY 的浅色前景也刻意保留旧值，避免和旁边状态条打架。
+- 旧测试里的 `#000000` / `#0f6b5c` / `#1f6f9e` / `#a86b00` 锚点全部仍成立，
+  所以 b35 / b33 不需要改断言；b37 的深色卡对比度仍全过。
+
+#### 二、字体
+
+- `UI_FONT_FAMILY` 默认 `Noto Sans SC`，候选顺序：
+  `MiSans → HarmonyOS Sans SC → Noto Sans SC → Source Han Sans SC →
+  Segoe UI Variable Text → Microsoft YaHei UI`。
+- `_load_saved_ui_preferences(root)` 在建界面**之前**调用
+  `resolve_ui_font_family(root)` 实测本机字体，再 `set_font_size()`；
+  单测/手工建控件时用模块默认值，不会因为探测失败改变布局。
+- 所有 `Microsoft YaHei UI` 字面量已换成 `UI_FONT_FAMILY`；Consolas 仍只用于
+  等宽数字（FPS / 用量），不参与正文。
+
+#### 三、果冻按键：圆角为形变服务
+
+- `RoundedButton` 默认半径从 9 提到 15；主界面按 32/34 高做成**胶囊**，
+  形变沿圆角发生，不再像在方卡片上换颜色。
+- 按下 70ms ease-out 压扁（横向 +4.6%、纵向 -9.6%、下移 1.8px）；
+  松手 560ms 阻尼正弦 `exp(-4.0t) * cos(9.8t)`，负半周有可见过冲。
+  旧参数 `exp(-5.2)cos(11.8)` 太“闷”，只动 1–2px，这是“没有回弹感”的主因。
+- 3D 层改成：三层大范围低透明投影 + 主体 + 顶部高光 + 底部内阴影；
+  不再画厚底唇。阴影色由按钮底色与强调色混合，深色主题改成冷白环境光。
+- **焦点框**：按钮不再绑 FocusIn/Out 重绘，也不画 `UI_ACCENT` 边框；
+  ttk 的 `TButton` / `Notebook.Tab` / `Checkbutton` 布局里移除 `*.focus` 元素，
+  点击后不会出现虚线框。键盘 Enter/Space 仍可触发。
+- 左侧动作栏：外层 `SoftPanel`（圆角浮片 + 大范围柔影），每个动作是近白胶囊，
+  左侧小圆点按组着色（监控蓝 / 工作台青 / AI 紫 / 设置灰）；不再是灰块 + 硬边。
+- 设置窗口底部「保存 / 取消」改成自绘胶囊，与主界面统一。
+- 顺手把自绘按钮上残留的固定像素宽（暂停 106 / 操作 132 / 执行 68 /
+  强制结束 132 / 清单 58 / 保存 126 / 取消 116）改成**按字体实测的自然宽**：
+  这些宽度不会跟着 DPI / 字号放大，150% + 12 号字时「暂停刷新」会被截成
+  「暂停…」。README 一直写着“按钮宽度按字体实测”，这次补齐。
+
+#### 四、圆角与标签栏
+
+- **窗口外框**：`set_rounded_window_corners()` 调用 DWM
+  `DWMWA_WINDOW_CORNER_PREFERENCE(33) = 2`；主窗与每个 Toplevel 都在
+  `<Map>` 时套用。Win11 生效，Win10 静默跳过（不能为了圆角把老系统弄崩）。
+- **自绘标签栏 `TabStrip`**：真正的 `ttk.Notebook` 只负责内容，原生标签用
+  `Hidden.TNotebook.Tab` 布局隐藏；顶部画胶囊（选中 Klein 蓝、悬停浅蓝、
+  键盘左右可切换、无虚线焦点框）。主界面和设置窗口共用。
+- `SoftPanel`：Frame + 背后 Canvas 双层结构，Canvas 只画圆角背景与柔影，
+  内容仍是普通 Frame，pack/grid 和可访问性不变。
+- `AmbientGlowFrame` 从“三层 1px Frame 边框”改成 `SoftPanel` 子类：
+  Canvas 画三圈圆角色带（外 0.43 / 中 0.24 / 内 0.10），播放时 950ms 亮起。
+  `cget("bg")` 被覆写为“当前最外圈色”，所以 b39 的既有断言仍然按旧语义通过。
+- 媒体 / AI 标签从小方 Label 改为 `RoundedBadge` 胶囊。
+
+#### 五、程序目录
+
+- 图标列宽从 40 改为 `54 * dpi_scale`，并显式 `minwidth`；150% 下原先
+  40px 只够缩进，图标会压到「程序名称」第一个字上。
+- 程序名列 / 路径列改成固定宽（`252*scale` / `390*scale`），不再自动拉伸
+  填满；下方新增横向 `ttk.Scrollbar`，`xscrollcommand` 与 `xview` 接上。
+- 底部说明行从 row 4 下移到 row 5，给滚动条腾位置；垂直滚动条保持原样。
+
+#### 六、踩坑
+
+- **不能只给 `ttk.Notebook(style="Hidden.TNotebook")` 而不配置隐藏布局**：
+  独立构造 `_SettingsWindow`（测试/截图脚本）没有走主窗口的 `_configure_style()`，
+  自绘胶囊和原生标签会同时出现。设置窗口现在自己补一次
+  `style.layout("Hidden.TNotebook.Tab", [])`。
+- **自绘 Canvas 没有标准 `font` 选项**：`apply_font_size_live()` 会遍历控件，
+  所以 `TabStrip` / `RoundedBadge` 都提供 `_refresh_font()` 钩子；
+  漏了它，改字号后标签会停在旧字号。
+- **DWM 圆角只在 Win11 可靠**；Win10 没有这个属性，保留直角是平台边界，
+  不要用 `SetWindowRgn` 硬裁（会破坏阴影/最大化行为）。
+- **旧色板不能删**：`_THEME_PALETTES_LEGACY` 是用户“待我决议”的回退路径；
+  删了以后就无法按原样退回。
+- **目录图标列是物理像素**：`column(width=...)` 不跟 DPI 自动放大，
+  因此必须像侧栏一样乘 `dpi_scale`；这是用户看到“名称盖住图标”的直接原因。
+
+#### 七、验收
+
+- 新增 `tests/test_b40_modern_ui.py`（8 条）：Klein 蓝 / 旧色板并存、
+  现代字体解析、聚焦不画框、回弹过冲、胶囊标签无原生焦点环、
+  目录图标栏 + 横向滚动、SoftPanel / RoundedBadge 圆角层、浅深卡可读。
+- 全量 **1006 用例**，失败 0 / 错误 0 / 跳过 7（104.355 秒）；
+  `--fast` **949 条**，失败 0 / 错误 0 / 跳过 6（41.505 秒）；lint 新增 0。
+- `--smoke` 退出 0；150% 浅色 / 深色桌面截图确认：外框四角圆角、
+  胶囊标签、左侧柔影动作栏、媒体/AI 圆角卡、目录图标不再压字、底部横向滚动条可见。
+- 待用户决议：新色板是否定稿；如果不满意，回退只需把
+  `_THEME_PALETTES = _THEME_PALETTES_MODERN` 改为 `_THEME_PALETTES_LEGACY`。
+
 ## 三、踩过的坑（**最重要，别重复踩**）
 
 ### 编码类（最容易毁掉成果）
@@ -3511,7 +3620,7 @@ AI 深蓝卡可见；深色接入窗展开后目视无浅色卡残留。
 ## 四、测试体系（**改代码后先跑这个**）
 
 ```bat
-py tests\run_tests.py            :: 998 用例，约 101 秒（--fast 941 条约 41 秒）
+py tests\run_tests.py            :: 1006 用例，约 105 秒（--fast 949 条约 42 秒）
 py tests\run_tests.py -v         :: 逐个看
 py tests\run_tests.py -k capture :: 只跑关心的
 py tests\lint_check.py           :: 代码复检（退出码 1 = 有新增问题）
@@ -3670,8 +3779,8 @@ py tests\lint_check.py           :: 代码复检（退出码 1 = 有新增问题
    以及 `lint_check.py` 的"函数过长"（>200 行）阈值 —— `_build_ui` 已经贴着线走了，
    当时就是靠把视频联动那三行拆成 `_build_video_bars()` 才压下去的。
 5. ~~**测试提速**~~ **已做（2026-10-20，阶段 8.9）**：
-   `tests/_marks.py` 的 `@slow` + `run_tests.py --fast`。**998 用例约 101 秒**，
-   `--fast` 跳过 57 条真窗口/抓屏/跨进程输入/真 CLI 用例，跑 **941 条约 41 秒**；
+   `tests/_marks.py` 的 `@slow` + `run_tests.py --fast`。**1006 用例约 105 秒**，
+   `--fast` 跳过 57 条真窗口/抓屏/跨进程输入/真 CLI 用例，跑 **949 条约 42 秒**；
    提交前仍跑全量。B6 里 5 条只验过滤分支的用例改成 `probe_seconds=0.05`，
    全量因此又少了约 12 秒；真窗口用例仍保留 2 秒采画面。
    另一个大头 `test_a7` 已经从 8.9s 降到 1.2s（现在也在 `--fast` 的跳过列表里）。
@@ -4195,8 +4304,8 @@ C 盘那份**保持原样、一字未改**（用户 2026-10-11 确认：暂不�
 
 > 继续开发 **winmon1.0** —— Windows 程序监控与终止工具，纯标准库，在 `项目根目录\`。
 > 请先读 `HANDOFF.md` 和 `README.md`，然后跑 `py tests\run_tests.py`
-> 确认基线是 **998 用例全绿**（需要哔哩哔哩/UIA 页面的用例会按需 skip；
-> 日常改动用 `--fast` 跑 941 条，提交前跑全量）、
+> 确认基线是 **1006 用例全绿**（需要哔哩哔哩/UIA 页面的用例会按需 skip；
+> 日常改动用 `--fast` 跑 949 条，提交前跑全量）、
 > `py tests\lint_check.py` 退出码 0（无新增问题）。
 > **版式要另眼验收**：测试进程没有开 DPI 感知，布局检查看不到"真实 DPI 下控件被挤没"，
 > 所以改动界面后还要跑一次 `py winmon.py --smoke` 看截图（见 §9.15 第 14 条）。
