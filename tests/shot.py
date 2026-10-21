@@ -108,8 +108,8 @@ def main() -> int:
                     choices=("cobalt", "neon", "graphite", "lime", "sunlit",
                              "amber", "coral", "cloud", "snow"),
                     help="设计主题（默认 sunlit 晴日天绿）")
-    ap.add_argument("--tab", type=int, default=0,
-                    help="标签页序号：0 实时预览 / 1 实时总览 / 2 进程树 / 3 程序目录")
+    ap.add_argument("--tab", type=int, default=1,
+                    help="标签页序号：0 AI 工作区 / 1 实时预览 / 2 实时总览 / 3 进程树 / 4 程序目录 / 5 工作区")
     ap.add_argument("--catalog", action="store_true",
                     help="截图前真正构建一次程序目录（让目录页有内容）")
     ap.add_argument("--video", action="store_true",

@@ -386,6 +386,9 @@ _STATIC_EN = {
     "强制结束（未保存会丢）": "Force end (unsaved work is lost)",
     "强制结束整树": "Force-end tree",
     "刷新速度：": "Refresh:",
+    "刷新速度": "Refresh",
+    "复制 key": "Copy key",
+    "显示": "Show",
     "媒体": "Media",
     "恢复 AI 接入": "Resume AI access",
     "恢复预算只能在这里操作；MCP 没有改预算的工具。":

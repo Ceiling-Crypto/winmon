@@ -93,11 +93,13 @@ class TestMainWindowRefinement(unittest.TestCase):
         self.assertEqual(self.app.menu.entrycget(0, "label"), "刷新列表")
 
     def test_preview_and_overview_have_distinct_glyphs(self):
-        self.assertTrue(self.app.tab_strip._display_label(0).startswith("▷"))
-        self.assertTrue(self.app.tab_strip._display_label(1).startswith("▦"))
+        self.assertFalse(self.app.tab_strip._display_label(0).startswith(("▷", "▦")))
+        self.assertTrue(self.app.tab_strip._display_label(1).startswith("▷"))
+        self.assertTrue(self.app.tab_strip._display_label(2).startswith("▦"))
         # 文字标签仍由 Notebook 提供，行为/可访问性不变
-        self.assertEqual(self.app.notebook.tab(0, "text"), "实时预览")
-        self.assertEqual(self.app.notebook.tab(1, "text"), "实时总览")
+        self.assertEqual(self.app.notebook.tab(0, "text"), "AI 工作区")
+        self.assertEqual(self.app.notebook.tab(1, "text"), "实时预览")
+        self.assertEqual(self.app.notebook.tab(2, "text"), "实时总览")
 
     def test_gallery_remove_uses_the_selected_tile(self):
         self.app.gallery.add(9001, "测试窗口", "说明")

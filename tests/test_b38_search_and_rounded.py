@@ -52,7 +52,7 @@ class TestProgramSearchNormalization(unittest.TestCase):
         main = "\n".join(body for _kind, body in zh["主界面"])
         setup = "\n".join(body for _kind, body in zh["AI 接入"])
         for piece in ("顶部搜索", "已接入 · MCP", "已接入 · API",
-                      "未接入 · 纯本地", "上一首", "下一首", "播放暂停",
+                      "未接入 · 纯本地", "上一首", "下一首", "播放/暂停",
                       "不调音量", "不读进度"):
             self.assertIn(piece, main)
         for piece in ("MCP", "API", "纯本地", "不联网"):
@@ -157,7 +157,8 @@ class TestUnifiedSearchUi(unittest.TestCase):
         self.app._activate_search_result(0)
         self.assertEqual(self.app.selected_hwnd, 42)
         self.assertEqual(self.app.selected_pid, 4242)
-        self.assertEqual(self.app.notebook.index("current"), 0)
+        self.assertEqual(self.app.notebook.index("current"),
+                         self.winmon.TAB_PREVIEW)
 
     def test_not_running_program_switches_to_catalog_and_highlights(self):
         item = core.ProgramItem("未运行测试程序", r"C:\NoSuch\never-running.exe")
@@ -168,7 +169,8 @@ class TestUnifiedSearchUi(unittest.TestCase):
 
         self.app._search_results_current = results
         self.app._activate_search_result(0)
-        self.assertEqual(self.app.notebook.index("current"), 3,
+        self.assertEqual(self.app.notebook.index("current"),
+                         self.winmon.TAB_CATALOG,
                          "未运行时应切到程序目录标签页")
         selected = self.app.catalog.tree.selection()
         self.assertTrue(selected, "目录行必须被选中高亮")
@@ -197,15 +199,12 @@ class TestUnifiedSearchUi(unittest.TestCase):
                          "PID 被系统回收后不能把别的程序当成网易云")
 
     def test_media_keys_order_and_symbols(self):
-        self.assertEqual(self.app.media_prev_btn.cget("text"), "◀◀")
+        self.assertEqual(self.app.media_prev_btn.cget("text"), "⏮")
         self.assertEqual(self.app.media_play_btn.cget("text"), "▶")
-        self.assertEqual(self.app.media_next_btn.cget("text"), "▶▶")
-        parent = self.app.media_play_btn.master
-        slaves = sorted(parent.grid_slaves(), key=lambda w: int(w.grid_info()["column"]))
-        labels = [w.cget("text") for w in slaves
-                  if hasattr(w, "cget") and w.winfo_class() == "Button"
-                  and w.cget("text") in ("◀◀", "▶", "⏸", "▶▶")]
-        self.assertEqual(labels, ["◀◀", "▶", "▶▶"],
+        self.assertEqual(self.app.media_next_btn.cget("text"), "⏭")
+        labels = [w.cget("text") for w in self.app.media_play_btn.master.pack_slaves()
+                  if hasattr(w, "cget") and w.winfo_class() == "Button"]
+        self.assertEqual(labels, ["⏮", "▶", "⏭"],
                          "媒体键顺序必须是上一首 → 播放/暂停 → 下一首")
         self.app._media_playing = False
         self.app._sync_media_play_button()
@@ -217,9 +216,10 @@ class TestUnifiedSearchUi(unittest.TestCase):
     def test_rounded_buttons_keep_button_semantics(self):
         btn = self.app.media_play_btn
         self.assertEqual(btn.winfo_class(), "Button")
-        self.assertEqual(str(btn.cget("style")), "Media.TButton")
-        # 圆角是 Canvas 画出来的，不是 ttk 的直角按钮
+        #: 2026-10-22 起媒体键是浅色圆角图标键，不再用深色 Media.TButton。
         self.assertIsInstance(btn, self.winmon.RoundedButton)
+        self.assertTrue(btn._ring)
+        self.assertEqual(str(btn.cget("width")), "30")
         self.assertGreaterEqual(btn.winfo_reqheight(), 26)
 
 

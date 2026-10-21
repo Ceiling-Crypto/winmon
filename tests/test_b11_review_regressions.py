@@ -1035,7 +1035,7 @@ class TestP2TrayGalleryAndRestore(unittest.TestCase):
         """反向对照：正常显示 + 在总览页时必须照常取帧（别把功能一刀切了）。"""
         app = winmon.WinMonApp.__new__(winmon.WinMonApp)
         app.root = _Root(state="normal")
-        app.notebook = types.SimpleNamespace(index=lambda which: 1)
+        app.notebook = types.SimpleNamespace(index=lambda which: winmon.TAB_GALLERY)
         app.live_gallery = _Var(True)
         app.paused = False
         requested: list = []
@@ -1063,14 +1063,14 @@ class TestP2TrayGalleryAndRestore(unittest.TestCase):
         requested: list = []
         app.worker = types.SimpleNamespace(forget=lambda key: forgotten.append(key),
                                            request=lambda *a, **k: requested.append(a))
-        tab = {"index": 5}
+        tab = {"index": winmon.TAB_AI}
         app.notebook = types.SimpleNamespace(index=lambda _which: tab["index"])
 
         winmon.WinMonApp._request_preview_frame(app)
         self.assertEqual(requested, [], "不在预览页还在抓屏")
         self.assertIn(("win", 0x123), forgotten)
 
-        tab["index"] = 0
+        tab["index"] = winmon.TAB_PREVIEW
         winmon.WinMonApp._request_preview_frame(app)
         self.assertEqual(len(requested), 1, "切回预览页没有恢复取帧")
 

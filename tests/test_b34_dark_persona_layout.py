@@ -181,9 +181,9 @@ class TestLightThemeAndPreviewFirst(unittest.TestCase):
         self.assertEqual(self.winmon.UI_ACCENT, "#2F7F55")
         self.assertNotEqual(self.winmon.UI_INK, "#FAFDF6",
                             "浅色页面必须配深色字，否则什么都看不见")
-        self.assertNotEqual(str(self.app.media_label.cget("bg")),
-                            str(self.root.cget("background")),
-                            "媒体高亮卡片不能被页面吃掉")
+        self.assertEqual(str(self.app.media_label.cget("bg")),
+                         str(self.root.cget("background")),
+                         "2026-10-22 起媒体栏是普通页面行，不再是高亮卡片")
         self.assertNotEqual(str(self.app.ai_state_label.cget("bg")),
                             str(self.root.cget("background")),
                             "AI 高亮卡片不能被页面吃掉")
@@ -228,7 +228,8 @@ class TestLightThemeAndPreviewFirst(unittest.TestCase):
             widths, self.app.tree.winfo_width(),
             f"侧栏显示列合计 {widths}px 超过 Treeview 宽度 "
             f"{self.app.tree.winfo_width()}px，状态列会被裁掉")
-        self.assertEqual(self.app.notebook.index("current"), 0)
+        self.assertEqual(self.app.notebook.index("current"),
+                         self.winmon.TAB_PREVIEW)
 
     def test_preview_operation_bar_is_replaced_by_whitespace(self):
         """2026-10-21：预览下方的「操作 / 执行」整块删掉，画面区多出一行。"""

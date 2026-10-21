@@ -141,10 +141,12 @@ class TestMainUiHierarchy(unittest.TestCase):
     def test_ai_and_media_are_visually_emphasized(self):
         self.assertIn("bold", str(self.app.ai_identity_label.cget("font")))
         self.assertIn("bold", str(self.app.media_label.cget("font")))
-        self.assertNotEqual(str(self.app.media_label.cget("bg")),
-                            str(self.root.cget("background")))
+        #: 2026-10-22：媒体栏不再是高亮卡片，回到页面底色；AI 卡仍有色。
+        self.assertEqual(str(self.app.media_label.cget("bg")),
+                         str(self.root.cget("background")))
         self.assertNotEqual(str(self.app.ai_state_label.cget("bg")),
                             str(self.root.cget("background")))
+        self.assertTrue(self.app.media_play_btn._ring)
 
     def test_actions_are_no_longer_a_permanent_left_rail(self):
         """2026-10-21：左栏撤掉，搜索/设置收进右上角，加入总览只在右键菜单。"""
@@ -158,7 +160,8 @@ class TestMainUiHierarchy(unittest.TestCase):
                          "刷新列表应改为右键窗口列表")
         self.assertEqual(str(self.app.settings_button.cget("text")), "⚙")
         self.assertTrue(self.app.search_field.winfo_exists())
-        self.assertTrue(self.app.ai_workspace_btn.winfo_exists())
+        self.assertEqual(self.app.notebook.tab(0, "text"), "AI 工作区",
+                         "AI 工作区应是第一栏")
         self.assertEqual(str(self.app.gallery.remove_btn.cget("text")),
                          "移除总览")
 

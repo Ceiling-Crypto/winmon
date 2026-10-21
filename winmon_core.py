@@ -4438,7 +4438,7 @@ MEDIA_STATUS_NAMES = {0: "已关闭", 1: "已打开", 2: "正在切换",
 MEDIA_COMMANDS = {"play": "play", "pause": "pause",
                   "next": "next", "previous": "previous"}
 
-#: 「媒体应用」的**显示名映射 + 唤醒补充**：(显示名, 进程名, 是否浏览器)。
+#: 「媒体应用」的**显示名映射 + 常见程序补充**：(显示名, 进程名, 是否浏览器)。
 #:
 #: ⚠ 这张表**不是准入门槛**（2026-10-16 改）。以前下拉框里只列这张表里的程序，
 #: 于是"用户装了个表里没有的播放器"或"换一台机器"就认不出来 —— 范围被个人环境框死了。
@@ -4447,7 +4447,7 @@ MEDIA_COMMANDS = {"play": "play", "pause": "pause",
 #:
 #: 这张表现在只干两件事：
 #:   · 把会话里报的**家族名**换成用户看得懂的名字（`MSEdge` → `Microsoft Edge`）；
-#:   · 当会话**不在**（此刻没在放东西）时，让用户仍能唤醒这些常见播放器。
+#:   · 当会话**不在**（此刻没在放东西）时，让用户仍能指定这些常见播放器。
 #: 浏览器也列在里面 —— 明确要"可以指定 Edge 这类浏览器"，
 #: 因为网页播放器（YouTube / 哔哩哔哩网页版）同样会注册媒体会话。
 MEDIA_APP_CANDIDATES: tuple[tuple[str, str, bool], ...] = (
@@ -4467,7 +4467,7 @@ MEDIA_APP_CANDIDATES: tuple[tuple[str, str, bool], ...] = (
 
 
 class MediaApp:
-    """一个"可以被 WinMon 唤醒/控制"的媒体应用。"""
+    """一个"可以被 WinMon 识别/控制"的媒体应用。"""
 
     __slots__ = ("label", "exe", "browser", "path", "kind")
 
@@ -4600,10 +4600,10 @@ def resolve_media_pin(pin: str, labels, any_label: str) -> tuple[str, list[str]]
 
 def media_app_path(exe: str) -> str:
     """
-    找可执行文件的完整路径（用来"唤醒"）。
+    找可执行文件的完整路径（用于进程名校验/会话匹配）。
 
     顺序：正在运行的进程 → Program Files 常见位置 → 开始菜单快捷方式。
-    找不到就返回空串（调用方如实说"没找到，请手动打开"）。
+    找不到就返回空串。
     """
     exe = str(exe or "")
     if not exe:
@@ -4631,29 +4631,6 @@ def media_app_path(exe: str) -> str:
                 return cand
     # 3) 交给系统/资源管理器按名字解析（不弹窗，失败就算了）
     return ""
-
-
-def launch_media_app(app: "MediaApp") -> tuple[bool, str]:
-    """
-    唤醒一个媒体应用。返回 `(是否已发起, 说明)`。
-
-    **只负责"把它拉起来"**：媒体键 / 媒体会话命令是另外发的。
-    拉起用的是 `os.startfile`（等价于你双击它），所以
-      · 单实例程序（网易云、QQ音乐都是）只会把已有窗口切到前台，不会开第二个；
-      · 拉起之后它自己**不会自动开始播放**（这是系统的行为，WinMon 不假装能替你按播放）。
-    """
-    if not app:
-        return False, "没有指定的媒体应用"
-    path = app.path or media_app_path(app.exe)
-    try:
-        if path and os.path.exists(path):
-            os.startfile(path)                      # noqa: S606 - 明确点了"唤醒"
-            return True, f"已唤醒 {app.label}"
-        # 没找到路径时不要硬猜：如实说，让用户手动打开
-        return False, (f"没找到 {app.label}（{app.exe}）的安装位置，"
-                       f"请手动打开它，或在「媒体应用」里选别的")
-    except Exception as exc:
-        return False, f"唤醒 {app.label} 失败：{type(exc).__name__}: {exc}"
 
 
 def installed_media_apps(limit: int = 24) -> list["MediaApp"]:
@@ -4733,7 +4710,7 @@ def media_app_running(exe: str, running) -> bool:
     为什么不能直接比字符串（2026-10-16 改）：会话里报的 app id 常常**不是进程名**
     —— Edge 报家族名 `MSEdge`，UWP 报 `包名_哈希!App`。以前用
     `exe.lower() in running` 判，这两种都会被判成"没在跑"，后果是用户点
-    「播放/暂停」时 WinMon 以为要先唤醒它（甚至去 startfile 一个不存在的路径），
+    「播放/暂停」时 WinMon 误判没有目标、直接改发全局媒体键，
     或者干脆说"它没在运行"—— 而它正在放歌。
     改走 `media_app_stems_match`：精确优先，包含匹配要求两边都 ≥5 字符
     （防 `QQ` 命中 `QQMusic` 那种"选了 A、控的却是 B"）。
@@ -4757,7 +4734,7 @@ def media_app_from_session(app_id: str, running=None) -> "MediaApp | None":
       · **名字**：候选表里认得出就用显示名（`MSEdge` → `Microsoft Edge`），
         认不出就**原样用会话里的 id** —— 不编造一个好听的名字；
       · **进程名**：会话报的多半不是进程名。能对上"正在跑的进程"就换成真进程名
-        （这样 `media_app_path()` 也找得到它、`launch_media_app()` 才唤得醒），
+        （这样 `media_app_path()` 和进程匹配都用得上），
         对不上就原样留着 —— 命令照样能按 app id 精确下发（`media_session.ps1`
         对 app id 是宽松匹配）；
       · **类别**：候选表说它是浏览器就是浏览器；认不出来的**不假装**成播放器，

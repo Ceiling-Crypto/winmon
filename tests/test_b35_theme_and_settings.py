@@ -274,25 +274,23 @@ class TestThemeMainWindow(unittest.TestCase):
 
     def test_page_and_media_card_stay_distinct(self):
         self.assertEqual(str(self.root.cget("background")), "#FAFDF6")
-        media = self.winmon.UI_CARDS["media"]
         ai = self.winmon.UI_CARDS["ai"]
-        self.assertEqual(str(self.app.media_label.cget("bg")), media["bg"])
+        #: 媒体栏已改成普通页面行（不是高亮卡），AI 卡仍有独立底色。
+        self.assertEqual(str(self.app.media_label.cget("bg")),
+                         str(self.root.cget("background")))
         self.assertEqual(str(self.app.ai_identity_label.cget("bg")), ai["bg"])
         self.assertEqual(str(self.app.ai_state_label.cget("bg")),
                          ai["state_warn_bg"])
         self.assertEqual(str(self.app.ai_workspace._state_label.cget("bg")),
                          ai["state_warn_bg"])
 
-    def test_three_media_buttons_use_high_contrast_style(self):
-        from tkinter import ttk
-        style = ttk.Style(self.root)
-        self.assertEqual(style.lookup("Media.TButton", "background"),
-                         self.winmon.UI_MEDIA_BTN_BG)
-        self.assertEqual(style.lookup("Media.TButton", "foreground"),
-                         self.winmon.UI_MEDIA_BTN_FG)
+    def test_three_media_buttons_use_the_same_compact_style(self):
         for btn in (self.app.media_play_btn, self.app.media_prev_btn,
                     self.app.media_next_btn):
-            self.assertEqual(str(btn.cget("style")), "Media.TButton")
+            self.assertIsInstance(btn, self.winmon.RoundedButton)
+            self.assertTrue(btn._ring, "媒体键要有低透明描边")
+            self.assertEqual(str(btn.cget("width")), "30")
+            self.assertEqual(str(btn.cget("height")), "30")
 
     def test_checkbox_and_top_right_controls_are_visible_on_light(self):
         normal = self.root._winmon_check_images["normal"]
@@ -315,8 +313,9 @@ class TestThemeMainWindow(unittest.TestCase):
             self.root.update_idletasks()
             self.assertEqual(str(self.root.cget("background")),
                              self.winmon.UI_BG)
-            self.assertEqual(str(self.app.media_play_btn.cget("style")),
-                             "Media.TButton")
+            self.assertIsInstance(self.app.media_play_btn,
+                                  self.winmon.RoundedButton)
+            self.assertTrue(self.app.media_play_btn._ring)
             self.assertTrue(self.app.search_field.winfo_exists())
             self.assertTrue(self.app.settings_button.winfo_exists())
         finally:

@@ -369,8 +369,8 @@ class TestMainWindowLayout(unittest.TestCase):
         """
         nb = self.app.notebook
         texts = [nb.tab(i, "text") for i in range(len(nb.tabs()))]
-        self.assertEqual(texts, ["实时预览", "实时总览", "进程树",
-                                 "程序目录", "工作区", "AI 工作区"])
+        self.assertEqual(texts, ["AI 工作区", "实时预览", "实时总览",
+                                 "进程树", "程序目录", "工作区"])
 
     def test_idle_snooze_choices_fit_in_their_settings_combobox(self):
         """

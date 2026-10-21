@@ -64,19 +64,19 @@ class TestNavigationAndAiWorkspace(unittest.TestCase):
         h.destroy_root(cls.root)
         cls.winmon.apply_theme("light")
 
-    def test_navigation_is_consolidated_into_top_right_and_ai_card(self):
-        """2026-10-21：左栏撤掉；设置=齿轮，搜索=放大镜，AI 工作区在 AI 卡里。"""
+    def test_navigation_is_consolidated_into_top_right_and_ai_tab(self):
+        """2026-10-22：设置=齿轮、搜索=放大镜；AI 已是第一栏，卡上不再重复入口。"""
         self.assertFalse(hasattr(self.app, "action_rail"))
         self.assertEqual(str(self.app.settings_button.cget("text")), "⚙")
-        self.assertEqual(self.app.ai_workspace_btn.cget("text"), "AI 工作区")
+        self.assertFalse(hasattr(self.app, "ai_workspace_btn"))
         self.assertEqual(str(self.app.gallery.remove_btn.cget("text")),
                          "移除总览")
         self.assertTrue(self.app.search_entry.winfo_exists())
 
-    def test_ai_workspace_is_a_tab_and_contains_the_three_entries(self):
+    def test_ai_workspace_is_the_first_tab_and_contains_the_three_entries(self):
         nb = self.app.notebook
         self.assertEqual(len(nb.tabs()), 6)
-        self.assertEqual(nb.tab(5, "text"), "AI 工作区")
+        self.assertEqual(nb.tab(0, "text"), "AI 工作区")
         texts = [str(w.cget("text")) for w in walk(self.app.ai_workspace.frame)
                  if w.winfo_class() in ("Label", "TButton", "Button")]
         for label in ("AI 助手", "接入 AI", "AI 用量与预算",
@@ -84,7 +84,7 @@ class TestNavigationAndAiWorkspace(unittest.TestCase):
             self.assertIn(label, texts)
         self.app.action_show_ai_workspace()
         self.root.update()
-        self.assertEqual(nb.index("current"), 5)
+        self.assertEqual(nb.index("current"), 0)
 
 
 class FakePreview:

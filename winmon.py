@@ -74,6 +74,14 @@ APP_RELEASE = "winmon1.0"
 APP_W, APP_H = 1160, 730
 APP_MIN_W, APP_MIN_H = 1080, 660
 
+#: 主标签页下标（2026-10-22：AI 工作区移到第一栏；用常量替代散落的 0/1/2/5）。
+TAB_AI = 0
+TAB_PREVIEW = 1
+TAB_GALLERY = 2
+TAB_PROCESS = 3
+TAB_CATALOG = 4
+TAB_WORKSPACE = 5
+
 
 def dpi_scale_from(fpixels_per_inch) -> float:
     """
@@ -1334,7 +1342,8 @@ class RoundedButton(tk.Canvas):
                  width: int | None = None, height: int | None = None,
                  radius: int = 15, font=None, padx: int = 12,
                  anchor: str = "center", style: str = "", lead: str = "",
-                 shadow_room: int = 3, **kw) -> None:
+                 shadow_room: int = 3, icon: str = "", ring: bool = False,
+                 **kw) -> None:
         self._text = str(text)
         self._command = command
         self._kind = str(kind or "secondary")
@@ -1344,6 +1353,10 @@ class RoundedButton(tk.Canvas):
         self._anchor = anchor if anchor in ("center", "w", "e") else "center"
         #: 左侧的小色条（动作栏用来区分“监控 / 工作台 / AI / 设置”，不是图标）。
         self._lead = str(lead or "")
+        #: 可选矢量图标（目前只有 "gear"）：常见齿轮样式，不依赖字体里有没有 ⚙。
+        self._icon = str(icon or "")
+        #: 静默的强调色描边：给“暂停刷新 / 移除总览”这类小按钮一圈透明边框。
+        self._ring = bool(ring)
         self._shadow_room = max(2, min(8, int(shadow_room)))
         self._state = str(kw.pop("state", "normal") or "normal")
         self._hover = False
@@ -1425,6 +1438,8 @@ class RoundedButton(tk.Canvas):
         return max(self._req_height or 0, line + 12)
 
     def _natural_width(self) -> int:
+        if self._icon:
+            return max(32, self._measure_height())
         try:
             text_w = self._font_obj.measure(self._text)
         except Exception:
@@ -1631,6 +1646,16 @@ class RoundedButton(tk.Canvas):
                 self._rounded_points(x1, y1, x2, y2, r),
                 smooth=True, splinesteps=28, fill=fill,
                 outline=rim, width=1, tags=("jelly-body",))
+            if self._ring and not disabled:
+                # 低透明强调色外环：不是焦点虚线，也不参与点击/焦点状态。
+                ring_color = mix_color(self._bg, UI_ACCENT, 0.52)
+                self.create_polygon(
+                    RoundedButton._rounded_points(
+                        self, max(0.6, x1 - 1.6), max(0.6, y1 - 1.1),
+                        min(width - 0.6, x2 + 1.6), min(height - 0.6, y2 + 1.1),
+                        r + 1.6),
+                    smooth=True, splinesteps=24, fill="",
+                    outline=ring_color, width=1.6, tags=("jelly-ring",))
             # 顶部高光 / 底部内阴影：各一条细线，薄而有弹性，不压成厚塑料块。
             if x2 - x1 > 12 and y2 - y1 > 8:
                 self.create_line(
@@ -1655,22 +1680,26 @@ class RoundedButton(tk.Canvas):
                                  fill=self._lead, outline="",
                                  tags=("jelly-lead",))
 
-            text = self._display_text(
-                max(8, int(width - self._padx * 2 - lead_w)))
-            if self._anchor == "w":
-                x, anchor = self._padx + lead_w, "w"
-            elif self._anchor == "e":
-                x, anchor = width - self._padx, "e"
+            if self._icon == "gear":
+                self._draw_gear((x1 + x2) / 2.0, (y1 + y2) / 2.0,
+                                min(10.5, (y2 - y1) / 2.0 - 0.5), fg, fill)
             else:
-                x, anchor = width / 2, "center"
-            ty = (y1 + y2) / 2.0 + (0.5 if squash > 0.35 else 0.0)
-            if color_luminance(fg) > 0.62 and color_luminance(fill) < 0.55:
-                # 浅色字在深色键帽上先叠一层极轻的暗影，回弹时文字不会“飘”。
-                self.create_text(
-                    x, ty + 1.0, text=text, anchor=anchor,
-                    fill=mix_color(fill, "#000000", 0.42), font=self._font)
-            self.create_text(x, ty, text=text, anchor=anchor,
-                             fill=fg, font=self._font, tags=("jelly-text",))
+                text = self._display_text(
+                    max(8, int(width - self._padx * 2 - lead_w)))
+                if self._anchor == "w":
+                    x, anchor = self._padx + lead_w, "w"
+                elif self._anchor == "e":
+                    x, anchor = width - self._padx, "e"
+                else:
+                    x, anchor = width / 2, "center"
+                ty = (y1 + y2) / 2.0 + (0.5 if squash > 0.35 else 0.0)
+                if color_luminance(fg) > 0.62 and color_luminance(fill) < 0.55:
+                    # 浅色字在深色键帽上先叠一层极轻的暗影，回弹时文字不会“飘”。
+                    self.create_text(
+                        x, ty + 1.0, text=text, anchor=anchor,
+                        fill=mix_color(fill, "#000000", 0.42), font=self._font)
+                self.create_text(x, ty, text=text, anchor=anchor,
+                                 fill=fg, font=self._font, tags=("jelly-text",))
             self.configure(cursor="arrow" if disabled else "hand2")
         except Exception:
             pass
@@ -1760,6 +1789,36 @@ class RoundedButton(tk.Canvas):
             super().destroy()
         except tk.TclError:
             pass
+
+    def _draw_gear(self, cx: float, cy: float, radius: float,
+                   fg: str, fill: str) -> None:
+        """常见齿轮：八枚齿 + 圆环 + 中心孔，比字体里的 ⚙ 更稳定。"""
+        radius = max(6.0, float(radius))
+        ring = radius * 0.62
+        hole = radius * 0.23
+        for index in range(8):
+            angle = math.pi / 4.0 * index
+            inner = ring * 0.88
+            outer = radius
+            half = 0.20
+            points = []
+            for angle_offset, reach in ((-half, inner), (-half, outer),
+                                        (half, outer), (half, inner)):
+                points.extend((
+                    cx + math.cos(angle + angle_offset) * reach,
+                    cy + math.sin(angle + angle_offset) * reach))
+            self.create_polygon(
+                points, fill=fg, outline="", tags=("jelly-icon",))
+        #: 实心圆环 + 中心孔：比“细圆 + 放射线”更像常见齿轮，而不是太阳。
+        band = max(1.5, radius * 0.23)
+        self.create_oval(cx - ring - band / 2, cy - ring - band / 2,
+                         cx + ring + band / 2, cy + ring + band / 2,
+                         fill=fg, outline="", tags=("jelly-icon",))
+        self.create_oval(cx - ring + band / 2, cy - ring + band / 2,
+                         cx + ring - band / 2, cy + ring - band / 2,
+                         fill=fill, outline="", tags=("jelly-icon",))
+        self.create_oval(cx - hole, cy - hole, cx + hole, cy + hole,
+                         fill=fill, outline="", tags=("jelly-icon",))
 
     def _display_text(self, available: int) -> str:
         text = self._text
@@ -2081,6 +2140,126 @@ class RoundedBadge(tk.Canvas):
         self._draw()
 
 
+class RoundedSlider(tk.Canvas):
+    """
+    单块滑块：圆角轨道 + 一枚圆角滑块，不再用 clam 的三段式 Scale 拇指。
+
+    设置里的透明度滑杆用这个；变量仍是普通的 `tk.IntVar`，
+    `command` 只在用户拖动/点击/按键时调用，外部 `set()` 只重绘。
+    """
+
+    def __init__(self, parent, variable, *, from_: int = 45, to: int = 100,
+                 command=None, length: int = 280, height: int = 30,
+                 bg: str | None = None) -> None:
+        self._var = variable
+        self._from = int(from_)
+        self._to = max(int(to), self._from + 1)
+        self._command = command
+        self._length = max(120, int(length))
+        self._height = max(24, int(height))
+        self._bg = bg if bg is not None else _container_bg(parent)
+        self._drag = False
+        super().__init__(parent, width=self._length, height=self._height,
+                         bg=self._bg, bd=0, highlightthickness=0,
+                         takefocus=1, cursor="hand2")
+        self._trace = self._var.trace_add("write", self._on_var)
+        self.bind("<Configure>", lambda _e: self._draw(), add="+")
+        self.bind("<Button-1>", self._on_press, add="+")
+        self.bind("<B1-Motion>", self._on_drag, add="+")
+        self.bind("<ButtonRelease-1>", self._on_release, add="+")
+        self.bind("<Left>", lambda _e: self._nudge(-1), add="+")
+        self.bind("<Right>", lambda _e: self._nudge(1), add="+")
+        self.bind("<Home>", lambda _e: self._set_value(self._from), add="+")
+        self.bind("<End>", lambda _e: self._set_value(self._to), add="+")
+        self.bind("<Destroy>", self._on_destroy, add="+")
+        self._draw()
+
+    def get(self) -> int:
+        try:
+            return int(self._var.get())
+        except Exception:
+            return self._from
+
+    def _geometry(self) -> tuple[float, float, float, float]:
+        width = max(2, int(self.winfo_width() or self._length))
+        height = max(2, int(self.winfo_height() or self._height))
+        return 9.0, width - 9.0, height / 2.0, height
+
+    def _ratio(self) -> float:
+        return (max(self._from, min(self._to, self.get())) - self._from) / float(
+            self._to - self._from)
+
+    def _draw(self) -> None:
+        try:
+            if not self.winfo_exists():
+                return
+            self.delete("all")
+            x0, x1, cy, height = self._geometry()
+            self.create_line(x0, cy, x1, cy, fill=UI_LINE, width=6,
+                             capstyle="round")
+            ratio = self._ratio()
+            tx = x0 + (x1 - x0) * ratio
+            if tx > x0 + 0.5:
+                self.create_line(x0, cy, tx, cy, fill=UI_ACCENT, width=6,
+                                 capstyle="round")
+            thumb_w, thumb_h = 13.0, 20.0
+            self.create_polygon(
+                RoundedButton._rounded_points(
+                    self, tx - thumb_w / 2, cy - thumb_h / 2,
+                    tx + thumb_w / 2, cy + thumb_h / 2, thumb_w / 2),
+                smooth=True, splinesteps=20, fill=UI_SURFACE,
+                outline=UI_ACCENT, width=2, tags=("slider-thumb",))
+        except Exception:
+            pass
+
+    def _on_var(self, *_args) -> None:
+        try:
+            if self.winfo_exists():
+                self._draw()
+        except Exception:
+            pass
+
+    def _on_destroy(self, event=None) -> None:
+        if event is not None and getattr(event, "widget", None) is not self:
+            return
+        try:
+            self._var.trace_remove("write", self._trace)
+        except Exception:
+            pass
+
+    def _value_at(self, x: float) -> int:
+        x0, x1, _cy, _h = self._geometry()
+        ratio = max(0.0, min(1.0, (float(x) - x0) / max(1.0, x1 - x0)))
+        return int(round(self._from + (self._to - self._from) * ratio))
+
+    def _set_value(self, value: int, notify: bool = True) -> None:
+        value = max(self._from, min(self._to, int(value)))
+        try:
+            self._var.set(value)
+        except Exception:
+            return
+        if notify and callable(self._command):
+            try:
+                self._command(value)
+            except Exception:
+                pass
+
+    def _on_press(self, event) -> None:
+        self._drag = True
+        self.focus_set()
+        self._set_value(self._value_at(event.x))
+
+    def _on_drag(self, event) -> None:
+        if self._drag:
+            self._set_value(self._value_at(event.x))
+
+    def _on_release(self, _event=None) -> None:
+        self._drag = False
+
+    def _nudge(self, delta: int) -> None:
+        self._set_value(self.get() + delta)
+
+
 class SearchField(tk.Canvas):
     """右上角的胶囊搜索框：手绘放大镜 + 无边框输入 + 占位文案。"""
 
@@ -2265,9 +2444,15 @@ class TabStrip(tk.Canvas):
             self._redraw()
 
     def _display_label(self, index: int) -> str:
-        """前两个标签各加一枚图形锚点，让预览/总览一眼看出是两个按键。"""
+        """按标签语义加锚点；AI 移到第一栏后不能再按固定下标取图标。"""
         label = self._labels[index] if 0 <= index < len(self._labels) else ""
-        glyph = {0: "▷", 1: "▦"}.get(index, "")
+        lowered = label.lower()
+        if "实时预览" in label or "live preview" in lowered:
+            glyph = "▷"
+        elif "实时总览" in label or "live overview" in lowered:
+            glyph = "▦"
+        else:
+            glyph = ""
         return f"{glyph}  {label}" if glyph else label
 
     def _layout(self):
@@ -2871,7 +3056,8 @@ class PreviewPane:
         right_col.grid(row=0, column=1, sticky="ne", padx=(8, 0))
         self.btn_pause = RoundedButton(
             right_col, text="暂停刷新", command=self.app.toggle_pause,
-            kind="ghost", bg=UI_BG, height=30, radius=15)
+            kind="ghost", bg=UI_BG, height=34, radius=17, padx=15,
+            ring=True)
         self.btn_pause.pack(anchor="e")
         self.lbl_stats = ttk.Label(right_col, text="", font=MONO_FONT,
                                    foreground=UI_OK, anchor="e")
@@ -3051,7 +3237,7 @@ class GalleryPane:
                  fg=UI_MUTED, bg=UI_BG, anchor="w").pack(side="left")
         self.remove_btn = RoundedButton(
             tool, text=i18n.pick("移除总览", "Remove"), kind="ghost",
-            bg=UI_BG, height=28, radius=14,
+            bg=UI_BG, height=34, radius=17, padx=16, ring=True,
             command=self.app.gallery_remove_selected)
         self.remove_btn.pack(side="right")
 
@@ -3084,7 +3270,7 @@ class GalleryPane:
         self._update_summary()
 
     def _on_wheel(self, event) -> None:
-        if self.app.notebook.index("current") != 1:
+        if self.app.notebook.index("current") != TAB_GALLERY:
             return
         self.canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
 
@@ -4928,6 +5114,11 @@ class _SettingsWindow:
                   lambda _e: canvas.configure(scrollregion=canvas.bbox("all")))
         canvas.bind("<Configure>",
                     lambda e: canvas.itemconfigure(win_id, width=e.width))
+        #: 常规页很长，但 Tk 的 Canvas 默认不接管滚轮；AI 用量页绑了
+        #: Enter/Leave + bind_all，所以它能滚、常规页不能。这里在设置窗口
+        #: 顶层统一接一次，按当前标签页和鼠标位置分发。
+        self._general_canvas = canvas
+        self.top.bind("<MouseWheel>", self._on_settings_wheel, add="+")
         self._build_general(wrap, close_mode, tray_available, start_minimized,
                             history_days, language, font_size, theme,
                             self._opacity_before, self._prefs)
@@ -5089,10 +5280,10 @@ class _SettingsWindow:
         self.opacity = tk.IntVar(value=normalize_opacity(opacity))
         self.opacity_text = tk.StringVar(
             value=f"{normalize_opacity(opacity)}%")
-        ttk.Scale(
-            opacity_row, from_=UI_OPACITY_MIN, to=UI_OPACITY_MAX,
-            variable=self.opacity, command=self._on_opacity_change,
-            style="Opacity.Horizontal.TScale", length=280).pack(side="left")
+        RoundedSlider(
+            opacity_row, self.opacity, from_=UI_OPACITY_MIN,
+            to=UI_OPACITY_MAX, command=self._on_opacity_change,
+            length=280, height=30).pack(side="left")
         tk.Label(opacity_row, textvariable=self.opacity_text, font=UI_FONT,
                  bg=UI_BG, fg=UI_ACCENT, anchor="w", width=6).pack(
             side="left", padx=(8, 6))
@@ -5136,6 +5327,15 @@ class _SettingsWindow:
             anchor="w", fill="x", pady=(8, 0))
         ttk.Checkbutton(wrap, text="总览实时刷新",
                         variable=self.live_gallery).pack(anchor="w", fill="x")
+        fps_row = tk.Frame(wrap, bg=UI_BG)
+        fps_row.pack(anchor="w", fill="x", pady=(10, 0))
+        tk.Label(fps_row, text=i18n.pick("刷新速度", "Refresh"),
+                 font=UI_FONT, bg=UI_BG, fg=UI_INK).pack(side="left", padx=(0, 6))
+        self.fps_choice = tk.StringVar(
+            value=str(prefs.get("fps_choice") or "很流畅 10 FPS"))
+        ttk.Combobox(fps_row, textvariable=self.fps_choice, state="readonly",
+                     width=14, font=UI_FONT,
+                     values=[item[0] for item in FPS_CHOICES]).pack(side="left")
         self._hint(wrap, i18n.pick(
             "这些选项以前常驻在主界面第一行；现在收进设置，保存后立即生效。\n"
             "「显示运行窗口」只列出真正有窗口的程序，不显示纯后台进程。",
@@ -5301,6 +5501,23 @@ class _SettingsWindow:
         if callable(action):
             self._without_modal_grab(action)
 
+    def _on_settings_wheel(self, event) -> None:
+        """常规页滚轮：只有指针在常规画布内才滚，不影响 AI 用量页。"""
+        try:
+            if self.nb.index("current") != self._section_tabs.get("general", 0):
+                return
+            canvas = self._general_canvas
+            x, y = int(event.x_root), int(event.y_root)
+            if not (canvas.winfo_rootx() <= x <=
+                    canvas.winfo_rootx() + canvas.winfo_width()
+                    and canvas.winfo_rooty() <= y <=
+                    canvas.winfo_rooty() + canvas.winfo_height()):
+                return
+            canvas.yview_scroll(int(-event.delta / 120), "units")
+            return "break"
+        except Exception:
+            return
+
     def _on_opacity_change(self, _value=None) -> None:
         """拖动时立刻预览；不写设置，取消会恢复打开设置前的透明度。"""
         try:
@@ -5376,6 +5593,7 @@ class _SettingsWindow:
                            "live_gallery": bool(self.live_gallery.get()),
                        },
                        "video_link_visible": bool(self.video_link_visible.get()),
+                       "fps_choice": self.fps_choice.get(),
                        "idle_alert": bool(self.idle_alert.get()),
                        "idle_choice": self.idle_choice.get(),
                        "idle_snooze": self.idle_snooze_choice.get()}
@@ -5876,6 +6094,29 @@ class _AiUsagePanel:
             self.direct_detail_text = self._status_card(row, "直连模型")
         right.grid(row=0, column=1, sticky="nsew")
 
+        #: 缺 key 时**就在这张卡里**输入，不必再跳去接入窗口。
+        self.direct_key_box = tk.Frame(right, bg=UI_SURFACE_ALT)
+        self.direct_key_var = tk.StringVar(value="")
+        self.direct_key_entry = ttk.Entry(
+            self.direct_key_box, textvariable=self.direct_key_var, show="*",
+            width=24, font=UI_FONT)
+        self.direct_key_entry.pack(side="left", fill="x", expand=True)
+        self.direct_key_save = ttk.Button(
+            self.direct_key_box, text=i18n.t("connect.key_use"), width=11,
+            command=self.save_direct_key)
+        self.direct_key_save.pack(side="left", padx=(4, 2))
+        self.direct_key_copy = ttk.Button(
+            self.direct_key_box, text=i18n.pick("复制 key", "Copy key"),
+            width=8, command=self.copy_direct_key)
+        self.direct_key_copy.pack(side="left", padx=(2, 2))
+        self.direct_key_show = tk.BooleanVar(value=False)
+        ttk.Checkbutton(
+            self.direct_key_box, text=i18n.pick("显示", "Show"),
+            variable=self.direct_key_show,
+            command=self._toggle_direct_key_show).pack(side="left")
+        self._direct_key_env = ""
+        self.direct_key_box.pack_forget()
+
     def _build_recent(self, wrap) -> None:
         head = tk.Frame(wrap, bg=UI_BG)
         head.pack(fill="x", pady=(10, 3))
@@ -6050,6 +6291,52 @@ class _AiUsagePanel:
             self.direct_title_label.configure(fg=color)
         except Exception:
             pass
+        self._direct_key_env = str(
+            info.get("api_key_env") or "WINMON_AI_API_KEY")
+        show_key = bool(info.get("configured")) and not bool(
+            info.get("key_present"))
+        if show_key:
+            if not self.direct_key_box.winfo_manager():
+                self.direct_key_box.pack(fill="x", pady=(4, 0))
+        else:
+            self.direct_key_box.pack_forget()
+
+    def _toggle_direct_key_show(self) -> None:
+        try:
+            self.direct_key_entry.configure(
+                show="" if self.direct_key_show.get() else "*")
+        except Exception:
+            pass
+
+    def save_direct_key(self) -> None:
+        """把输入框里的 key 设到当前进程的环境变量（不写盘）。"""
+        env = self._direct_key_env or "WINMON_AI_API_KEY"
+        key = (self.direct_key_var.get() or "").strip()
+        if not key:
+            self.app._set_status(i18n.t("connect.key_empty"))
+            return
+        os.environ[env] = key
+        self.direct_key_var.set("")
+        try:
+            self.app._ai_usage_cache = (0.0, None)
+        except Exception:
+            pass
+        self.refresh()
+        self.app._set_status(i18n.t("connect.key_saved", env=env))
+
+    def copy_direct_key(self) -> None:
+        """复制输入框里的 key（不复制屏幕上的掩码）。"""
+        key = (self.direct_key_var.get() or "").strip()
+        if not key:
+            self.app._set_status(i18n.pick("输入框里没有可复制的 key",
+                                           "No key to copy"))
+            return
+        try:
+            self.frame.clipboard_clear()
+            self.frame.clipboard_append(key)
+            self.app._set_status(i18n.t("connect.copied"))
+        except Exception as exc:
+            self.app._set_status(f"复制失败：{type(exc).__name__}: {exc}")
 
     def _refresh_recent(self, status: dict) -> None:
         tree = self.recent_tree
@@ -6353,10 +6640,23 @@ class _AiAssistantWindow:
             opener()
 
     def close(self) -> None:
+        after_id = getattr(self, "_topmost_after", None)
+        if after_id is not None:
+            try:
+                self.top.after_cancel(after_id)
+            except Exception:
+                pass
+            self._topmost_after = None
         try:
             self.top.destroy()
         finally:
             self.app._ai_assistant_window = None
+            settings = getattr(self.app, "_settings_window", None)
+            if settings is not None:
+                try:
+                    settings.top.grab_set()
+                except Exception:
+                    pass
 
 
 class _AiChatWindow:
@@ -6765,16 +7065,14 @@ _GUIDE_CONTENT = {
                   "浏览器标签页标题不会被当成歌名。"),
             ("p", "主界面只保留你此刻最需要看的应用和曲名；来源放在这份说明里，"
                   "不挤占那一行。"),
-            ("h", "媒体键：◀◀ / ▶（或 ⏸）/ ▶▶"),
+            ("h", "媒体键：⏮ / ▶（或 ⏸）/ ⏭"),
             ("p", "从左到右是「上一首、播放/暂停、下一首」。播放键按当前状态显示："
                   "暂停中显示 ▶，正在播放显示 ⏸。"),
-            ("p", "◀◀ 上一首：切到播放列表的上一首；▶▶ 下一首：切到下一首；"
-                  "▶/⏸ 播放暂停：按当前状态发“播放”或“暂停”，不是重头开始。"),
             ("p", "三个键都只控制当前媒体会话（或你在「媒体应用」里选中的那个），"
                   "不会去点播放器界面；没有会话时退回 Windows 媒体键，"
                   "等于按键盘上的多媒体键。它们不调音量、不读进度、不关程序。"),
-            ("p", "如果选中的应用没在运行，勾了「自动启动」会先尝试拉起它；"
-                  "没勾就只如实说“没有在跑”，不会偷偷启动。"),
+            ("p", "WinMon 不会替你启动媒体应用：选中的应用没在跑时，"
+                  "只会把命令改发给系统当前活跃的媒体键，不 launch、不等待。"),
             ("h", "视频联动"),
             ("p", "「监视当前窗口」只盯着你选中的那个窗口。发现开始放视频时，"
                   "它会先问你，不会自己关。Space=关闭，Esc=继续。"),
@@ -6879,19 +7177,18 @@ _GUIDE_CONTENT = {
                   "titles are never used as track names."),
             ("p", "The main window keeps only the app and track you need; the source "
                   "lives in this guide instead of taking up that row."),
-            ("h", "Media keys: ◀◀ / ▶ (or ⏸) / ▶▶"),
+            ("h", "Media keys: ⏮ / ▶ (or ⏸) / ⏭"),
             ("p", "Left to right: previous track, play/pause, next track. The middle "
                   "key shows ▶ while paused and ⏸ while playing."),
-            ("p", "◀◀ goes to the previous track; ▶▶ goes to the next; ▶/⏸ sends "
+            ("p", "⏮ goes to the previous track; ⏭ goes to the next; ▶/⏸ sends "
                   "play or pause for the current state, not restart."),
             ("p", "All three control only the active media session (or the player "
                   "selected under Media app); they never click the player UI. Without "
                   "a session they fall back to the Windows media key, equivalent to "
                   "the multimedia key on your keyboard. They do not change volume, "
                   "read progress, or close the player."),
-            ("p", "If the selected app is not running, Auto-start (when checked) tries "
-                  "to launch it first; otherwise WinMon says it is not running and does "
-                  "not start it silently."),
+            ("p", "WinMon never starts a media app for you: if the selected app is not "
+                  "running, the command goes to the system media key instead."),
             ("h", "Video link"),
             ("p", "“Watch current window” watches only the selected window. When it "
                   "detects playback it asks first and never closes anything by itself. "
@@ -8524,12 +8821,10 @@ class WinMonApp:
         #: 提醒过一次之后隔多久才允许**自动**再弹窗（手动点清单不受限制）
         self.idle_snooze_choice = tk.StringVar(
             value=core.idle_snooze_label(core.IDLE_SNOOZE_DEFAULT))
-        # ---- 媒体会话（正在播放 / 指定媒体应用 / 自动唤醒）----
+        # ---- 媒体会话（正在播放 / 指定媒体应用；不再自动唤醒）----
         #: 指定哪个媒体应用（下拉框里显示的是中文标签；存设置时存成一个稳定的文本，
         #: 见 `save_settings_now` 里的 `_media_app_persist`）
         self.media_app_pin = tk.StringVar(value=MEDIA_APP_ANY)
-        #: 指定的应用没在跑时，是否自动把它唤醒（**默认开**，明确要"无需前置启动"）
-        self.media_auto_wake = tk.BooleanVar(value=True)
         #: 上一次读到的会话状态（给"播放/暂停"按钮决定发哪一条命令）
         self._media_playing = False
         self._media_found = False
@@ -8804,19 +9099,14 @@ class WinMonApp:
     def _build_ui(self) -> None:
         self._configure_style()
 
-        # ---- 第一行：刷新速度在左；搜索镜 + 齿轮贴右上（紧挨原生最小化下方）----
+        # ---- 标题栏行：搜索镜 + 齿轮 + 最小化（按用户指定的顺序）----
         #
-        # 用户 2026-10-21 的三条要求合并后：
-        #   · 标题栏下第一行是「刷新速度」；
-        #   · 搜索改成放大镜，设置改成齿轮，两者在最小化按钮左侧依次排列；
-        #   · 窗口过滤/跟随选择/总览刷新都收进设置，主界面不再铺一排勾选框。
+        # 刷新速度已收进设置；这一行只放标题、搜索和窗口动作。
         bar = ttk.Frame(self.root, padding=(12, 7, 10, 3))
         bar.pack(fill="x")
-        ttk.Label(bar, text=i18n.pick("刷新速度", "Refresh"), font=UI_FONT,
-                  foreground=UI_MUTED).pack(side="left", padx=(0, 4))
-        ttk.Combobox(bar, textvariable=self.fps_choice, state="readonly", width=14,
-                     values=[f[0] for f in FPS_CHOICES], font=UI_FONT).pack(
-            side="left", padx=2)
+        self.titlebar_label = tk.Label(
+            bar, text="WinMon", font=BOLD_FONT, bg=UI_BG, fg=UI_INK, anchor="w")
+        self.titlebar_label.pack(side="left", padx=(0, 8))
 
         ui_scale = max(float(getattr(self, "dpi_scale", 1.0) or 1.0),
                        UI_FONT_SIZE / 9.0)
@@ -8825,7 +9115,7 @@ class WinMonApp:
             bg=UI_BG, width=max(32, int(round(34 * ui_scale))),
             height=max(28, int(round(30 * ui_scale))),
             radius=max(14, int(round(15 * ui_scale))), padx=0,
-            font=(UI_FONT_FAMILY, UI_FONT_SIZE + 2))
+            icon="gear", font=(UI_FONT_FAMILY, UI_FONT_SIZE + 2))
         #: 右侧留出与原生标题栏按钮等宽的空档：齿轮落在最小化按钮左侧，
         #: 搜索框再位于齿轮左侧；不是简单贴到内容区最右边（那会落到关闭按钮下面）。
         gear.pack(side="right",
@@ -8859,7 +9149,7 @@ class WinMonApp:
             for var in (self.show_hidden, self.show_no_window, self.only_windowed,
                         self.follow_selection, self.live_gallery, self.fps_choice):
                 var.trace_add("write", self._schedule_save_settings)
-            for var in (self.video_close_mode, self.media_app_pin, self.media_auto_wake,
+            for var in (self.video_close_mode, self.media_app_pin,
                         self.close_mode, self.start_minimized, self.history_days,
                         self.video_link_visible):
                 var.trace_add("write", self._schedule_save_settings)
@@ -8910,19 +9200,22 @@ class WinMonApp:
         self.catalog = ProgramCatalogPane(self.notebook, self)
         self.workspace = WorkspacePane(self.notebook, self)
         self.ai_workspace = AiWorkspacePane(self.notebook, self)
+        #: 用户 2026-10-22：AI 工作区是**第一栏**；预览随后。
+        self.notebook.add(self.ai_workspace.frame,
+                          text=i18n.pick("AI 工作区", "AI workspace"))
         self.notebook.add(self.preview.frame, text="实时预览")
         self.notebook.add(self.gallery.frame, text="实时总览")
         self.notebook.add(self.proc_tree.frame, text="进程树")
         self.notebook.add(self.catalog.frame, text="程序目录")
         self.notebook.add(self.workspace.frame, text="工作区")
-        self.notebook.add(self.ai_workspace.frame,
-                          text=i18n.pick("AI 工作区", "AI workspace"))
         self.workspace.refresh()
         self.tab_strip = TabStrip(
             main, self.notebook,
             [self.notebook.tab(i, "text") for i in range(len(self.notebook.tabs()))])
         self.tab_strip.grid(row=0, column=0, sticky="ew", padx=4, pady=(2, 4))
         self.notebook.grid(row=1, column=0, sticky="nsew")
+        #: 第一栏是 AI，但打开程序仍落在实时预览（主任务）。
+        self.notebook.select(TAB_PREVIEW)
 
         side = ttk.Frame(body)
         body.add(side, weight=3)
@@ -9078,17 +9371,10 @@ class WinMonApp:
         之前把视频与媒体硬塞进同一行，结果两边都挤（媒体键的最后一排按钮被裁掉）。
         现在：
           · 第 1 行「视频联动：监视当前窗口 停止监视 直接关闭视频」—— 只有三个按钮，宽松；
-          · 第 2 行「媒体：<曲名·状态> [媒体应用▾] ☑自动唤醒 [播放/暂停] ▶▶ ◀◀」——
-            媒体独占一行。
+          · 媒体行：标题/状态在上，播放器选择在下，三枚媒体键在右。
 
-        **"唤醒"与"媒体键"合并**（原来重复，见用户第 1 条）：`播放/暂停` 现在是一个按钮，
-        点下去的顺序是：
-          1. 目标应用没在跑 → 先唤醒它（仅当勾了「自动唤醒」）；
-          2. 把命令**按应用**发给它；
-          3. 它没有媒体会话，或会话拒绝了这条命令（浏览器/网易云都可能）→
-             **退回全局媒体键**。
-        所以不需要再摆一排"全局媒体键"和一个单独的"启动/唤醒"—— 一条路走到底，
-        状态栏会说明这一步实际用了哪一种。上一首/下一首用「◀◀ / ▶▶」（同样按上面的顺序）。
+        2026-10-22 起：媒体不再自动唤醒/启动应用；播放器选择在标题下方，
+        媒体键参考网易云 / 抖音的同尺寸浅色图标，媒体区不再是高亮卡片。
         """
         vbar = ttk.Frame(self.root, padding=(12, 2))
         #: 只有设置里的开关打开才 pack；关闭时保留控件（以后切换不用重建界面），
@@ -9112,61 +9398,42 @@ class WinMonApp:
                       height=30, radius=15,
                       command=self.action_stop_video).pack(side="left", padx=2)
 
-        # ---- 第 2 行：媒体独占一行（做成高亮卡片，一眼看到“是谁在放什么”）----
+        # ---- 媒体：不再是高亮卡；标题在上、播放器在下，媒体键在右 ----
         #
-        # 来源说明（“从窗口标题读的”）不再挤在这一行：用户 2026-10-19 指出，
-        # 这类技术细节应当收进说明窗口。主界面只留应用名 + 曲名 + 状态。
+        # 用户 2026-10-22：参考网易云 / 抖音的媒体键，取消自动唤醒，
+        # 播放器选择放到「没有程序播放媒体」那一行下面，整块用页面底色。
         media = UI_CARDS["media"]
-        #: 媒体卡的“拟光”外框：没有媒体播放时它只是 3px 的卡片边，
-        #: 一旦真的在播，边缘从浅到深亮起（由 `_sync_media_ambience()` 驱动）。
-        self.media_glow = AmbientGlowFrame(self.root, media)
-        self.media_glow.pack(fill="x", padx=10, pady=(0, 5))
-        mbar = tk.Frame(self.media_glow.content, bg=media["bg"],
-                        padx=9, pady=1)
+        self.media_glow = None
+        self.media_bar = tk.Frame(self.root, bg=UI_BG, padx=10, pady=2)
+        self.media_bar.pack(fill="x", pady=(0, 4))
+        mbar = tk.Frame(self.media_bar, bg=UI_BG, padx=2, pady=1)
         mbar.pack(fill="x")
-        #: 用户 2026-10-21：媒体行缩短、媒体键紧靠标题。用 grid 分三段：
-        #: 左（标签 + 标题 + 三枚媒体键）｜中（弹性空白）｜右（播放器 + 自动启动）。
-        #: 标题列**不再吃掉整行**，所以媒体键不会再被甩到最右边。
-        mbar.columnconfigure(5, weight=1)
+        mbar.columnconfigure(1, weight=1)
         RoundedBadge(mbar, text="媒体", fill=media["tag_bg"],
-                     fg=media["tag_fg"], bg=media["bg"],
+                     fg=media["tag_fg"], bg=UI_BG,
                      font=SMALL_BOLD_FONT, padx=8, height=18).grid(
-            row=0, column=0, padx=(0, 7))
-        #: 当前在放什么（曲名 · 歌手 · 状态）。**没有进度** —— 用户已放弃识别进度。
-        self.media_text = tk.StringVar(value="（还没读取）")
-        #: 这一行的宽度（**字符**单位）。装不下的部分由 `fit_media_text()` 用 `…` 收尾，
-        #: 绝不静默切断（理由见那个函数）。从 62 收到 40：媒体行明显变短，
-        #: 但 9 号字下仍能放下“应用：曲名 · 歌手 · 正在播放”。
+            row=0, column=0, rowspan=2, sticky="nw", padx=(0, 7), pady=(1, 0))
+
+        text_col = tk.Frame(mbar, bg=UI_BG)
+        text_col.grid(row=0, column=1, rowspan=2, sticky="ew")
+        text_col.columnconfigure(0, weight=1)
+        #: 当前在放什么（曲名 · 歌手 · 状态）。**没有进度**。
+        self.media_text = tk.StringVar(value="（没有程序播放媒体）")
         self.MEDIA_TEXT_WIDTH = self._media_text_width()
         self.media_label = tk.Label(
-            mbar, textvariable=self.media_text,
+            text_col, textvariable=self.media_text,
             font=(UI_FONT_FAMILY, UI_FONT_SIZE, "bold"), anchor="w",
-            fg=media["fg"], bg=media["bg"], width=self.MEDIA_TEXT_WIDTH)
-        self.media_label.grid(row=0, column=1, sticky="w")
-        # 顺序按媒体播放器的通用布局：上一首 → 播放/暂停 → 下一首，紧接标题。
-        self.media_prev_btn = RoundedButton(
-            mbar, text="◀◀", kind="media", bg=media["bg"],
-            height=26, radius=13, padx=9, style="Media.TButton",
-            command=lambda: self.media_prev_next("previous"))
-        self.media_play_btn = RoundedButton(
-            mbar, text="▶", kind="media", bg=media["bg"],
-            height=26, radius=13, padx=9, style="Media.TButton",
-            command=self.media_toggle_play)
-        self.media_next_btn = RoundedButton(
-            mbar, text="▶▶", kind="media", bg=media["bg"],
-            height=26, radius=13, padx=9, style="Media.TButton",
-            command=lambda: self.media_prev_next("next"))
-        self.media_prev_btn.grid(row=0, column=2, padx=(8, 1))
-        self.media_play_btn.grid(row=0, column=3, padx=1)
-        self.media_next_btn.grid(row=0, column=4, padx=(1, 0))
-        tk.Label(mbar, text="播放器：", font=SMALL_FONT,
-                 bg=media["bg"], fg=media["muted"]).grid(
-            row=0, column=6, padx=(6, 2))
-        self.media_app_combo = ttk.Combobox(mbar, textvariable=self.media_app_pin,
-                                           state="readonly",
-                                           width=self._media_combo_width(), font=UI_FONT,
-                                           values=[MEDIA_APP_ANY])
-        self.media_app_combo.grid(row=0, column=7, padx=(0, 6))
+            fg=UI_INK, bg=UI_BG, width=self.MEDIA_TEXT_WIDTH)
+        self.media_label.pack(fill="x")
+        player_row = tk.Frame(text_col, bg=UI_BG)
+        player_row.pack(fill="x", pady=(1, 0))
+        tk.Label(player_row, text="播放器：", font=SMALL_FONT,
+                 bg=UI_BG, fg=UI_MUTED).pack(side="left", padx=(0, 2))
+        self.media_app_combo = ttk.Combobox(
+            player_row, textvariable=self.media_app_pin, state="readonly",
+            width=self._media_combo_width(), font=UI_FONT,
+            values=[MEDIA_APP_ANY])
+        self.media_app_combo.pack(side="left")
         # 点下拉框 = 出**多选**面板（tkinter 的 Combobox 只能单选，见
         # `_edit_media_app_multi`）。这里必须由实例绑定返回 "break"：
         # 只用 postcommand 的话，原生单选下拉仍会跟着弹出，用户会看到
@@ -9174,16 +9441,38 @@ class WinMonApp:
         for sequence in ("<Button-1>", "<Down>", "<Alt-Down>", "<F4>",
                          "<space>", "<Return>"):
             self.media_app_combo.bind(sequence, self._open_media_app_picker)
-        ttk.Checkbutton(mbar, text="自动启动", variable=self.media_auto_wake,
-                        style="MediaCard.TCheckbutton").grid(
-            row=0, column=8, padx=(2, 0))
+
+        keys = tk.Frame(mbar, bg=UI_BG)
+        keys.grid(row=0, column=2, rowspan=2, sticky="e", padx=(10, 0))
+        #: 与网易云 / 抖音同一套顺序和视觉：上一首、播放/暂停、下一首；
+        #: 三枚键同尺寸，浅底细边，不再用深色大色块。
+        key_font = (UI_FONT_FAMILY, UI_FONT_SIZE + 2)
+        self.media_prev_btn = RoundedButton(
+            keys, text="⏮", kind="ghost", bg=UI_BG,
+            width=30, height=30, radius=15, padx=0, ring=True,
+            font=key_font,
+            command=lambda: self.media_prev_next("previous"))
+        self.media_play_btn = RoundedButton(
+            keys, text="▶", kind="ghost", bg=UI_BG,
+            width=30, height=30, radius=15, padx=0, ring=True,
+            font=key_font,
+            command=self.media_toggle_play)
+        self.media_next_btn = RoundedButton(
+            keys, text="⏭", kind="ghost", bg=UI_BG,
+            width=30, height=30, radius=15, padx=0, ring=True,
+            font=key_font,
+            command=lambda: self.media_prev_next("next"))
+        self.media_prev_btn.pack(side="left", padx=(0, 3))
+        self.media_play_btn.pack(side="left", padx=3)
+        self.media_next_btn.pack(side="left", padx=(3, 0))
         # 清单要等控件建好才能填（`_reload_media_app_list` 会 configure 这个下拉框）
         self._reload_media_app_list()
 
     def _apply_video_visibility(self) -> None:
         """按设置开关显示/收起主界面的视频联动行（不动媒体行）。"""
         bar = getattr(self, "video_bar", None)
-        media = getattr(self, "media_glow", None)
+        media = getattr(self, "media_bar", None) or getattr(
+            self, "media_glow", None)
         if bar is None:
             return
         try:
@@ -9246,13 +9535,7 @@ class WinMonApp:
             font=SMALL_FONT, bg=bg, fg=card["muted"],
             anchor="w", justify="left")
         self.ai_usage_label.grid(row=2, column=0, sticky="ew", pady=(1, 0))
-        #: 用户 2026-10-21：「AI 工作区同步在 AI 栏目」—— 入口放进 AI 卡右侧。
-        self.ai_workspace_btn = RoundedButton(
-            bar, text=i18n.pick("AI 工作区", "AI workspace"), kind="ghost",
-            bg=bg, height=26, radius=13,
-            command=self.action_show_ai_workspace)
-        self.ai_workspace_btn.grid(row=0, column=2, rowspan=2, sticky="ne",
-                                   padx=(8, 0), pady=(1, 0))
+        #: 用户 2026-10-22：AI 工作区已经是第一栏，AI 卡右上角不再重复放入口。
 
 
     def _app_has_session(self, app_key: str) -> bool:
@@ -9358,7 +9641,7 @@ class WinMonApp:
 
     def _reload_media_app_list(self) -> None:
         """
-        把"可唤醒的媒体应用"清单填进下拉框。
+        把"可选择的媒体应用"清单填进下拉框。
 
         三个来源（**会话优先**，2026-10-16 改）：
           1. **此刻活着的媒体会话**（`self._media_session_apps`）—— 第一真源：
@@ -9440,11 +9723,11 @@ class WinMonApp:
 
           · **进程名按主干对得上**（`core.media_app_running`）—— 会话里报的多半不是
             进程名（Edge 报家族名 `MSEdge`、UWP 报 `包名_哈希!App`），直接比字符串
-            会把它判成"没在跑"，于是明明正在放歌、WinMon 却去走"唤醒"那条路；
+            会把它判成"没在跑"，于是明明正在放歌、WinMon 却改走全局媒体键；
           · **它此刻有活的媒体会话** —— 会话存在本身就说明它在跑，这条兜住
             "进程名压根解析不出来"的 UWP 包（那种情况下 `app.exe` 还是那个 PFN）。
 
-        为什么要单独一个方法：`media_command()` 用它决定"发命令"还是"先唤醒"，
+        为什么要单独一个方法：`media_command()` 用它决定"按应用发"还是"改走全局键"，
         这个判断以前是 `app.exe.lower() not in running` 一行，错得很隐蔽
         （点「播放/暂停」没反应，还报"它没在运行"）。
         """
@@ -9530,10 +9813,10 @@ class WinMonApp:
         旧值 12 号时仍有 42 字符；1080×660 下曲名标签会占掉 426px，
         播放器下拉框只剩 174px，中文自动项被截成「（自动：正在放的那个」。
         收到 32 字符后，下拉框能完整显示。
-        2026-10-21 再把基准从 62 收到 40：媒体键紧贴标题，整行明显变短；
-        12 号字仍保留 25 字符，不会把播放器控件挤坏。
+        2026-10-22 媒体改成“标题在上、播放器在下”，标题基准回到 52，
+        12 号字仍保留 34 字符；媒体键在右侧固定 30px，不会再被标题挤走。
         """
-        return max(24, 40 - max(0, UI_FONT_SIZE - 9) * 5)
+        return max(28, 52 - max(0, UI_FONT_SIZE - 9) * 6)
 
     @staticmethod
     def _media_combo_width() -> int:
@@ -9698,7 +9981,7 @@ class WinMonApp:
 
     def media_prev_next(self, slug: str) -> None:
         """
-        「◀◀ / ▶▶」：切上一首 / 下一首。
+        「⏮ / ⏭」：切上一首 / 下一首。
 
         `smart_media_command` 会逐个会话试命令 + 回读核对（最坏几十秒），
         **必须**放后台线程（P1-1 修复：以前直接在主线程调，界面长时间冻结）。
@@ -9723,8 +10006,8 @@ class WinMonApp:
 
     def media_command(self, slug: str) -> None:
         """
-        发一条媒体命令（play / pause / next / previous）——
-        唤醒、按应用、退回媒体键三步合一。
+        发一条媒体命令（play / pause / next / previous）：
+        选中的应用在跑就按应用发，否则直接走全局媒体键。**不启动任何应用**。
 
         **P1-1 修复**：`core.media_command` 内含 `subprocess.run(timeout=8)`，
         以前放在 `root.after` 回调里等于在**主线程**跑 —— 点一次按钮界面最多冻
@@ -9732,27 +10015,15 @@ class WinMonApp:
         """
         app = self._picked_media_app()
         app_key = self._app_key_for_media()
-        woke = False
-        if app is not None:
-            if not self._media_app_is_running(app):
-                if not self.media_auto_wake.get():
-                    self._set_status(
-                        f"{app.label} 没在运行 —— 想让它自动启动就勾上「自动唤醒」")
-                    return
-                ok, msg = core.launch_media_app(app)
-                if not ok:
-                    self._set_status(msg)
-                    return
-                woke = True
-                self._set_status(msg + "（等它起来再发命令…）")
-                self.log_action("唤醒媒体应用", app.label, msg)
-        # 起应用要时间：延迟一拍再发命令，否则应用还没注册媒体会话。
-        # label/key 在此刻定格 —— 回调里不再读界面变量（用户可能又改了下拉框）。
-        delay = 2500 if woke else 0
         app_label = app.label if app is not None else ""
+        if app is not None and not self._media_app_is_running(app):
+            # 2026-10-22：不再替用户启动媒体应用。没在跑就改走全局媒体键，
+            # 由系统把它发给当前活跃的播放器；不 launch、不等待。
+            app_key = ""
+            app_label = ""
         self._media_busy = True
-        self.root.after(max(1, delay),
-                        lambda: self._media_command_async(slug, app_key, app_label))
+        self.root.after(
+            1, lambda: self._media_command_async(slug, app_key, app_label))
 
     def _media_command_async(self, slug: str, app_key: str, app_label: str) -> None:
         """后台线程发媒体命令（8s 超时的 subprocess 不能占着 Tk 主线程）。"""
@@ -9955,7 +10226,7 @@ class WinMonApp:
             self.notebook.select(self.ai_workspace.frame)
         except Exception:
             try:
-                self.notebook.select(5)
+                self.notebook.select(TAB_AI)
             except Exception:
                 pass
 
@@ -10102,10 +10373,9 @@ class WinMonApp:
                 self.idle_snooze_choice.set(data["idle_snooze"])
             self.idle_watch.set_snooze(
                 core.idle_snooze_seconds_of(self.idle_snooze_choice.get()))
-            # 媒体会话：指定的应用 + 是否自动唤醒。
+            # 媒体会话：指定的应用。自动唤醒已删除，旧键忽略。
             # 先让下拉框把清单填好（它依赖"系统上装了哪些"），再按存的标签选中；
             # 那个应用这次没装/找不到就退回"自动"，不让设置把界面卡在无效值上。
-            self.media_auto_wake.set(bool(data.get("media_auto_wake", True)))
             pin = data.get("media_app_pin")
             # 先按设置填上，再刷新下拉框清单 —— 顺序反了的话，
             # "手工搭 app"（没建控件）的场景会读不回来（test_b2 的往返用例守着这条）。
@@ -10172,10 +10442,9 @@ class WinMonApp:
                 "idle_choice": self.idle_choice.get(),
                 "idle_auto_close": bool(self.idle_auto_close.get()),
                 "idle_snooze": self.idle_snooze_choice.get(),
-                # 媒体会话：指定的播放器/浏览器 + 是否在它没跑时自动唤醒。
+                # 媒体会话：指定的播放器/浏览器（不再保存自动唤醒开关）。
                 # 存**中文标签**而不是 MediaApp 对象（设置文件里只能是 JSON 基本类型）。
                 "media_app_pin": self.media_app_pin.get(),
-                "media_auto_wake": bool(self.media_auto_wake.get()),
                 # 设置界面里的"关闭行为"（tray = 隐藏到托盘 / exit = 结束进程）
                 # 与"启动时直接收进托盘"
                 "close_mode": self.close_mode.get(),
@@ -10312,7 +10581,8 @@ class WinMonApp:
         #     省掉每 2 秒几百次 OpenProcess + GetProcessMemoryInfo。
         names = {wi.proc.lower() for wi in self.windows if wi.proc}
         need_full = self.show_no_window.get() or (
-            hasattr(self, "notebook") and self.notebook.index("current") == 2)
+            hasattr(self, "notebook")
+            and self.notebook.index("current") == TAB_PROCESS)
         for pid in self.proc_map:
             info = self.proc_map[pid]
             if not need_full and (info.get("name") or "").lower() not in names:
@@ -10771,7 +11041,7 @@ class WinMonApp:
             self.tree.focus(item)
             self.tree.see(item)
             self._on_select()
-            self.notebook.select(0)
+            self.notebook.select(TAB_PREVIEW)
             self.tree.focus_set()
         except Exception:
             return
@@ -11810,6 +12080,30 @@ class WinMonApp:
                 self._ai_assistant_window = None
         try:
             self._ai_assistant_window = _AiAssistantWindow(self.root, self)
+            #: 如果是从设置里的「AI 助手…」打开的，设置窗口通常持有 grab；
+            #: 不释放的话，新窗口虽然存在却收不到鼠标，看起来就是“打不开”。
+            settings = getattr(self, "_settings_window", None)
+            if settings is not None:
+                try:
+                    settings.top.grab_release()
+                except Exception:
+                    pass
+            win = self._ai_assistant_window
+            try:
+                win.top.lift()
+                win.top.focus_force()
+                win.top.attributes("-topmost", True)
+
+                def _drop_topmost() -> None:
+                    win._topmost_after = None
+                    try:
+                        win.top.attributes("-topmost", False)
+                    except Exception:
+                        pass
+
+                win._topmost_after = win.top.after(300, _drop_topmost)
+            except Exception:
+                pass
             self._set_status(i18n.pick(
                 "AI 助手已打开：顶部显示接入状态；提醒由接入的 AI 在对话里说",
                 "AI assistant opened: connection status on top; the connected AI speaks reminders"))
@@ -12675,7 +12969,7 @@ class WinMonApp:
         except Exception:
             pass
         try:
-            return self.notebook.index("current") == 0
+            return self.notebook.index("current") == TAB_PREVIEW
         except Exception:
             return True
 
@@ -12733,23 +13027,23 @@ class WinMonApp:
         self._hide_search_popup()
         idx = self.notebook.index("current")
         # 离开实时预览页：立刻取消取帧，不等下一次 16ms 泵。
-        if idx != 0 and getattr(self, "preview_key", None) is not None:
+        if idx != TAB_PREVIEW and getattr(self, "preview_key", None) is not None:
             self._preview_suspended = True
             try:
                 self.worker.forget(("win", self.preview_key))
             except Exception:
                 pass
-        if idx == 1:
+        if idx == TAB_GALLERY:
             self._sync_gallery_requests()
-        elif idx == 2:
+        elif idx == TAB_PROCESS:
             self.refresh_process_tree(force=True)
-        elif idx == 3:
+        elif idx == TAB_CATALOG:
             self._ensure_catalog_loaded()
-        elif idx == 4:
+        elif idx == TAB_WORKSPACE:
             self.workspace.refresh()          # 工作区：进页面时刷新（可能有窗口开/关了）
-        elif idx == 5:
+        elif idx == TAB_AI:
             self.ai_workspace.refresh()
-        else:
+        elif idx == TAB_PREVIEW:
             self._request_preview_frame(force=True)
 
     def _ensure_catalog_loaded(self) -> None:
@@ -12830,7 +13124,7 @@ class WinMonApp:
             self._set_status(i18n.pick(f"已加入 {added} 个程序到实时总览",
                                        f"Added {added} program(s) to the live overview"))
             self._sync_gallery_requests()
-            self.notebook.select(1)
+            self.notebook.select(TAB_GALLERY)
 
     def gallery_remove_selected(self, hwnd=None) -> None:
         """
@@ -12880,7 +13174,7 @@ class WinMonApp:
                 return
         except Exception:
             pass
-        if self.notebook.index("current") != 1:
+        if self.notebook.index("current") != TAB_GALLERY:
             for hwnd in self.gallery_keys:
                 self.worker.forget(("tile", hwnd))
             return
@@ -13032,7 +13326,7 @@ class WinMonApp:
             self.refresh_processes()
             self.refresh_windows()
             self._refresh_preview_header()
-            if self.notebook.index("current") == 2:
+            if self.notebook.index("current") == TAB_PROCESS:
                 self.refresh_process_tree()
             self._request_preview_frame()
             self._check_idle(self.IDLE_TICK_SECONDS)
@@ -13394,7 +13688,7 @@ class WinMonApp:
         if not wi:
             self._set_status("请选择一个有窗口的程序")
             return
-        self.notebook.select(0)
+        self.notebook.select(TAB_PREVIEW)
         self.start_preview(wi.hwnd)
 
     def action_bring_front(self) -> None:
@@ -13995,6 +14289,8 @@ class WinMonApp:
         if "video_link_visible" in got:
             self.video_link_visible.set(bool(got["video_link_visible"]))
             self._apply_video_visibility()
+        if got.get("fps_choice") in [item[0] for item in FPS_CHOICES]:
+            self.fps_choice.set(got["fps_choice"])
         idle_changed = False
         for key, var in (("idle_alert", self.idle_alert),
                          ("idle_choice", self.idle_choice),
@@ -14045,6 +14341,7 @@ class WinMonApp:
                 "follow_selection": bool(self.follow_selection.get()),
                 "live_gallery": bool(self.live_gallery.get()),
                 "video_link_visible": bool(self.video_link_visible.get()),
+                "fps_choice": self.fps_choice.get(),
                 "idle_alert": bool(self.idle_alert.get()),
                 "idle_choice": self.idle_choice.get(),
                 "idle_snooze": self.idle_snooze_choice.get(),
@@ -14434,11 +14731,11 @@ def smoke_test(seconds: float = 6.0) -> int:
         root.after(100, finish)
 
     root.after(700, pick_target)
-    root.after(2000, lambda: app.notebook.select(1))
+    root.after(2000, lambda: app.notebook.select(TAB_GALLERY))
     root.after(3400, lambda: snapshot("gallery"))
-    root.after(3600, lambda: app.notebook.select(2))
+    root.after(3600, lambda: app.notebook.select(TAB_PROCESS))
     root.after(4800, lambda: snapshot("proctree"))
-    root.after(5000, lambda: app.notebook.select(0))
+    root.after(5000, lambda: app.notebook.select(TAB_PREVIEW))
     root.after(int(seconds * 1000) - 800, final_shot)
     root.mainloop()
     print(f"后台捕获线程共取帧 {app.worker.frames_done} 次；句柄池 {core._PROC_POOL.stats()}")

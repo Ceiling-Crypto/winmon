@@ -414,22 +414,13 @@ class TestMediaSessionLogic(unittest.TestCase):
     def test_missing_title_is_explained(self):
         info = core.media_session_summary([self._s(title="", status=4)])
         self.assertIn("没有提供曲名", info["text"])
-    # ---- 媒体自动唤醒（用户点名要测的那一项）----
+    # ---- 媒体命令：不启动任何应用 ----
     #
-    # 2026-10-16 复查补丁删掉了 `media_launch()`：查过界面接线，**没有任何按钮或
-    # 快捷键调它**（发命令走的是 `media_command`），唤醒那三步现在长在 `media_command`
-    # 里。所以这一组改成驱动 `media_command` —— 断言还是原来那些"决策"
-    # （该不该替你启动它），只是发命令那一步挪到了后台线程（P1-1），
-    # 断言前要把那条链路跑完（见 `pump_media`）。
+    # 2026-10-22：用户要求删掉「自动唤醒 / 自动启动」整条线。
+    # 现在选中的应用在跑就按应用发；不在跑就直接走全局媒体键。
 
-    def _wake_app(self, auto_wake: bool, already_running: bool,
-                  launch_ok: bool = True, picked: bool = True):
-        """
-        搭一个"手工 app"，只测媒体命令里的**唤醒分支**，不碰真进程。
-
-        `snapshot_processes` / `launch_media_app` / `media_command` 都被替身接管，
-        所以断言的是**决策**："这一步该不该去启动它"、命令有没有发出去。
-        """
+    def _media_cmd_app(self, already_running: bool, picked: bool = True):
+        """搭一个只测媒体命令路由的手工 app，不碰真进程、不启动任何应用。"""
         import tkinter as tk
         root = tk.Tk()
         root.withdraw()
@@ -437,9 +428,8 @@ class TestMediaSessionLogic(unittest.TestCase):
         app = winmon.WinMonApp.__new__(winmon.WinMonApp)
         app.root = root
         app._init_video_vars()
-        app._ui_msg = queue.Queue()          # `_ui_call` 的队列（真 __init__ 会建）
+        app._ui_msg = queue.Queue()
         app._media_busy = False
-        app.media_auto_wake.set(auto_wake)
         app.status_text = tk.StringVar()
         app._set_status = lambda t: app.status_text.set(t)
         app.log_action = lambda *a, **k: None
@@ -451,76 +441,31 @@ class TestMediaSessionLogic(unittest.TestCase):
             app._media_apps = {fake.title: fake}
             app.media_app_pin.set(fake.title)
         procs = ({1: {"name": "testplayer.exe"}} if already_running else {})
-        launched = []
         sent = []
-
-        def fake_launch(a):
-            launched.append(a)
-            return (launch_ok, f"已唤醒 {a.label}" if launch_ok else "启动失败：没有这个程序")
-
-        # 注意：这几条 patch 必须**罩住整条异步链路**（后台线程也要读到替身），
-        # 所以 pump 放在 with 里面 —— 出了 with 再 pump 就是在调真 PowerShell 了。
         with mock.patch.object(core, "snapshot_processes", return_value=procs), \
-                mock.patch.object(core, "launch_media_app", side_effect=fake_launch), \
                 mock.patch.object(
                     core, "media_command",
                     side_effect=lambda slug, key="": (
                         sent.append((slug, key)), (True, "已发送"))[1]):
             app.media_command("play_pause")
-            # 每条分支等不同的“真正完成”信号；不能用“status 非空”统一判断：
-            # 自动唤醒会先写“等它起来…”，2.5 秒后才发命令并覆盖成“已发送”，
-            # 早停会读到中间态（2026-10-21 混跑复现）。
-            if already_running:
-                done = lambda: bool(sent)
-            elif not auto_wake:
-                done = lambda: "没在运行" in app.status_text.get()
-            elif not launch_ok:
-                done = lambda: "失败" in app.status_text.get()
-            else:
-                done = lambda: "等它起来" in app.status_text.get()
-            pump_media(app, root, done)
-        return app, launched, sent
+            pump_media(app, root,
+                       lambda: bool(sent) and bool(app.status_text.get()))
+        return app, sent
 
-    def test_already_running_is_not_launched_again(self):
-        app, launched, sent = self._wake_app(auto_wake=True, already_running=True)
-        self.assertEqual(launched, [], "已经在运行的程序不该被再启动一次")
-        self.assertEqual([slug for slug, _k in sent], ["play_pause"],
-                         "已经在运行 → 直接发命令（这才是有用的那一步）")
+    def test_already_running_sends_the_per_app_command(self):
+        app, sent = self._media_cmd_app(already_running=True)
+        self.assertEqual([slug for slug, _k in sent], ["play_pause"])
+        self.assertEqual(sent[0][1], "testplayer.exe",
+                         "在运行 → 按 exe 精确发命令")
 
-    def test_auto_wake_off_really_does_not_launch(self):
-        """
-        **修掉的 bug**：「启动/唤醒」以前完全不看「自动唤醒」那个勾，
-        永远是"能拉就拉" —— 设置里那个勾等于摆设（用户实测发现）。
-        """
-        app, launched, sent = self._wake_app(auto_wake=False, already_running=False)
-        self.assertEqual(launched, [], "没勾「自动唤醒」就不该替你启动程序")
-        self.assertEqual(sent, [], "程序没在跑又没勾唤醒 → 连命令都不该发（发了没人收）")
-        self.assertIn("没在运行", app.status_text.get())
-        self.assertIn("自动唤醒", app.status_text.get())
-
-    def test_auto_wake_on_launches_it(self):
-        app, launched, _sent = self._wake_app(auto_wake=True, already_running=False)
-        self.assertEqual(len(launched), 1, "勾了「自动唤醒」就该真的去启动")
-        self.assertIn("已唤醒", app.status_text.get())
-
-    def test_failed_launch_is_reported_not_pretended(self):
-        app, launched, _sent = self._wake_app(auto_wake=True, already_running=False,
-                                              launch_ok=False)
-        self.assertEqual(len(launched), 1)
-        self.assertIn("失败", app.status_text.get())
+    def test_not_running_never_launches_and_uses_global_key(self):
+        app, sent = self._media_cmd_app(already_running=False)
+        self.assertEqual(sent, [("play_pause", "")],
+                         "不在运行 → 不启动，改发不带应用标识的全局命令")
+        self.assertNotIn("自动唤醒", app.status_text.get())
 
     def test_no_picked_app_sends_a_global_command_without_launching(self):
-        """
-        没选应用时：一个程序都不启动，命令**照发**（走"没有指定应用"的全局那条路）。
-
-        这一条替换了原来的 `test_launch_without_a_picked_app_says_so`：
-        以前那句"请先选一个媒体应用"长在 `media_launch()` 里，而现在已经没有
-        "单独唤醒"这个入口了 —— 从「播放/暂停」按钮进来时，"没选应用"本来就该
-        当作"操作当前在放东西的那个程序"，不该拦着不发。
-        """
-        app, launched, sent = self._wake_app(auto_wake=True, already_running=False,
-                                             picked=False)
-        self.assertEqual(launched, [], "没选应用就不知道该唤醒谁，不能乱启动")
+        app, sent = self._media_cmd_app(already_running=False, picked=False)
         self.assertEqual(sent, [("play_pause", "")],
                          "没选应用时应当发一条不带应用标识的全局命令")
 
@@ -551,7 +496,6 @@ class TestMediaSessionLogic(unittest.TestCase):
         # A.2 起 `_app_key_for_media()` 走的是"标签 → exe"（支持多选），所以这里也要喂它
         app._media_apps = {fake.title: fake}
         app.media_app_pin.set(fake.title)
-        app.media_auto_wake.set(False)                  # 别真去启动它
         app._ui_msg = queue.Queue()                     # `_ui_call` 的队列
         app._media_busy = False
         sent = []
@@ -595,7 +539,6 @@ class TestMediaSessionLogic(unittest.TestCase):
         app._picked_media_app = lambda: fake
         app._media_apps = {fake.title: fake}
         app.media_app_pin.set(fake.title)
-        app.media_auto_wake.set(False)
         app._media_app_is_running = lambda _app: True
         app._app_has_session = lambda _key: True
         app._ui_msg = queue.Queue()
@@ -809,18 +752,6 @@ class TestMediaSessionLogic(unittest.TestCase):
         browser = core.MediaApp("Microsoft Edge", "msedge.exe", True)
         self.assertIn("浏览器", browser.title)
         self.assertTrue(browser.browser)
-
-    def test_launch_reports_missing_app_instead_of_pretending(self):
-        """
-        找不到可执行文件时**如实说**，不能假装"已唤醒"。
-
-        这条对应铁律 2：有副作用的动作要么真做成、要么如实报失败。
-        """
-        app = core.MediaApp("根本不存在的播放器", "winmon-no-such-player-xyz.exe")
-        ok, msg = core.launch_media_app(app)
-        self.assertFalse(ok)
-        self.assertIn("没找到", msg)
-        self.assertIn("手动打开", msg, "要给出下一步，而不是只说失败")
 
     def test_media_command_rejects_unknown_slug(self):
         for bad in ("", None, "nuke", "playnow", "play_pause"):
