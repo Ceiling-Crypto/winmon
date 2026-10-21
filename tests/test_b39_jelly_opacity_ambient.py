@@ -66,12 +66,13 @@ class TestOpacityAndColorMath(unittest.TestCase):
         import winmon
         zh = dict(winmon._GUIDE_CONTENT["zh"])["主界面"]
         main = "\n".join(body for _kind, body in zh)
-        for piece in ("界面透明度", "45%", "右键菜单", "阻尼", "拟光",
-                      "由淡到深", "暂停"):
+        for piece in ("界面透明度", "45%", "右键菜单", "阻尼",
+                      "上一首", "播放/暂停", "媒体键"):
             self.assertIn(piece, main)
         en = dict(winmon._GUIDE_CONTENT["en"])["Main window"]
         en_main = "\n".join(body for _kind, body in en)
-        for piece in ("Window opacity", "45%", "context menus", "ambient"):
+        for piece in ("Window opacity", "45%", "context menus", "Button feel",
+                      "previous track", "play/pause"):
             self.assertIn(piece, en_main)
 
 

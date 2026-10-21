@@ -160,8 +160,9 @@ class TestMainUiHierarchy(unittest.TestCase):
                          "刷新列表应改为右键窗口列表")
         self.assertEqual(str(self.app.settings_button.cget("text")), "⚙")
         self.assertTrue(self.app.search_field.winfo_exists())
-        self.assertEqual(self.app.notebook.tab(0, "text"), "AI 工作区",
-                         "AI 工作区应是第一栏")
+        self.assertEqual(self.app.notebook.tab(
+            len(self.app.notebook.tabs()) - 1, "text"), "AI 工作区",
+            "AI 工作区应回到原来的最后一栏")
         self.assertEqual(str(self.app.gallery.remove_btn.cget("text")),
                          "移除总览")
 

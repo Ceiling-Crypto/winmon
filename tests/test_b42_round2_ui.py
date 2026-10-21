@@ -3,11 +3,11 @@
 B42 —— 2026-10-22 第二轮界面细节。
 
 覆盖这一轮容易再退化的点：
-  · 齿轮是矢量图标，AI 是第一栏，AI 卡不再重复入口；
-  · 媒体栏是普通行、播放器在状态文字下方、没有自动唤醒；
+  · 齿轮是矢量图标，AI 回到最后一栏，AI 卡不再重复入口；
+  · 媒体栏是普通行、媒体键紧挨标题、播放器在下方、没有自动唤醒；
   · 暂停刷新 / 移除总览加大并带低透明描边；
-  · 设置常规页可滚轮、透明度滑杆只有一个滑块；
-  · AI 用量直连缺 key 时可在卡内输入并复制。
+  · 设置常规页可滚轮、透明度滑杆只有一个滑块且填充连续；
+  · AI 用量直连缺 key 时只在掩码框里读入，不从界面回显或复制。
 """
 from __future__ import annotations
 
@@ -43,26 +43,37 @@ class TestRound2MainUi(unittest.TestCase):
     def tearDownClass(cls):
         h.destroy_root(cls.root)
 
-    def test_gear_is_vector_and_ai_is_first_tab(self):
+    def test_gear_is_vector_and_ai_is_last_tab(self):
         self.assertEqual(self.app.settings_button._icon, "gear")
         icons = [item for item in self.app.settings_button.find_all()
                  if "jelly-icon" in self.app.settings_button.gettags(item)]
         self.assertTrue(icons, "齿轮应由 Canvas 矢量绘制")
         self.assertFalse(hasattr(self.app, "ai_workspace_btn"))
-        self.assertEqual(self.app.notebook.tab(0, "text"), "AI 工作区")
-        self.assertEqual(self.app.notebook.tab(1, "text"), "实时预览")
+        self.assertFalse(hasattr(self.app, "titlebar_label"),
+                         "标题行不应再有 WinMon 文字")
+        last = len(self.app.notebook.tabs()) - 1
+        self.assertEqual(self.app.notebook.tab(last, "text"), "AI 工作区")
+        self.assertEqual(self.app.notebook.tab(0, "text"), "实时预览")
 
-    def test_media_is_a_plain_row_with_player_below_status(self):
+    def test_media_is_a_plain_row_with_keys_beside_title(self):
         self.assertEqual(str(self.app.media_bar.cget("bg")), self.winmon.UI_BG)
         self.assertEqual(self.app.media_text.get(), "（没有程序播放媒体）")
         self.assertGreater(self.app.media_app_combo.winfo_rooty(),
                            self.app.media_label.winfo_rooty(),
                            "播放器选择必须在状态文字下方")
+        keys = self.app.media_play_btn.master
+        self.assertIs(keys.master, self.app.media_label.master,
+                      "媒体键应与标题在同一行，不能跑到最右侧")
         self.assertFalse(hasattr(self.app, "media_auto_wake"))
         for btn in (self.app.media_prev_btn, self.app.media_play_btn,
                     self.app.media_next_btn):
             self.assertTrue(btn._ring)
-            self.assertEqual(str(btn.cget("width")), "30")
+            self.assertTrue(btn._icon.startswith("media_"),
+                            "媒体键必须是矢量图标，不依赖字体字形")
+            icons = [item for item in btn.find_all()
+                     if "jelly-icon" in btn.gettags(item)]
+            self.assertTrue(icons, f"{btn._icon} 没有画出矢量图标")
+            self.assertEqual(str(btn.cget("width")), "32")
 
     def test_pause_and_remove_buttons_are_larger_and_ringed(self):
         pause = self.app.preview.btn_pause
@@ -106,6 +117,13 @@ class TestRound2MainUi(unittest.TestCase):
         thumbs = [item for item in sliders[0].find_all()
                   if "slider-thumb" in sliders[0].gettags(item)]
         self.assertEqual(len(thumbs), 1, "滑杆只能有一个滑块")
+        fills = [item for item in sliders[0].find_all()
+                 if "slider-fill" in sliders[0].gettags(item)]
+        self.assertEqual(len(fills), 1, "已选填充只能是一条连续轨道")
+        self.assertNotEqual(
+            str(sliders[0].itemcget(thumbs[0], "outline")),
+            str(self.winmon.UI_SURFACE),
+            "滑块不能用白色描边把轨道切成两段")
 
 
 @h.needs_tk
@@ -121,7 +139,7 @@ class TestAiUsageKeyInput(unittest.TestCase):
         os.environ.pop(self.env, None)
         self.addCleanup(lambda: os.environ.pop(self.env, None))
 
-    def test_missing_key_has_entry_and_copy(self):
+    def test_missing_key_is_masked_and_reads_from_clipboard(self):
         class FakeApp:
             dpi_scale = 1.0
             _ai_sessions = {}
@@ -144,12 +162,22 @@ class TestAiUsageKeyInput(unittest.TestCase):
         self.root.update()
         self.assertEqual(panel.direct_key_box.winfo_manager(), "pack",
                          "缺 key 时应出现输入栏")
-        panel.direct_key_var.set("secret-value")
+        self.assertFalse(hasattr(panel, "direct_key_show"),
+                         "不应提供“显示 key”入口")
+        self.assertFalse(hasattr(panel, "copy_direct_key"),
+                         "不应把用户的 key 再复制出去")
+        self.assertEqual(str(panel.direct_key_entry.cget("show")), "●")
+        self.assertEqual(str(panel.direct_key_paste._icon), "paste")
+        self.root.clipboard_clear()
+        self.root.clipboard_append("secret-from-clipboard")
+        panel.paste_direct_key()
+        self.assertEqual(panel.direct_key_var.get(), "secret-from-clipboard")
+        self.assertEqual(str(panel.direct_key_entry.cget("show")), "●",
+                         "读入剪贴板后仍必须保持掩码")
         panel.save_direct_key()
-        self.assertEqual(os.environ.get(self.env), "secret-value")
-        panel.direct_key_var.set("secret-value")
-        panel.copy_direct_key()
-        self.assertEqual(self.root.clipboard_get(), "secret-value")
+        self.assertEqual(os.environ.get(self.env), "secret-from-clipboard")
+        self.assertEqual(panel.direct_key_var.get(), "",
+                         "保存后应立即从界面变量里清掉明文")
 
 
 @h.needs_tk

@@ -93,13 +93,12 @@ class TestMainWindowRefinement(unittest.TestCase):
         self.assertEqual(self.app.menu.entrycget(0, "label"), "刷新列表")
 
     def test_preview_and_overview_have_distinct_glyphs(self):
-        self.assertFalse(self.app.tab_strip._display_label(0).startswith(("▷", "▦")))
-        self.assertTrue(self.app.tab_strip._display_label(1).startswith("▷"))
-        self.assertTrue(self.app.tab_strip._display_label(2).startswith("▦"))
-        # 文字标签仍由 Notebook 提供，行为/可访问性不变
-        self.assertEqual(self.app.notebook.tab(0, "text"), "AI 工作区")
-        self.assertEqual(self.app.notebook.tab(1, "text"), "实时预览")
-        self.assertEqual(self.app.notebook.tab(2, "text"), "实时总览")
+        self.assertTrue(self.app.tab_strip._display_label(0).startswith("▷"))
+        self.assertTrue(self.app.tab_strip._display_label(1).startswith("▦"))
+        self.assertEqual(self.app.notebook.tab(0, "text"), "实时预览")
+        self.assertEqual(self.app.notebook.tab(1, "text"), "实时总览")
+        self.assertEqual(self.app.notebook.tab(
+            self.winmon.TAB_AI, "text"), "AI 工作区")
 
     def test_gallery_remove_uses_the_selected_tile(self):
         self.app.gallery.add(9001, "测试窗口", "说明")
@@ -155,7 +154,7 @@ class TestMainWindowRefinement(unittest.TestCase):
                  if w.winfo_class() in ("Label", "TLabel", "TButton", "Button",
                                         "TCheckbutton")]
         for want in ("窗口列表", "主界面内容", "维护", "显示运行窗口",
-                     "在主界面显示视频联动", "闲置提醒", "操作历史…",
+                     "显示视频联动操作行", "闲置提醒", "操作历史…",
                      "清理程序文件…"):
             self.assertIn(want, texts)
 

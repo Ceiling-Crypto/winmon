@@ -289,8 +289,8 @@ class TestThemeMainWindow(unittest.TestCase):
                     self.app.media_next_btn):
             self.assertIsInstance(btn, self.winmon.RoundedButton)
             self.assertTrue(btn._ring, "媒体键要有低透明描边")
-            self.assertEqual(str(btn.cget("width")), "30")
-            self.assertEqual(str(btn.cget("height")), "30")
+            self.assertEqual(str(btn.cget("width")), "32")
+            self.assertEqual(str(btn.cget("height")), "32")
 
     def test_checkbox_and_top_right_controls_are_visible_on_light(self):
         normal = self.root._winmon_check_images["normal"]

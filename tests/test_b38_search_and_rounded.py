@@ -219,8 +219,8 @@ class TestUnifiedSearchUi(unittest.TestCase):
         #: 2026-10-22 起媒体键是浅色圆角图标键，不再用深色 Media.TButton。
         self.assertIsInstance(btn, self.winmon.RoundedButton)
         self.assertTrue(btn._ring)
-        self.assertEqual(str(btn.cget("width")), "30")
-        self.assertGreaterEqual(btn.winfo_reqheight(), 26)
+        self.assertEqual(str(btn.cget("width")), "32")
+        self.assertGreaterEqual(btn.winfo_reqheight(), 28)
 
 
 if __name__ == "__main__":
