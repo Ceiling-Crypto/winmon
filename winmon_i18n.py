@@ -37,8 +37,11 @@ _STRINGS = {
         "settings.language": "语言 / Language",
         "settings.language_hint": "切换后主界面与 AI 窗口立即生效；详细说明在「使用说明」标签页。",
         "settings.theme": "界面颜色",
-        "settings.theme_hint": "普通是白底黑字，深色是黑底白字。保存后立即生效；"
-                               "彩色高亮卡片会换成对应主题的底色。",
+        "settings.theme_hint": "9 套设计主题：钴蓝电青、霓虹粉青、石墨信号、青柠白昼、"
+                               "晴日天绿、暖阳橙绿、落日珊瑚、云白天蓝、山雪梅染。"
+                               "保存后立即生效；只换颜色，不改按键手感。"
+                               "配色参考：鹰角网络《明日方舟》/ 塞壬唱片专辑封面"
+                               "（仅作色彩研究，不代表官方合作）。",
         "assistant.title": "winmon1.0 AI 助手",
         "assistant.header_reading": "正在读取当前 AI…",
         "assistant.time_reading": "正在读取时间…",
@@ -165,8 +168,12 @@ _STRINGS = {
         "settings.language_hint": "Applies to the main window and AI windows immediately; "
                                   "details are in the Guide tab.",
         "settings.theme": "Color",
-        "settings.theme_hint": "Light is white with dark text; Dark is black with white text. "
-                               "Applies immediately; colored cards switch with the theme.",
+        "settings.theme_hint": "9 design themes: Cobalt Current, Neon Pink, Graphite Signal, "
+                               "Lime Noon, Sunlit Verdant, Amber Meadow, Sunset Coral, "
+                               "Cloud & Sky, Snow & Plum Dye. Applies immediately; "
+                               "colors only, controls keep their jelly feel. "
+                               "Palette reference: Hypergryph / Monster Siren album art "
+                               "(color study only; no official affiliation).",
         "assistant.title": "winmon1.0 AI Assistant",
         "assistant.header_reading": "Detecting the AI you are using…",
         "assistant.time_reading": "Reading local time…",

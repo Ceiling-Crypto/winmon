@@ -14,7 +14,8 @@ WinMon —— Windows 桌面工具（图形界面 + 命令行）
 7. AI 工作伴侣：识别当前 AI、用量预算、MCP / API / 纯本地
 8. 操作历史：谁在什么时候被关闭/结束了，可复制、可导出
 9. 前台窗口实时高亮、置顶窗口标记、程序图标、隐藏窗口过滤
-10. 颜色可选普通（白底）/ 深色（黑底）；字号 9–12
+10. 界面颜色有 9 套设计主题（钴蓝电青 / 霓虹粉青 / 石墨信号 / 青柠白昼 /
+    晴日天绿 / 暖阳橙绿 / 落日珊瑚 / 云白天蓝 / 山雪梅染）；字号 9–12
 
 命令行
 ------
@@ -160,281 +161,257 @@ def set_ui_font_family(family: str) -> str:
     set_font_size(UI_FONT_SIZE)
     return UI_FONT_FAMILY
 
-# ---- 界面颜色（普通 / 深色）----
-#
-# 颜色不是"写死一套再局部补丁"，而是**一套语义色板**：所有界面只引用
-# UI_BG / UI_INK / UI_LINE 这类名字，切换颜色时由 `apply_theme()` 整组替换。
-# 高亮卡片（媒体 / AI / 接入）保留各自的色相，但在深色下换成同色系的深底亮字；
-# 既不丢视觉锚点，也不在纯黑页面里留下刺眼的浅色大块。
-THEME_LIGHT = "light"
-THEME_DARK = "dark"
-THEME_DEFAULT = THEME_LIGHT
-THEME_PREFERENCE = THEME_DEFAULT
-THEME_RESOLVED = THEME_DEFAULT
-
-# ---- 界面透明度（2026-10-21）----
-# 用户要求：默认 100%，可调，但下限只到“窗口边缘淡下去”为止，不允许整窗消失。
-# 45% 下白底/深色底都仍能看清文字与边界；再低就开始影响可用性，所以定为硬下限。
+# ---- 界面透明度 ----
+# 默认 100%，可调，但下限只到“窗口边缘淡下去”为止，不允许整窗消失。
 UI_OPACITY_DEFAULT = 100
 UI_OPACITY_MIN = 45
 UI_OPACITY_MAX = 100
 UI_OPACITY = UI_OPACITY_DEFAULT
 
-_THEME_PALETTES = {
-    THEME_LIGHT: {
-        # 2026-10-21 视觉升级：白底不变，但把灰蓝的“旧工具感”换成
-        # 更中性的 slate + 一个更干净的蓝色强调色。UI_BG 仍是纯白，
-        # 这样标题栏、Treeview 和大量 tk.Frame 的底色不需要逐处改。
-        "UI_BG": "#ffffff",
-        "UI_SURFACE": "#ffffff",
-        "UI_SURFACE_ALT": "#f7f9fc",
-        "UI_INK": "#0f172a",
-        "UI_MUTED": "#64748b",
-        "UI_LINE": "#e2e8f0",
-        "UI_ACCENT": "#2563eb",
-        "UI_ACCENT_DARK": "#1d4ed8",
-        "UI_ON_ACCENT": "#ffffff",
-        "UI_INDICATOR": "#3b82f6",
-        "UI_INDICATOR_BORDER": "#2563eb",
-        "UI_HOVER_BG": "#eff6ff",
-        "UI_SELECT_BG": "#dbeafe",
-        "UI_SELECT_FG": "#0f172a",
-        "UI_OK": "#15803d",
-        "UI_WARN": "#b45309",
-        "UI_DANGER": "#dc2626",
-        "UI_PURPLE": "#7c3aed",
-        "UI_HEADING": "#475569",
-        "UI_PLACEHOLDER": "#64748b",
-        #: 媒体行右侧的 3 个按键：深绿底 + 白字，在浅绿/深青卡片上都有对比。
-        "UI_MEDIA_BTN_BG": "#0f6b5c",
-        "UI_MEDIA_BTN_FG": "#ffffff",
-        "UI_MEDIA_BTN_ACTIVE": "#0b584b",
-        #: 高亮卡片不是写死的浅色块：深色主题换成同色系的深底亮字，
-        #: 否则纯黑页面里会突然出现几大块刺眼的浅色补丁。
-        "UI_CARDS": {
-            # 卡片从“整块浅绿/浅蓝”收成近白底 + 彩色标签：
-            # 信息层级更清楚，也不会和选中行、状态条抢颜色。
-            "media": {"bg": "#f7fbf9", "fg": "#0f2f2a", "muted": "#5f746e",
-                      "border": "#d7e7e1", "tag_bg": "#0f6b5c", "tag_fg": "#ffffff"},
-            "ai": {"bg": "#f8fafc", "fg": "#0f2740", "muted": "#60758a",
-                   "border": "#dbe4ee", "tag_bg": "#2563eb", "tag_fg": "#ffffff",
-                   "state_ok_bg": "#ecfdf3", "state_ok_fg": "#166534",
-                   "state_warn_bg": "#fffbeb", "state_warn_fg": "#92400e"},
-            "connect": {"ok_bg": "#e7f6ec", "ok_fg": "#17663f", "ok_border": "#8fc9a4",
-                        "warn_bg": "#fff4df", "warn_fg": "#7a5a00",
-                        "warn_border": "#e2bd7a"},
-            "mcp": {"bg": "#eef7fd", "fg": "#274b63", "muted": "#4a6070",
-                    "border": "#1f6f9e", "accent": "#1f6f9e",
-                    "code_bg": "#ffffff", "code_fg": "#1f3340"},
-            "key": {"bg": "#fff8ea", "fg": "#6b4a12", "muted": "#7a6240",
-                    "border": "#a86b00", "accent": "#a86b00", "warn": "#a33b1f",
-                    "state": "#8a5a00"},
-            "workspace": {"bg": "#f3f6f8", "fg": "#2a4a66", "muted": "#4a5a68",
-                          "border": "#5b6b7a", "accent": "#5b6b7a"},
-            "behavior": {"bg": "#f1f8f4", "fg": "#2a4a66", "muted": "#5c6f66",
-                         "border": "#3b6f5a", "accent": "#3b6f5a"},
-            "proactive": {"bg": "#f6f2fc", "fg": "#655a78", "muted": "#655a78",
-                          "border": "#6b4fa8", "accent": "#6b4fa8"},
-        },
-    },
-    THEME_DARK: {
-        "UI_BG": "#000000",
-        "UI_SURFACE": "#0b0b0b",
-        "UI_SURFACE_ALT": "#151515",
-        "UI_INK": "#ffffff",
-        "UI_MUTED": "#b9c2ca",
-        "UI_LINE": "#333333",
-        "UI_ACCENT": "#5aa9e6",
-        "UI_ACCENT_DARK": "#174a6c",
-        "UI_ON_ACCENT": "#04121d",
-        "UI_INDICATOR": "#3f9bd8",
-        "UI_INDICATOR_BORDER": "#7cc4ff",
-        "UI_HOVER_BG": "#242424",
-        "UI_SELECT_BG": "#123a5a",
-        "UI_SELECT_FG": "#ffffff",
-        "UI_OK": "#4ade80",
-        "UI_WARN": "#fbbf24",
-        "UI_DANGER": "#f87171",
-        "UI_PURPLE": "#c4b5fd",
-        "UI_HEADING": "#c3d4e3",
-        "UI_PLACEHOLDER": "#9aa9b6",
-        #: 媒体按键放在深青卡片上仍用同一深绿，白字对比度足够。
-        "UI_MEDIA_BTN_BG": "#0f6b5c",
-        "UI_MEDIA_BTN_FG": "#ffffff",
-        "UI_MEDIA_BTN_ACTIVE": "#0b584b",
-        "UI_CARDS": {
-            "media": {"bg": "#0b2b26", "fg": "#d9fff5", "muted": "#9cc9bc",
-                      "border": "#2c7a68", "tag_bg": "#1f8a75", "tag_fg": "#02110d"},
-            "ai": {"bg": "#0b2031", "fg": "#e3f6ff", "muted": "#9ec7df",
-                   "border": "#2d6386", "tag_bg": "#2f86bd", "tag_fg": "#031018",
-                   "state_ok_bg": "#0d3321", "state_ok_fg": "#83f0b0",
-                   "state_warn_bg": "#3a2a05", "state_warn_fg": "#ffd66b"},
-            "connect": {"ok_bg": "#0d3321", "ok_fg": "#83f0b0", "ok_border": "#256b43",
-                        "warn_bg": "#3a2a08", "warn_fg": "#ffd98a",
-                        "warn_border": "#7a5a16"},
-            "mcp": {"bg": "#0b2233", "fg": "#d6efff", "muted": "#8fb8cf",
-                    "border": "#2d7196", "accent": "#6cc4f2",
-                    "code_bg": "#071721", "code_fg": "#d6efff"},
-            "key": {"bg": "#2f240b", "fg": "#ffe6b0", "muted": "#c8ab78",
-                    "border": "#8a671d", "accent": "#f0b64a", "warn": "#ff9b7a",
-                    "state": "#ffd071"},
-            "workspace": {"bg": "#171b20", "fg": "#dbe7f2", "muted": "#a6b6c4",
-                          "border": "#4b5c6b", "accent": "#a9c3d6"},
-            "behavior": {"bg": "#10291f", "fg": "#d5f5e3", "muted": "#9bc6ae",
-                         "border": "#346c55", "accent": "#73d6a7"},
-            "proactive": {"bg": "#24182f", "fg": "#eadcff", "muted": "#c3addd",
-                          "border": "#67468f", "accent": "#c4a6ff"},
-        },
-    },
-}
+# ---- 界面颜色（9 套设计主题）----
+#
+# 2026-10-21 用户决议：删掉旧的“普通白底 / 深色黑底”两套，改用从塞壬唱片
+# 专辑封面提炼、并由用户挑选的 9 套设计主题。颜色只换语义槽位，不碰按键的
+# 果冻回弹、圆角、阴影等结构——那些是交互设计，不是颜色。
+#
+# 每套主题只描述“页面 / 面 / 字 / 主色 / 次色 / 危险色”，其余槽位由
+# `_build_palette()` 统一推导，保证 9 套的卡片、状态、按钮语义一致。
+THEME_DEFAULT = "sunlit"
+THEME_PREFERENCE = THEME_DEFAULT
+THEME_RESOLVED = THEME_DEFAULT
+THEME_ORDER = (
+    "cobalt", "neon", "graphite", "lime", "sunlit",
+    "amber", "coral", "cloud", "snow",
+)
 
-#: 2026-10-21：**旧色板原样保留**。用户说“之前的颜色代码先不动，待我决议”，
-#: 所以这里不覆盖、不删除旧值，只把新色板另存一份并通过下面的别名启用。
-#: 想回退时只要把 `_THEME_PALETTES = _THEME_PALETTES_LEGACY` 一行换回来。
-_THEME_PALETTES_LEGACY = _THEME_PALETTES
-
-#: 实验色板（2026-10-21 暂停启用）：整窗克莱因蓝玻璃。
-#: 用户实际看过之后认为“比白底还差”，已明确要求颜色改回去，所以默认重新启用
-#: `_THEME_PALETTES_LEGACY`。这套蓝板不删除，留作后续配色实验；不要把它当作
-#: 当前产品外观，也不要在文档/截图里继续宣称默认是蓝底。
-_THEME_PALETTES_MODERN = {
-    THEME_LIGHT: {
-        #: 实验色板（当时方案，现已停用）：整窗不再是白底，而是克莱因蓝玻璃。
-        #: 背景/浮片/卡片是同一蓝色系的三个明度层，靠亮边与暗影制造“半透明”
-        #: 的错觉；真正整窗 alpha 仍由设置里的透明度控制。
-        "UI_BG": "#04122f",
-        "UI_SURFACE": "#0a2460",
-        "UI_SURFACE_ALT": "#13357d",
-        "UI_INK": "#f5f8ff",
-        "UI_MUTED": "#b9c9ed",
-        "UI_LINE": "#3558a8",
-        "UI_ACCENT": "#5e7cff",
-        "UI_ACCENT_DARK": "#3b57d6",
-        "UI_ON_ACCENT": "#ffffff",
-        "UI_INDICATOR": "#8fa8ff",
-        "UI_INDICATOR_BORDER": "#c0ceff",
-        "UI_HOVER_BG": "#1a3f8f",
-        "UI_SELECT_BG": "#2453b8",
-        "UI_SELECT_FG": "#ffffff",
-        "UI_OK": "#77e8bc",
-        "UI_WARN": "#ffc86b",
-        "UI_DANGER": "#ff929f",
-        "UI_PURPLE": "#c7b6ff",
-        "UI_HEADING": "#a8bce8",
-        "UI_PLACEHOLDER": "#8fa6d6",
-        #: 媒体键改为克莱因蓝系的玻璃按钮，不再使用绿色。
-        "UI_MEDIA_BTN_BG": "#4f61e8",
-        "UI_MEDIA_BTN_FG": "#ffffff",
-        "UI_MEDIA_BTN_ACTIVE": "#3b4bc8",
-        "UI_CARDS": {
-            #: 高亮卡是“比页面亮一档的蓝玻璃”，不是浅色补丁；媒体卡不再有绿色。
-            "media": {"bg": "#202a72", "fg": "#f4f8ff", "muted": "#c1c9ff",
-                      "border": "#6e7bff", "tag_bg": "#a9bcff", "tag_fg": "#0a1b45"},
-            "ai": {"bg": "#0d2e73", "fg": "#f2f7ff", "muted": "#adc3f0",
-                   "border": "#4b74d9", "tag_bg": "#5e7cff", "tag_fg": "#ffffff",
-                   "state_ok_bg": "#0b3d4e", "state_ok_fg": "#8cf0d4",
-                   "state_warn_bg": "#3a2a5e", "state_warn_fg": "#ffd98a"},
-            "connect": {"ok_bg": "#0c3b4f", "ok_fg": "#8cf0d4", "ok_border": "#2f7c8a",
-                        "warn_bg": "#3a2a0a", "warn_fg": "#ffd98a",
-                        "warn_border": "#7a5a16"},
-            "mcp": {"bg": "#0a2752", "fg": "#d9ecff", "muted": "#9fbce2",
-                    "border": "#3f78b8", "accent": "#7fbbff",
-                    "code_bg": "#061a38", "code_fg": "#e5f4ff"},
-            "key": {"bg": "#2a2450", "fg": "#ffe1a8", "muted": "#c9b9e8",
-                    "border": "#7b63b8", "accent": "#ffc86b", "warn": "#ff9b9b",
-                    "state": "#ffd071"},
-            "workspace": {"bg": "#0c2854", "fg": "#e6f0ff", "muted": "#a7bee0",
-                          "border": "#3e5e9b", "accent": "#8fb6ff"},
-            "behavior": {"bg": "#0d2f4a", "fg": "#e3f4ff", "muted": "#a6c4d9",
-                         "border": "#3a6b8a", "accent": "#7cd9ef"},
-            "proactive": {"bg": "#241b4d", "fg": "#ede6ff", "muted": "#b9a8e6",
-                          "border": "#6b55a8", "accent": "#c7b6ff"},
-        },
-    },
-    THEME_DARK: {
-        "UI_BG": "#000000",
-        "UI_SURFACE": "#070d1d",
-        "UI_SURFACE_ALT": "#0d1730",
-        "UI_INK": "#ffffff",
-        "UI_MUTED": "#b5c2dc",
-        "UI_LINE": "#1e2a4a",
-        "UI_ACCENT": "#8fa8ff",
-        "UI_ACCENT_DARK": "#5b76e8",
-        "UI_ON_ACCENT": "#040a18",
-        "UI_INDICATOR": "#8fa8ff",
-        "UI_INDICATOR_BORDER": "#c0ceff",
-        "UI_HOVER_BG": "#121e3a",
-        "UI_SELECT_BG": "#1a2a55",
-        "UI_SELECT_FG": "#ffffff",
-        "UI_OK": "#77e8bc",
-        "UI_WARN": "#ffc86b",
-        "UI_DANGER": "#ff929f",
-        "UI_PURPLE": "#c7b6ff",
-        "UI_HEADING": "#b8c8e8",
-        "UI_PLACEHOLDER": "#8fa6d6",
-        "UI_MEDIA_BTN_BG": "#2e5bff",
-        "UI_MEDIA_BTN_FG": "#ffffff",
-        "UI_MEDIA_BTN_ACTIVE": "#1e43c8",
-        "UI_CARDS": {
-            "media": {"bg": "#0a1b3c", "fg": "#f4f8ff", "muted": "#a9bfe8",
-                      "border": "#2f4f9a", "tag_bg": "#a9bcff", "tag_fg": "#07122e"},
-            "ai": {"bg": "#081a3a", "fg": "#f2f7ff", "muted": "#a9c0ea",
-                   "border": "#2d4c91", "tag_bg": "#8fa8ff", "tag_fg": "#040a18",
-                   "state_ok_bg": "#0a2f3c", "state_ok_fg": "#8cf0d4",
-                   "state_warn_bg": "#2f2348", "state_warn_fg": "#ffd98a"},
-            "connect": {"ok_bg": "#0a2f3c", "ok_fg": "#8cf0d4", "ok_border": "#2a6b78",
-                        "warn_bg": "#2f2308", "warn_fg": "#ffd98a",
-                        "warn_border": "#6a4d12"},
-            "mcp": {"bg": "#071b33", "fg": "#d9ecff", "muted": "#99b9dc",
-                    "border": "#2d5c8f", "accent": "#8fc9ff",
-                    "code_bg": "#030e1c", "code_fg": "#e5f4ff"},
-            "key": {"bg": "#211b3d", "fg": "#ffe1a8", "muted": "#c9b9e8",
-                    "border": "#64509b", "accent": "#ffc86b", "warn": "#ff9b9b",
-                    "state": "#ffd071"},
-            "workspace": {"bg": "#081a35", "fg": "#e6f0ff", "muted": "#a7bee0",
-                          "border": "#2d4770", "accent": "#8fb6ff"},
-            "behavior": {"bg": "#092235", "fg": "#e3f4ff", "muted": "#a6c4d9",
-                         "border": "#2b536a", "accent": "#7cd9ef"},
-            "proactive": {"bg": "#1b1438", "fg": "#ede6ff", "muted": "#b9a8e6",
-                          "border": "#524084", "accent": "#c7b6ff"},
-        },
-    },
-}
-
-#: 当前生效的色板：2026-10-21 用户否决全窗蓝，恢复旧白底。
-#: `_THEME_PALETTES_MODERN` 仅作为实验色板保留，不再默认启用。
-_THEME_PALETTES = _THEME_PALETTES_LEGACY
-
-_THEME_LABELS = {
-    "zh": (
-        (THEME_LIGHT, "普通（白底）"),
-        (THEME_DARK, "深色（黑底）"),
+#: 名字是“设计名”，不再把专辑名当主题名。
+_THEME_SPECS = {
+    "cobalt": dict(
+        zh="钴蓝电青", en="Cobalt Current",
+        page="#F3F8FE", surface="#FFFFFF", alt="#E8F2FC",
+        ink="#0B1B2B", muted="#5C7085", line="#D7E8F7",
+        accent="#064ED0", accent_dark="#043FA8", on_accent="#FFFFFF",
+        secondary="#24CBFD", on_secondary="#0B1B2B",
+        danger="#A33A2A", on_danger="#FFFFFF",
     ),
-    "en": (
-        (THEME_LIGHT, "Light"),
-        (THEME_DARK, "Dark"),
+    "neon": dict(
+        zh="霓虹粉青", en="Neon Pink",
+        page="#FFF6FA", surface="#FFFFFF", alt="#FBE9F1",
+        ink="#24151D", muted="#7A6570", line="#F0DCE5",
+        accent="#C9256A", accent_dark="#A81C56", on_accent="#FFFFFF",
+        secondary="#2BB8C9", on_secondary="#24151D",
+        danger="#A33A2A", on_danger="#FFFFFF",
+    ),
+    "graphite": dict(
+        zh="石墨信号", en="Graphite Signal",
+        page="#F2F4F6", surface="#FFFFFF", alt="#E7EBEF",
+        ink="#161A20", muted="#5D6B70", line="#D8DEE6",
+        accent="#B3261E", accent_dark="#8E1A14", on_accent="#FFFFFF",
+        secondary="#7487A0", on_secondary="#161A20",
+        danger="#8E1A14", on_danger="#FFFFFF",
+    ),
+    "lime": dict(
+        zh="青柠白昼", en="Lime Noon",
+        page="#FBFDF7", surface="#FFFFFF", alt="#F2F8E9",
+        ink="#1B281D", muted="#657463", line="#E0EAD6",
+        accent="#A8C400", accent_dark="#8AA000", on_accent="#1B281D",
+        secondary="#72B3F3", on_secondary="#1B281D",
+        danger="#A33A2A", on_danger="#FFFFFF",
+    ),
+    "sunlit": dict(
+        zh="晴日天绿", en="Sunlit Verdant",
+        page="#FAFDF6", surface="#FFFFFF", alt="#EFF7E6",
+        ink="#1B2A1F", muted="#61705F", line="#DFEAD5",
+        accent="#2F7F55", accent_dark="#236542", on_accent="#FFFFFF",
+        secondary="#B7D400", on_secondary="#1B2A1F",
+        danger="#A33A2A", on_danger="#FFFFFF",
+    ),
+    "amber": dict(
+        zh="暖阳橙绿", en="Amber Meadow",
+        page="#FBF7EC", surface="#FFFFFF", alt="#F5EDDE",
+        ink="#2A2217", muted="#776A56", line="#E8DCC6",
+        accent="#B05A1C", accent_dark="#8F4512", on_accent="#FFFFFF",
+        secondary="#B7D400", on_secondary="#2A2217",
+        danger="#A33A2A", on_danger="#FFFFFF",
+    ),
+    "coral": dict(
+        zh="落日珊瑚", en="Sunset Coral",
+        page="#FBF2EE", surface="#FFFFFF", alt="#F6E5E0",
+        ink="#2A1A20", muted="#78616A", line="#EAD7D3",
+        accent="#C2553F", accent_dark="#A33A2A", on_accent="#FFFFFF",
+        secondary="#E8B23A", on_secondary="#2A1A20",
+        danger="#A33A2A", on_danger="#FFFFFF",
+    ),
+    "cloud": dict(
+        zh="云白天蓝", en="Cloud & Sky",
+        page="#FBFDFE", surface="#FFFFFF", alt="#EDF6FB",
+        ink="#142027", muted="#5F7380", line="#D7E7F1",
+        accent="#1F6FAE", accent_dark="#155A8F", on_accent="#FFFFFF",
+        secondary="#8CC9E8", on_secondary="#142027",
+        danger="#A33A2E", on_danger="#FFFFFF",
+    ),
+    "snow": dict(
+        zh="山雪梅染", en="Snow & Plum Dye",
+        page="#F5F6F2", surface="#FFFFFF", alt="#E9EDE7",
+        ink="#1B2525", muted="#626D6A", line="#D9E0DA",
+        accent="#A83A3F", accent_dark="#8E2F34", on_accent="#FFFFFF",
+        secondary="#5E7A6D", on_secondary="#FFFFFF",
+        danger="#8E2F34", on_danger="#FFFFFF",
     ),
 }
+
+
+def _blend_hex(first: str, second: str, amount: float) -> str:
+    """主题推导用的小混合器；非法色回退 first，绝不抛异常。"""
+    def rgb(value):
+        text = str(value or "").strip()
+        if not text.startswith("#"):
+            return None
+        raw = text[1:]
+        if len(raw) == 3:
+            raw = "".join(ch * 2 for ch in raw)
+        if len(raw) != 6:
+            return None
+        try:
+            return tuple(int(raw[i:i + 2], 16) for i in (0, 2, 4))
+        except ValueError:
+            return None
+    a, b = rgb(first), rgb(second)
+    if a is None or b is None:
+        return first
+    try:
+        t = max(0.0, min(1.0, float(amount)))
+    except (TypeError, ValueError):
+        t = 0.0
+    return "#%02x%02x%02x" % tuple(
+        int(round(a[i] + (b[i] - a[i]) * t)) for i in range(3))
+
+
+def _build_palette(spec: dict) -> dict:
+    """
+    把 9 套主题的“核心色”展开成完整语义色板。
+
+    卡片颜色不写死 9 份：媒体/AI/MCP/行为/主动搭子都从主色或次色混出淡底，
+    接入状态用固定的绿/琥珀语义，KEY 用固定的琥珀语义。这样换主题时
+    卡片仍保留各自的栏目锚点，又不会把 27 张卡写成 27 份重复代码。
+    """
+    page = spec["page"]
+    surface = spec["surface"]
+    alt = spec["alt"]
+    ink = spec["ink"]
+    muted = spec["muted"]
+    line = spec["line"]
+    accent = spec["accent"]
+    accent_dark = spec["accent_dark"]
+    on_accent = spec["on_accent"]
+    secondary = spec["secondary"]
+    on_secondary = spec["on_secondary"]
+    danger = spec["danger"]
+    on_danger = spec["on_danger"]
+    hover = _blend_hex(surface, accent, 0.10)
+    select = _blend_hex(surface, accent, 0.18)
+    card_muted = _blend_hex(muted, ink, 0.30)
+    mcp_accent = _blend_hex(ink, accent_dark, 0.30)
+    media_bg = _blend_hex(surface, accent, 0.09)
+    media_border = _blend_hex(surface, accent, 0.26)
+    ai_bg = _blend_hex(surface, secondary, 0.09)
+    ai_border = _blend_hex(surface, secondary, 0.26)
+    ok_bg = _blend_hex(surface, "#2F7D4E", 0.12)
+    ok_fg = "#1F5A39"
+    ok_border = _blend_hex(surface, "#2F7D4E", 0.32)
+    warn_bg = _blend_hex(surface, "#B7791F", 0.13)
+    warn_fg = "#6E4308"
+    warn_border = _blend_hex(surface, "#B7791F", 0.34)
+    key_bg = _blend_hex(surface, "#C9973A", 0.12)
+    key_line = _blend_hex(surface, "#B7791F", 0.30)
+    workspace_border = _blend_hex(ink, surface, 0.42)
+    behavior_bg = _blend_hex(surface, "#2F7D4E", 0.09)
+    behavior_border = _blend_hex(surface, "#2F7D4E", 0.30)
+    proactive_bg = _blend_hex(surface, "#6B4FA8", 0.10)
+    proactive_border = _blend_hex(surface, "#6B4FA8", 0.30)
+    return {
+        "UI_BG": page,
+        "UI_SURFACE": surface,
+        "UI_SURFACE_ALT": alt,
+        "UI_INK": ink,
+        "UI_MUTED": muted,
+        "UI_LINE": line,
+        "UI_ACCENT": accent,
+        "UI_ACCENT_DARK": accent_dark,
+        "UI_ON_ACCENT": on_accent,
+        "UI_INDICATOR": accent,
+        "UI_INDICATOR_BORDER": accent_dark,
+        "UI_HOVER_BG": hover,
+        "UI_SELECT_BG": select,
+        "UI_SELECT_FG": ink,
+        "UI_OK": "#2F7D4E",
+        "UI_WARN": "#A86412",
+        "UI_DANGER": danger,
+        "UI_PURPLE": "#5E4699",
+        "UI_HEADING": _blend_hex(ink, surface, 0.30),
+        "UI_PLACEHOLDER": muted,
+        "UI_MEDIA_BTN_BG": accent,
+        "UI_MEDIA_BTN_FG": on_accent,
+        "UI_MEDIA_BTN_ACTIVE": accent_dark,
+        "UI_CARDS": {
+            "media": {"bg": media_bg, "fg": ink, "muted": card_muted,
+                      "border": media_border, "tag_bg": accent,
+                      "tag_fg": on_accent},
+            "ai": {"bg": ai_bg, "fg": ink, "muted": card_muted,
+                   "border": ai_border, "tag_bg": secondary,
+                   "tag_fg": on_secondary,
+                   "state_ok_bg": ok_bg, "state_ok_fg": ok_fg,
+                   "state_warn_bg": warn_bg, "state_warn_fg": warn_fg},
+            "connect": {"ok_bg": ok_bg, "ok_fg": ok_fg,
+                        "ok_border": ok_border,
+                        "warn_bg": warn_bg, "warn_fg": warn_fg,
+                        "warn_border": warn_border},
+            "mcp": {"bg": _blend_hex(surface, secondary, 0.07),
+                    "fg": ink, "muted": card_muted, "border": ai_border,
+                    "accent": mcp_accent, "code_bg": surface,
+                    "code_fg": ink},
+            "key": {"bg": key_bg, "fg": "#5B3D12", "muted": "#7A6240",
+                    "border": "#B7791F", "accent": "#9A6A00",
+                    "warn": danger, "state": "#8A5A00"},
+            "workspace": {"bg": alt, "fg": ink, "muted": card_muted,
+                          "border": workspace_border, "accent": muted},
+            "behavior": {"bg": behavior_bg, "fg": ink, "muted": card_muted,
+                         "border": behavior_border, "accent": "#2F7D4E"},
+            "proactive": {"bg": proactive_bg, "fg": ink, "muted": card_muted,
+                          "border": proactive_border, "accent": "#5E4699"},
+        },
+    }
+
+
+_THEME_PALETTES = {key: _build_palette(spec)
+                   for key, spec in _THEME_SPECS.items()}
 
 
 def normalize_theme_mode(mode) -> str:
     """
-    只认 light / dark；旧值、脏值和已删除的 system 一律回普通。
+    只认 9 套设计主题；旧设置里的 light / dark / system 一律回到默认。
 
-    2026-10-20 用户决定删掉「跟随系统」：旧设置里存的 `system` 不能在启动时
-    变成空白，所以这里显式把它归到 light（用户可再手动选深色）。
+    2026-10-21 用户决议：删掉旧的普通/深色两套，改用以塞壬唱片封面为参考
+    的 9 套设计。旧值不能把启动卡死，所以统一迁移到默认的「晴日天绿」。
     """
     value = str(mode or "").strip().lower()
-    aliases = {"normal": THEME_LIGHT, "white": THEME_LIGHT,
-               "auto": THEME_LIGHT, "system": THEME_LIGHT}
+    aliases = {"normal": THEME_DEFAULT, "white": THEME_DEFAULT,
+               "light": THEME_DEFAULT, "auto": THEME_DEFAULT,
+               "system": THEME_DEFAULT, "dark": THEME_DEFAULT}
     value = aliases.get(value, value)
-    return value if value in (THEME_LIGHT, THEME_DARK) else THEME_DEFAULT
+    return value if value in _THEME_SPECS else THEME_DEFAULT
 
 
 def theme_choices(lang: str = "") -> tuple[tuple[str, str], ...]:
     """返回 (slug, 当前语言标签) 的有序元组。"""
-    language = lang if lang in _THEME_LABELS else i18n.get_language()
-    return _THEME_LABELS.get(language, _THEME_LABELS["zh"])
+    use_en = str(lang or "").lower().startswith("en")
+    if not lang:
+        try:
+            use_en = i18n.get_language() == "en"
+        except Exception:
+            use_en = False
+    return tuple((key, _THEME_SPECS[key]["en" if use_en else "zh"])
+                 for key in THEME_ORDER)
 
 
 def theme_display(mode, lang: str = "") -> str:
@@ -444,24 +421,23 @@ def theme_display(mode, lang: str = "") -> str:
 
 def apply_theme(mode) -> str:
     """
-    按偏好换一整套颜色，返回**实际生效**的 light / dark。
+    按偏好换一整套颜色，返回**实际生效**的设计名。
 
-    注意：它只改模块级色板，**不会重画已经建出来的控件**。主界面由
-    `WinMonApp._rebuild_ui_for_theme()` 重建；设置/说明/用量窗口在下一次打开
-    时自然使用新色板。这样不会出现"一半白一半黑"的过渡状态。
+    只改模块级色板，不重画已有控件；主界面由
+    `WinMonApp._rebuild_ui_for_theme()` 重建，设置/说明/用量窗口下一次
+    打开时自然使用新色板。
     """
     global THEME_PREFERENCE, THEME_RESOLVED
     preference = normalize_theme_mode(mode)
-    resolved = preference
     THEME_PREFERENCE = preference
-    THEME_RESOLVED = resolved
-    for name, value in _THEME_PALETTES[resolved].items():
+    THEME_RESOLVED = preference
+    for name, value in _THEME_PALETTES[preference].items():
         globals()[name] = value
-    return resolved
+    return preference
 
 
 def read_theme_mode(path: str = "") -> str:
-    """启动前从设置文件读颜色偏好；坏文件/非法值回普通，不让设置挡住启动。"""
+    """启动前从设置文件读颜色偏好；坏文件/旧值一律回默认。"""
     try:
         with open(path or _settings_path(), encoding="utf-8") as fh:
             data = json.load(fh)
@@ -470,25 +446,26 @@ def read_theme_mode(path: str = "") -> str:
     return normalize_theme_mode(data.get("theme", THEME_DEFAULT))
 
 
+apply_theme(THEME_DEFAULT)
+
+
 def set_dark_title_bar(widget, dark: bool | None = None) -> None:
     """
     让 Windows 原生标题栏跟随应用深浅色（Win10 1809+ / Win11）。
 
-    不做这一步时，深色页面上面会顶着一条纯白标题栏，截图和实际使用都很割裂。
-    DWM 属性号在旧版是 19、新版是 20；两个都试，失败就静默保持系统默认。
+    9 套设计主题目前都是浅色页面，所以标题栏按页面亮度自动走浅色；
+    显式传 dark 的调用仍尊重参数。DWM 属性号旧版是 19、新版是 20，
+    两个都试，失败就静默保持系统默认。
 
-    **映射时再设一次**：Toplevel 刚创建、还没映射时，DWM 可能忽略这个属性
-    （实测接入窗口的标题栏仍是白的）。用 `<Map>` 而不是 `after` 重试，
-    窗口销毁时 Tk 会一起回收这个绑定，不会留下 “invalid command name …_later”
-    的收尾噪音。
+    **映射时再设一次**：Toplevel 刚创建、还没映射时，DWM 可能忽略这个属性。
+    用 `<Map>` 而不是 `after` 重试，窗口销毁时 Tk 会一起回收这个绑定，
+    不会留下 “invalid command name …_later” 的收尾噪音。
     """
     if dark is None:
-        # 2026-10-21：默认主题恢复白底；仍按页面亮度决定标题栏明暗，
-        # 这样以后换任何色板都不会出现白标题栏。
         try:
             want = color_luminance(UI_BG) < 0.55
         except Exception:
-            want = (THEME_RESOLVED == THEME_DARK)
+            want = False
     else:
         want = bool(dark)
     try:
@@ -507,14 +484,10 @@ def set_dark_title_bar(widget, dark: bool | None = None) -> None:
                     continue
     except Exception:
         pass
-    #: 每个窗口只绑一次：映射之后再设，覆盖“创建时还没映射”的情况。
-    #: want 存在控件上而不是 lambda 闭包里 —— 换主题后这里会更新，
-    #: 否则以后每次 deiconify 都会把标题栏按旧主题重设回去。
     try:
         widget._winmon_dark_want = want
     except Exception:
         pass
-    # 标题栏和窗口外框一起走 DWM 圆角；Win10 上这个调用失败会静默跳过。
     try:
         set_rounded_window_corners(widget)
     except Exception:
@@ -551,9 +524,6 @@ def set_rounded_window_corners(widget) -> None:
             ctypes.sizeof(preference))
     except Exception:
         pass
-
-
-apply_theme(THEME_DEFAULT)
 
 
 def set_font_size(size) -> int:
@@ -6553,9 +6523,12 @@ _GUIDE_CONTENT = {
             ("h", "设置与颜色"),
             ("p", "「设置…」里同时有常规、AI 用量和使用说明；主界面不再单独放"
                   "「AI 用量」和「说明」。"),
-            ("p", "颜色可选普通（白底）或深色（黑底）；保存后立即生效。"
-                  "高亮卡仍保留各自的栏目色（媒体为深青绿，AI 为蓝，"
-                  "接入为绿/黄，MCP 为蓝，KEY 为琥珀）。"),
+            ("p", "界面颜色有 9 套设计主题：钴蓝电青、霓虹粉青、石墨信号、"
+                  "青柠白昼、晴日天绿、暖阳橙绿、落日珊瑚、云白天蓝、"
+                  "山雪梅染。保存后立即生效；高亮卡、媒体键、勾选圆点和"
+                  "状态条一起换，但按键的果冻回弹、圆角、阴影不变。"),
+            ("p", "配色参考：鹰角网络《明日方舟》/ 塞壬唱片（Monster Siren）"
+                  "专辑封面。仅作色彩研究，不代表官方合作或官方配色。"),
             ("p", "「设置 → 常规 → 界面透明度」默认 100%，最低 45%：只淡到仍能看见"
                   "窗口边缘，不会整窗消失。主界面、设置/历史/AI 窗口、右键菜单、"
                   "搜索建议、操作下拉和媒体多选会一起变化；高亮卡和播放时的媒体拟光"
@@ -8296,7 +8269,7 @@ class WinMonApp:
         self.history_days = tk.IntVar(value=HISTORY_DAYS_DEFAULT)
         #: 界面语言：zh / en（默认中文；切换后主界面与 AI 窗口立即重译）
         self.language = tk.StringVar(value=i18n.get_language())
-        #: 界面颜色：普通（白底）/ 深色（黑底）。存 slug，显示当前语言标签。
+        #: 界面颜色：9 套设计主题之一。存 slug，显示当前语言标签。
         self.theme_mode = tk.StringVar(
             value=theme_display(getattr(self, "theme_pref", THEME_DEFAULT)))
         #: 整窗透明度（45–100，默认 100）；改设置时同步给所有 Toplevel。

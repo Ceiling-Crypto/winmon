@@ -55,11 +55,11 @@ def walk(widget):
 class TestCardPalettes(unittest.TestCase):
     def tearDown(self):
         import winmon
-        winmon.apply_theme("light")
+        winmon.apply_theme("sunlit")
 
     def test_every_theme_has_all_highlight_cards(self):
         import winmon
-        for theme in ("light", "dark"):
+        for theme in winmon.THEME_ORDER:
             winmon.apply_theme(theme)
             for key in CARD_KEYS:
                 self.assertIn(key, winmon.UI_CARDS, f"{theme} 缺少 {key} 卡片")
@@ -67,32 +67,36 @@ class TestCardPalettes(unittest.TestCase):
                 for field in ("bg", "fg", "muted", "border"):
                     self.assertTrue(card.get(field), f"{theme}/{key} 缺 {field}")
 
-    def test_dark_cards_are_dark_and_text_keeps_contrast(self):
+    def test_all_theme_cards_keep_contrast(self):
         import winmon
-        winmon.apply_theme("dark")
-        for key in CARD_KEYS:
-            card = winmon.UI_CARDS[key]
-            self.assertNotEqual(card["bg"], "#000000",
-                                f"{key} 卡不能和纯黑页面糊在一起")
-            self.assertLess(luminance(card["bg"]), 0.18,
-                            f"{key} 卡在深色主题下仍是浅色底")
-            for field in ("fg", "muted", "state", "warn"):
-                if card.get(field):
+        for theme in winmon.THEME_ORDER:
+            winmon.apply_theme(theme)
+            page = winmon.UI_BG
+            for key in CARD_KEYS:
+                card = winmon.UI_CARDS[key]
+                self.assertNotEqual(card["bg"], page,
+                                    f"{theme}/{key} 卡和页面同色")
+                self.assertGreater(luminance(card["bg"]), 0.7,
+                                   f"{theme}/{key} 卡应是浅色高亮卡")
+                for field in ("fg", "muted", "state", "warn"):
+                    if card.get(field):
+                        self.assertGreaterEqual(
+                            contrast(card[field], card["bg"]), 4.5,
+                            f"{theme}/{key}.{field} 对比度不足")
+                if card.get("tag_bg") and card.get("tag_fg"):
                     self.assertGreaterEqual(
-                        contrast(card[field], card["bg"]), 4.5,
-                        f"{key}.{field} 在深色卡片上对比度不足")
-            if card.get("tag_bg") and card.get("tag_fg"):
-                self.assertGreaterEqual(contrast(card["tag_fg"], card["tag_bg"]), 4.5,
-                                        f"{key} 色标文字对比度不足")
-            for prefix in ("state_ok", "state_warn"):
-                bg, fg = card.get(f"{prefix}_bg"), card.get(f"{prefix}_fg")
-                if bg and fg:
-                    self.assertGreaterEqual(contrast(fg, bg), 4.5,
-                                            f"{key}.{prefix} 对比度不足")
+                        contrast(card["tag_fg"], card["tag_bg"]), 4.5,
+                        f"{theme}/{key} 色标文字对比度不足")
+                for prefix in ("state_ok", "state_warn"):
+                    bg, fg = card.get(f"{prefix}_bg"), card.get(f"{prefix}_fg")
+                    if bg and fg:
+                        self.assertGreaterEqual(
+                            contrast(fg, bg), 4.5,
+                            f"{theme}/{key}.{prefix} 对比度不足")
 
-    def test_connect_status_pairs_are_readable_in_both_themes(self):
+    def test_connect_status_pairs_are_readable_in_all_themes(self):
         import winmon
-        for theme in ("light", "dark"):
+        for theme in winmon.THEME_ORDER:
             winmon.apply_theme(theme)
             card = winmon.UI_CARDS["connect"]
             for prefix in ("ok", "warn"):
@@ -100,16 +104,20 @@ class TestCardPalettes(unittest.TestCase):
                     contrast(card[f"{prefix}_fg"], card[f"{prefix}_bg"]), 4.5,
                     f"{theme}/{prefix} 接入状态条对比度不足")
 
-    def test_light_cards_stay_light_and_dark_cards_change(self):
+    def test_switch_theme_changes_cards_but_stays_light(self):
         import winmon
-        winmon.apply_theme("light")
+        winmon.apply_theme("sunlit")
         light = {key: winmon.UI_CARDS[key]["bg"] for key in CARD_KEYS}
-        winmon.apply_theme("dark")
+        winmon.apply_theme("snow")
         for key, old_bg in light.items():
+            if key in ("key", "behavior", "proactive"):
+                # 这三张固定用琥珀/绿/紫语义，不随主题换底色；
+                # 否则状态色会跟主题一起漂移，失去提醒意义。
+                continue
             self.assertNotEqual(winmon.UI_CARDS[key]["bg"], old_bg,
-                                f"{key} 卡在深色主题下没有换底色")
+                                f"{key} 卡在换主题后没有换底色")
             self.assertGreater(luminance(old_bg), 0.7,
-                               f"{key} 卡的浅色版本不应变暗")
+                               f"{key} 卡应是浅色高亮卡")
 
 
 class _Case:
@@ -175,7 +183,7 @@ class TestFastFilter(unittest.TestCase):
 
 
 @h.needs_tk
-class TestDarkConnectWindow(unittest.TestCase):
+class TestThemeConnectWindow(unittest.TestCase):
     class FakeApp:
         dpi_scale = 1.0
         _ai_assist = {"mode": "local", "break_enabled": True,
@@ -210,14 +218,14 @@ class TestDarkConnectWindow(unittest.TestCase):
         self.i18n = i18n
         i18n.set_language("zh")
         self.addCleanup(i18n.set_language, "zh")
-        winmon.apply_theme("dark")
-        self.addCleanup(winmon.apply_theme, "light")
+        winmon.apply_theme("snow")
+        self.addCleanup(winmon.apply_theme, "sunlit")
         self.root = tk.Tk()
         self.root.withdraw()
         self.addCleanup(h.destroy_root, self.root)
         self.app = self.FakeApp()
 
-    def test_all_card_surfaces_use_dark_palette(self):
+    def test_all_card_surfaces_use_current_theme_palette(self):
         win = self.winmon._AiConnectWindow(self.root, self.app)
         self.addCleanup(win.close)
         self.root.update_idletasks()
@@ -227,19 +235,6 @@ class TestDarkConnectWindow(unittest.TestCase):
         self.assertEqual(str(win.mcp_state_label.cget("bg")), cards["mcp"]["bg"])
         self.assertEqual(str(win.config_text.cget("bg")),
                          cards["mcp"]["code_bg"])
-        light_bgs = {self.winmon._THEME_PALETTES["light"]["UI_CARDS"][key]["bg"]
-                     for key in CARD_KEYS}
-        found = []
-        for widget in walk(win.top):
-            if widget.winfo_class() not in ("Frame", "Label", "Text", "Canvas"):
-                continue
-            try:
-                bg = str(widget.cget("bg"))
-            except tk.TclError:
-                continue
-            if bg in light_bgs:
-                found.append((widget.winfo_class(), bg))
-        self.assertEqual(found, [], "深色接入窗口里还残留浅色卡片底")
 
 
 if __name__ == "__main__":

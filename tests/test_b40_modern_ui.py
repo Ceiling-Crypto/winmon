@@ -8,8 +8,7 @@ B40 —— 现代视觉层：无衬线字体、胶囊标签、圆角浮片与目
   · 整个窗口/主要表面有圆角，而不是早期 WinForms / WPF 默认控件；
   · 程序目录名称不能盖到图标上，并且要能左右滑动。
 
-配色先按用户 2026-10-21 的否决恢复白底；实验蓝板仅保留在
-`_THEME_PALETTES_MODERN`，等待下一轮配色决议。
+配色在 2026-10-21 晚改为 9 套设计主题；默认「晴日天绿」。
 """
 from __future__ import annotations
 
@@ -27,27 +26,21 @@ import _helpers as h                     # noqa: E402
 class TestModernPaletteAndType(unittest.TestCase):
     def tearDown(self):
         import winmon
-        winmon.apply_theme("light")
+        winmon.apply_theme("sunlit")
 
-    def test_white_theme_is_default_and_experimental_blue_is_inactive(self):
+    def test_nine_design_themes_and_default(self):
         import winmon
-        winmon.apply_theme("light")
-        self.assertEqual(winmon.UI_BG, "#ffffff",
-                         "用户否决全窗蓝后，默认必须恢复白底")
-        self.assertEqual(winmon.UI_INK, "#0f172a",
-                         "白底要配深色字")
-        self.assertEqual(winmon.UI_ACCENT, "#2563eb")
-        self.assertIs(winmon._THEME_PALETTES,
-                      winmon._THEME_PALETTES_LEGACY,
-                      "默认应指回旧色板，而不是克莱因蓝实验板")
-        modern = winmon._THEME_PALETTES_MODERN
-        self.assertEqual(modern["light"]["UI_BG"], "#04122f",
-                         "实验蓝板应保留，方便以后比较/回滚")
-        self.assertIsNot(modern, winmon._THEME_PALETTES)
-        self.assertEqual(winmon.UI_CARDS["media"]["tag_bg"], "#0f6b5c",
-                         "媒体卡回到旧色板的深青绿")
-        self.assertEqual(winmon.UI_MEDIA_BTN_BG, "#0f6b5c",
-                         "媒体键随旧色板恢复深青绿")
+        winmon.apply_theme("sunlit")
+        self.assertEqual(winmon.THEME_DEFAULT, "sunlit")
+        self.assertEqual(len(winmon.THEME_ORDER), 9)
+        self.assertEqual(winmon.UI_BG, "#FAFDF6")
+        self.assertEqual(winmon.UI_INK, "#1B2A1F")
+        self.assertEqual(winmon.UI_ACCENT, "#2F7F55")
+        self.assertEqual(winmon.UI_CARDS["media"]["tag_bg"],
+                         winmon.UI_ACCENT)
+        self.assertEqual(winmon.UI_MEDIA_BTN_BG, winmon.UI_ACCENT)
+        self.assertFalse(hasattr(winmon, "_THEME_PALETTES_LEGACY"))
+        self.assertFalse(hasattr(winmon, "_THEME_PALETTES_MODERN"))
 
     def test_ui_font_is_a_modern_sans_serif(self):
         import winmon
@@ -57,9 +50,9 @@ class TestModernPaletteAndType(unittest.TestCase):
         self.assertTrue(winmon.resolve_ui_font_family())
         self.assertIn(str(winmon.UI_FONT_SIZE), str(winmon.UI_FONT))
 
-    def test_old_and_new_theme_both_have_readable_cards(self):
+    def test_all_design_themes_have_readable_cards(self):
         import winmon
-        for theme in ("light", "dark"):
+        for theme in winmon.THEME_ORDER:
             winmon.apply_theme(theme)
             for key in ("media", "ai", "mcp", "key", "workspace",
                         "behavior", "proactive"):
@@ -73,7 +66,7 @@ class TestModernWidgets(unittest.TestCase):
         import tkinter as tk
         import winmon
         self.winmon = winmon
-        winmon.apply_theme("light")
+        winmon.apply_theme("sunlit")
         self.root = tk.Tk()
         self.root.geometry("900x560+20+20")
         self.addCleanup(h.destroy_root, self.root)
