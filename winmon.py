@@ -8826,7 +8826,10 @@ class WinMonApp:
             height=max(28, int(round(30 * ui_scale))),
             radius=max(14, int(round(15 * ui_scale))), padx=0,
             font=(UI_FONT_FAMILY, UI_FONT_SIZE + 2))
-        gear.pack(side="right", padx=(6, 0), pady=(1, 0))
+        #: 右侧留出与原生标题栏按钮等宽的空档：齿轮落在最小化按钮左侧，
+        #: 搜索框再位于齿轮左侧；不是简单贴到内容区最右边（那会落到关闭按钮下面）。
+        gear.pack(side="right",
+                  padx=(6, max(24, int(round(112 * ui_scale)))), pady=(1, 0))
         self.settings_button = gear
         self.search_field = SearchField(
             bar, self.search_text,
