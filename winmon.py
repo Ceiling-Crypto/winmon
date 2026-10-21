@@ -10119,6 +10119,8 @@ class WinMonApp:
             self._show_search_results()
             if self.search_text.get().strip() else None))
 
+        # ---- 媒体 + AI 合成一条中性状态带（左右两栏，避免两条全宽横条右侧全空）----
+        self._build_status_band()
         # ---- 视频联动 + 媒体（合成工具栏里的一行；拆成独立方法，免得 _build_ui 过长）----
         self._build_video_bars()
         # ---- AI 状态条（识别到的 AI + 真实/估算用量 + 直连模型状态）----
@@ -10348,6 +10350,37 @@ class WinMonApp:
             except Exception:
                 pass
 
+    def _build_status_band(self) -> None:
+        """
+        媒体 + AI 共用一条中性状态带：左 58% 媒体、右 42% AI，中间 1px 分隔。
+
+        为什么不再上下各铺一条全宽横条：媒体行和 AI 卡都只有左侧一小段内容，
+        右侧整块空白；两条叠在一起既浪费高度，也让搜索/媒体/设置看起来散。
+        并排后两块各自只占需要的宽度，状态带高度由较高的一侧决定。
+        """
+        panel = SoftPanel(self.root, UI_SURFACE, radius=14, shadow=3, pad=4)
+        panel.pack(fill="x", padx=10, pady=(0, 5))
+        self.status_band_panel = panel
+        band = tk.Frame(panel.content, bg=UI_SURFACE)
+        band.pack(fill="both", expand=True)
+        self.status_band = band
+        band.rowconfigure(0, weight=1)
+        band.columnconfigure(0, weight=58, uniform="status")
+        band.columnconfigure(2, weight=42, uniform="status")
+
+        self.media_pane = tk.Frame(band, bg=UI_SURFACE)
+        self.media_pane.grid(row=0, column=0, sticky="nsew",
+                             padx=(8, 10), pady=4)
+        self.media_pane.columnconfigure(0, weight=1)
+
+        self._status_divider = tk.Frame(band, bg=UI_LINE, width=1)
+        self._status_divider.grid(row=0, column=1, sticky="ns", pady=5)
+
+        self.ai_pane = tk.Frame(band, bg=UI_SURFACE)
+        self.ai_pane.grid(row=0, column=2, sticky="nsew",
+                          padx=(10, 8), pady=4)
+        self.ai_pane.columnconfigure(0, weight=1)
+
     def _build_video_bars(self) -> None:
         """
         **视频联动一行 + 媒体独立一行**（用户 2026-10-12 的要求）。
@@ -10369,7 +10402,11 @@ class WinMonApp:
         #: 但主界面完全不占这一行。
         self.video_bar = vbar
         if self.video_link_visible.get():
-            vbar.pack(fill="x")
+            band = getattr(self, "status_band_panel", None)
+            if band is not None:
+                vbar.pack(fill="x", before=band)
+            else:
+                vbar.pack(fill="x")
         ttk.Label(vbar, text="视频联动：", font=BOLD_FONT).pack(side="left")
         # 主按钮：**监视当前窗口** —— 不依赖任何特定 App，也不需要"打开"什么，
         # 直接判断列表里选中的那个窗口是不是在放视频（见 _monitor_current_window）。
@@ -10386,72 +10423,82 @@ class WinMonApp:
                       height=30, radius=15,
                       command=self.action_stop_video).pack(side="left", padx=2)
 
-        # ---- 媒体：播放器 + 媒体键在上，曲名在下；整行回到普通页面 ----
+        # ---- 媒体：媒体键在左、播放器在右；曲名在下 ----
         #
-        # 用户 2026-10-22 第四轮定的顺序：
-        #   [媒体]                  [播放器：自动 ▾] [|◀] [▶] [▶|]
-        #   曲名 · 状态
-        # 这样曲名可以占满整行，播放器/按键不再和标题抢宽度；三枚媒体键
-        # 改成裸按钮（无边框、无描边），只在 hover/pressed 时浮出一层薄底。
+        # 用户 2026-10-22 第五轮定的顺序：
+        #   [媒体]  [|◀] [▶] [▶|]            [播放器：自动 ▾]
+        #           曲名 · 状态
+        # 媒体键是主操作，所以放在左边、紧挨媒体标签；播放器选择是配置项，
+        # 留在右端。三枚媒体键仍是裸按钮（无边框/阴影）。
         media = UI_CARDS["media"]
         self.media_glow = None
-        self.media_bar = tk.Frame(self.root, bg=UI_BG, padx=10, pady=2)
-        self.media_bar.pack(fill="x", pady=(0, 4))
-        mbar = tk.Frame(self.media_bar, bg=UI_BG, padx=2, pady=1)
+        media_parent = getattr(self, "media_pane", None)
+        if media_parent is None:
+            # 兼容直接调用 `_build_video_bars()` 的测试/脚本。
+            media_parent = tk.Frame(self.root, bg=UI_SURFACE)
+            media_parent.pack(fill="x")
+        self.media_bar = tk.Frame(media_parent, bg=UI_SURFACE)
+        self.media_bar.pack(fill="both", expand=True)
+        mbar = tk.Frame(self.media_bar, bg=UI_SURFACE, padx=1, pady=1)
         mbar.pack(fill="x")
         mbar.columnconfigure(1, weight=1)
         RoundedBadge(mbar, text="媒体", fill=media["tag_bg"],
-                     fg=media["tag_fg"], bg=UI_BG,
+                     fg=media["tag_fg"], bg=UI_SURFACE,
                      font=SMALL_BOLD_FONT, padx=8, height=18).grid(
             row=0, column=0, rowspan=2, sticky="nw", padx=(0, 7), pady=(1, 0))
 
-        content = tk.Frame(mbar, bg=UI_BG)
+        content = tk.Frame(mbar, bg=UI_SURFACE)
         content.grid(row=0, column=1, rowspan=2, sticky="ew")
-        controls = tk.Frame(content, bg=UI_BG)
+        controls = tk.Frame(content, bg=UI_SURFACE)
         controls.pack(fill="x")
         self._media_controls = controls
-        cluster = tk.Frame(controls, bg=UI_BG)
-        cluster.pack(side="right")
-        tk.Label(cluster, text="播放器：", font=SMALL_FONT,
-                 bg=UI_BG, fg=UI_MUTED).pack(side="left", padx=(0, 2))
-        self.media_app_combo = ttk.Combobox(
-            cluster, textvariable=self.media_app_pin, state="readonly",
-            width=self._media_combo_width(), font=UI_FONT,
-            values=[MEDIA_APP_ANY])
-        self.media_app_combo.pack(side="left", padx=(0, 10))
+
+        #: 媒体键和播放器紧挨在左边，不再一头一尾拉满整栏。
+        cluster = tk.Frame(controls, bg=UI_SURFACE)
+        cluster.pack(side="left")
 
         #: 媒体键：上一首、播放/暂停、下一首（网易云/抖音顺序）。
-        #: 裸按钮：静止时与页面同色，没有常驻边框/阴影；图标仍是 Canvas 矢量。
-        keys = tk.Frame(cluster, bg=UI_BG)
+        #: 裸按钮：静止时与卡片同色，没有常驻边框/阴影；图标仍是 Canvas 矢量。
+        keys = tk.Frame(cluster, bg=UI_SURFACE)
         keys.pack(side="left")
         key_font = (UI_FONT_FAMILY, UI_FONT_SIZE + 2)
         media_scale = max(float(getattr(self, "dpi_scale", 1.0) or 1.0),
                           UI_FONT_SIZE / 9.0)
         key_size = max(30, int(round(30 * media_scale)))
         self.media_prev_btn = RoundedButton(
-            keys, text="⏮", icon="media_prev", kind="ghost", bg=UI_BG,
-            width=key_size, height=key_size, radius=key_size // 2,
-            padx=0, bare=True, font=key_font,
+            keys, text="⏮", icon="media_prev", kind="ghost",
+            bg=UI_SURFACE, width=key_size, height=key_size,
+            radius=key_size // 2, padx=0, bare=True, font=key_font,
             tip=i18n.pick("上一首", "Previous"),
             command=lambda: self.media_prev_next("previous"))
         self.media_play_btn = RoundedButton(
-            keys, text="▶", icon="media_play", kind="ghost", bg=UI_BG,
-            width=key_size, height=key_size, radius=key_size // 2,
-            padx=0, bare=True, font=key_font,
+            keys, text="▶", icon="media_play", kind="ghost",
+            bg=UI_SURFACE, width=key_size, height=key_size,
+            radius=key_size // 2, padx=0, bare=True, font=key_font,
             tip=lambda: (i18n.pick("暂停", "Pause") if self._media_playing
                          else i18n.pick("播放", "Play")),
             command=self.media_toggle_play)
         self.media_next_btn = RoundedButton(
-            keys, text="⏭", icon="media_next", kind="ghost", bg=UI_BG,
-            width=key_size, height=key_size, radius=key_size // 2,
-            padx=0, bare=True, font=key_font,
+            keys, text="⏭", icon="media_next", kind="ghost",
+            bg=UI_SURFACE, width=key_size, height=key_size,
+            radius=key_size // 2, padx=0, bare=True, font=key_font,
             tip=i18n.pick("下一首", "Next"),
             command=lambda: self.media_prev_next("next"))
         self.media_prev_btn.pack(side="left", padx=(0, 2))
         self.media_play_btn.pack(side="left", padx=2)
         self.media_next_btn.pack(side="left", padx=(2, 0))
 
-        title_row = tk.Frame(content, bg=UI_BG)
+        player_group = tk.Frame(cluster, bg=UI_SURFACE)
+        player_group.pack(side="left", padx=(14, 0))
+        tk.Label(player_group, text="播放器：", font=SMALL_FONT,
+                 bg=UI_SURFACE, fg=UI_MUTED).pack(side="left", padx=(0, 2))
+        self.media_app_combo = ttk.Combobox(
+            player_group, textvariable=self.media_app_pin, state="readonly",
+            width=self._media_combo_width(), font=UI_FONT,
+            values=[MEDIA_APP_ANY])
+        self.media_app_combo.pack(side="left")
+
+        title_row = tk.Frame(content, bg=UI_SURFACE)
         title_row.pack(fill="x", pady=(2, 0))
         #: 当前在放什么（曲名 · 歌手 · 状态）。**没有进度**。
         self.media_text = tk.StringVar(value="（没有程序播放媒体）")
@@ -10459,7 +10506,7 @@ class WinMonApp:
         self.media_label = tk.Label(
             title_row, textvariable=self.media_text,
             font=(UI_FONT_FAMILY, UI_FONT_SIZE, "bold"), anchor="w",
-            fg=UI_INK, bg=UI_BG)
+            fg=UI_INK, bg=UI_SURFACE)
         self.media_label.pack(side="left", fill="x", expand=True)
         # 点下拉框 = 出**多选**面板（tkinter 的 Combobox 只能单选，见
         # `_edit_media_app_multi`）。这里必须由实例绑定返回 "break"：
@@ -10474,15 +10521,14 @@ class WinMonApp:
     def _apply_video_visibility(self) -> None:
         """按设置开关显示/收起主界面的视频联动行（不动媒体行）。"""
         bar = getattr(self, "video_bar", None)
-        media = getattr(self, "media_bar", None) or getattr(
-            self, "media_glow", None)
+        band = getattr(self, "status_band_panel", None)
         if bar is None:
             return
         try:
             if self.video_link_visible.get():
                 if not bar.winfo_manager():
-                    if media is not None:
-                        bar.pack(fill="x", before=media)
+                    if band is not None:
+                        bar.pack(fill="x", before=band)
                     else:
                         bar.pack(fill="x")
             else:
@@ -10506,9 +10552,12 @@ class WinMonApp:
         """
         card = UI_CARDS["ai"]
         bg = card["bg"]
-        panel = SoftPanel(self.root, bg, radius=18, shadow=4, pad=4)
-        panel.pack(fill="x", padx=10, pady=(0, 5))
-        bar = tk.Frame(panel.content, bg=bg, padx=10, pady=4)
+        ai_parent = getattr(self, "ai_pane", None)
+        if ai_parent is None:
+            # 兼容直接调用 `_build_ai_bar()` 的脚本/测试。
+            ai_parent = tk.Frame(self.root, bg=bg)
+            ai_parent.pack(fill="x", padx=10, pady=(0, 5))
+        bar = tk.Frame(ai_parent, bg=bg, padx=1, pady=1)
         bar.pack(fill="both", expand=True)
         bar.columnconfigure(1, weight=1)
         RoundedBadge(bar, text="AI", fill=card["tag_bg"], fg=card["tag_fg"],

@@ -56,15 +56,20 @@ class TestRound2MainUi(unittest.TestCase):
         self.assertEqual(self.app.notebook.tab(0, "text"), "实时预览")
 
     def test_media_controls_above_a_full_width_title(self):
-        self.assertEqual(str(self.app.media_bar.cget("bg")), self.winmon.UI_BG)
+        self.assertEqual(str(self.app.media_bar.cget("bg")),
+                         self.winmon.UI_SURFACE)
         self.assertEqual(self.app.media_text.get(), "（没有程序播放媒体）")
-        #: 第四轮：播放器/媒体键在上，曲名在下；曲名独占整行。
+        #: 第五轮：媒体键在左、播放器在右，两者都在曲名上方。
         self.assertLess(self.app.media_app_combo.winfo_rooty(),
                         self.app.media_label.winfo_rooty(),
                         "播放器选择应在曲名上方")
         keys = self.app.media_play_btn.master
-        self.assertIs(keys.master, self.app.media_app_combo.master,
+        self.assertIs(keys.master,
+                      self.app.media_app_combo.master.master,
                       "媒体键与播放器应在同一排")
+        self.assertLess(keys.winfo_rootx(),
+                        self.app.media_app_combo.winfo_rootx(),
+                        "媒体键应在播放器左边")
         self.assertLess(self.app.media_play_btn.winfo_rooty(),
                         self.app.media_label.winfo_rooty(),
                         "媒体键应在曲名上方")

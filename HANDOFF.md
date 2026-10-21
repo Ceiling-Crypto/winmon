@@ -3,7 +3,7 @@
 > 用途：在新的对话里快速恢复上下文。读这一份即可继续开发。
 > **正式发布名 `winmon1.0`**（`APP_VER = "1.0"`，查版本：`py winmon.py --version`）。
 > **先读 §一点五「WinMon 的定位与能力边界」** —— 输入注入已明确不再投入。
-> 代码状态：**1035 个测试用例全绿**（约 108–120 秒；`--fast` 978 条约 48–52 秒；
+> 代码状态：**1036 个测试用例全绿**（约 110–120 秒；`--fast` 979 条约 51–56 秒；
 > 跳过数按当前桌面/媒体环境在 3–7 之间变化）+
 > 代码复检 0 新增问题（基线为空）、
 > 自检 8/8、界面冒烟通过、
@@ -22,10 +22,10 @@
 
 | | |
 | --- | --- |
-| 测试 | **1035 用例全绿**（`py tests\run_tests.py`，约 108–120 秒；跳过数按环境 3–7）；`--fast` 978 条约 48–52 秒 |
+| 测试 | **1036 用例全绿**（`py tests\run_tests.py`，约 110–120 秒；跳过数按环境 3–7）；`--fast` 979 条约 51–56 秒 |
 | 代码复检 | `py tests\lint_check.py` → **新增问题 0**（基线已清空，见 §四） |
 | 自检 / 冒烟 | `py winmon.py --selftest` 8/8 通过；`--smoke` 通过 |
-| 规模 | `winmon_core.py` ~6900 行 / `winmon.py` ~16580 行 / 测试 57 个 .py（43 个测试模块） |
+| 规模 | `winmon_core.py` ~6900 行 / `winmon.py` ~16640 行 / 测试 57 个 .py（43 个测试模块） |
 | 运行方式 | `py winmon.py`（GUI）或双击「winmon1.0」快捷方式；**单实例**：第二个实例会把已有窗口带到前台后自己退出 |
 | 窗口尺寸 | 设计稿 **1160×730**，开窗时**按 DPI 缩放**（本机 150% → 1740×1095；见 §9.15 第 14 条） |
 | 数据文件 | `winmon_settings.json`（界面偏好/收藏）、`winmon_history.log`（操作留痕）、`winmon_catalog.json`（程序目录缓存）、`winmon_media.jsonl`（媒体快照缓存，可删） |
@@ -102,12 +102,12 @@
 | 文件 | 行数级 | 作用 |
 | --- | --- | --- |
 | `winmon_core.py` | ~6750 | **核心层**：Win32 采集/捕获/终止/图标/程序目录/媒体会话/视频来源与视频操作/可清理文件。不依赖 tkinter，可当库用 |
-| `winmon.py` | ~16580 | GUI（6 个标签页 + 设置三合一）+ 命令行入口 |
+| `winmon.py` | ~16640 | GUI（6 个标签页 + 设置三合一）+ 命令行入口 |
 | `winmon_ai.py` | ~2800 | **AI 工作伴侣**：识别 / 本地事件 / 剧本 / 用量账本与预算 / token 估算 / 人设库。不依赖 tkinter |
 | `winmon_mcp.py` | ~800 | **MCP 服务器**：双时代 stdio + 本地 HTTP + 四个只读工具 |
 | `winmon_ai_provider.py` | ~250 | **可选**直连模型 API（默认关；精确 usage；key 只从环境变量读） |
 | `media_session.ps1` | ~230 | 系统媒体会话（GSMTC）桥接脚本（PowerShell + Windows 自带 WinRT 投影；**必须纯 ASCII 无 BOM**） |
-| `tests/` | 57 个 .py | **可重复运行的测试**（1035 用例，纯 unittest） + `_marks.py` 慢用例标记 + 开发辅助工具 + `lint_check.py` / `lint_baseline.txt` |
+| `tests/` | 57 个 .py | **可重复运行的测试**（1036 用例，纯 unittest） + `_marks.py` 慢用例标记 + 开发辅助工具 + `lint_check.py` / `lint_baseline.txt` |
 | `启动WinMon.bat` | — | 菜单式启动器（纯 ASCII，避免批处理编码问题） |
 | `scan_windows.py` | — | 命令行窗口清单 |
 | `close_others.py` | — | 批量关闭除当前窗口外的窗口 |
@@ -160,8 +160,8 @@ python winmon.py --videos --open 3 --watch --close-window   :: 完整视频链�
 python winmon.py --version          :: 打印版本（winmon1.0）
 python winmon.py --idle             :: 列出"长期开着、没人用"的程序（只看，不关任何东西）
 python winmon.py --idle --idle-minutes 5   :: 换个闲置阈值（分钟）
-py tests\run_tests.py               :: 全部测试（1035 用例，约 108 秒）
-py tests\run_tests.py --fast        :: 快跑（978 用例，约 48 秒；跳过真窗口/抓屏慢用例）
+py tests\run_tests.py               :: 全部测试（1036 用例，约 110 秒）
+py tests\run_tests.py --fast        :: 快跑（979 用例，约 51 秒；跳过真窗口/抓屏慢用例）
 ```
 
 ---
@@ -3280,6 +3280,43 @@ AI 深蓝卡可见；深色接入窗展开后目视无浅色卡残留。
   `--smoke` 退出 0，白底截图已目视确认。
 - 跳过数会随桌面是否有 Edge / 媒体会话变化。
 
+### 9.35 阶段 8.25：媒体/AI 并排状态带、媒体键换位（2026-10-22）
+
+用户在 8.24 截图上圈了两块空白（AI 卡右侧、预览头部），并手写了一行大字
+“AI”在媒体行与 AI 卡之间。判断不是要再加装饰，而是**两条全宽横条都只用了
+左半边**。确认后把媒体/AI 合成一条状态带，并把媒体键和播放器互换。
+
+1. **状态带结构**：`_build_status_band()` 建一张 `SoftPanel(UI_SURFACE,
+   radius=14, shadow=3)`，里面 `band` 用 grid 分三列：媒体 pane 权重 58、
+   1px 分隔线、AI pane 权重 42（两个权重列 `uniform="status"`）。媒体和 AI
+   的控件改为 pack 进各自 pane；两 pane 同处 `row=0, sticky="nsew"`，高度
+   由较高一侧决定。原来的 `_build_ai_bar()` 不再自己建卡/包边，避免双层卡。
+2. **媒体键换位**：左栏第一行是一个左对齐的 `cluster`：`keys` 在左，
+   `player_group`（播放器 label + Combobox）紧随其后、间隔 14px。
+   视觉顺序为 `[媒体] [|◀][▶][▶|]  播放器：[自动▾]`，曲名仍在下一行。
+   没有把二者一个放最左、一个放最右——那会在中间留下比原来更大的空白。
+   媒体键仍 `bare=True`，30px（按 DPI/字号缩放），tooltip 不变。
+3. **视频联动行**：仍然只在设置打开时出现。因为它和状态带是 root 下的
+   兄弟控件，`_build_video_bars()` 和 `_apply_video_visibility()` 都用
+   `before=self.status_band_panel`，不能再用旧的 `before=self.media_bar`
+   （media_bar 现在在 pane 里，不是 root 的子控件，会 TclError）。
+4. **兼容**：`_build_video_bars()` 被 `test_b4` 直接调用时没有 `media_pane`，
+   回退创建一个临时父 Frame；`_build_ai_bar()` 也保留同样 fallback。
+5. **测试/截图**：`test_b43` 新增“media_pane / ai_pane 同属 status_band、
+   左右顺序、分隔线、等高”；`test_b42`/`b43` 改媒体键在播放器左侧；
+   `b33`/`b34`/`b35` 的媒体底色改 `UI_SURFACE`。新截图
+   `docs/ui-8.25-{main,dark-main,main-1080-font12,ai-workspace}.png`。
+   设置页/AI 用量页未改，继续使用 8.24 的截图。
+
+#### 一、测试与验收（8.25）
+
+- 全量 **1036 用例**，失败 0 / 错误 0，跳过 7，**110.210 秒**；
+  `--fast` **979 条**，失败 0 / 错误 0，跳过 6，**51.418 秒**；
+  `lint_check` 新增 0；`--selftest` 8/8；`--mcp-selftest` 13/13；
+  `--smoke` 退出 0。
+- 1160×730 与 1080×660 / 12 号字都已目视：媒体键在左、播放器在右，
+  AI 状态在右栏，两栏高度一致，预览比 8.24 上移约 25–35px。
+
 ### 9.34 阶段 8.24：顶部概览、中性卡、媒体重排、Edge 蓝开关（2026-10-22）
 
 用户先否掉了“孤立的设置和搜索”，又明确：做方案 A、删彩色高亮卡、保留
@@ -4142,7 +4179,7 @@ README 的界面颜色一节也加了同样说明。
 ## 四、测试体系（**改代码后先跑这个**）
 
 ```bat
-py tests\run_tests.py            :: 1035 用例，约 108 秒（--fast 978 条约 48 秒）
+py tests\run_tests.py            :: 1036 用例，约 110 秒（--fast 979 条约 51 秒）
 py tests\run_tests.py -v         :: 逐个看
 py tests\run_tests.py -k capture :: 只跑关心的
 py tests\lint_check.py           :: 代码复检（退出码 1 = 有新增问题）
@@ -4826,8 +4863,8 @@ C 盘那份**保持原样、一字未改**（用户 2026-10-11 确认：暂不�
 
 > 继续开发 **winmon1.0** —— Windows 程序监控与终止工具，纯标准库，在 `项目根目录\`。
 > 请先读 `HANDOFF.md` 和 `README.md`，然后跑 `py tests\run_tests.py`
-> 确认基线是 **1035 用例全绿**（需要哔哩哔哩/UIA 页面的用例会按需 skip；
-> 日常改动用 `--fast` 跑 978 条，提交前跑全量）、
+> 确认基线是 **1036 用例全绿**（需要哔哩哔哩/UIA 页面的用例会按需 skip；
+> 日常改动用 `--fast` 跑 979 条，提交前跑全量）、
 > `py tests\lint_check.py` 退出码 0（无新增问题）。
 > **版式要另眼验收**：测试进程没有开 DPI 感知，布局检查看不到"真实 DPI 下控件被挤没"，
 > 所以改动界面后还要跑一次 `py winmon.py --smoke` 看截图（见 §9.15 第 14 条）。

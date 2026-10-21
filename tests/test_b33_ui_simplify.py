@@ -141,10 +141,10 @@ class TestMainUiHierarchy(unittest.TestCase):
     def test_ai_and_media_are_visually_emphasized(self):
         self.assertIn("bold", str(self.app.ai_identity_label.cget("font")))
         self.assertIn("bold", str(self.app.media_label.cget("font")))
-        #: 2026-10-22 第四轮：整块彩色高亮卡已删；AI 卡也回到中性 surface，
-        #: 只靠粗体身份行 + 小状态色条建立层级。媒体行仍是普通页面行。
+        #: 2026-10-22 第五轮：媒体与 AI 并排在同一条中性状态带里，
+        #: 只靠粗体身份行 + 小状态色条建立层级。
         self.assertEqual(str(self.app.media_label.cget("bg")),
-                         str(self.root.cget("background")))
+                         self.winmon.UI_SURFACE)
         self.assertEqual(str(self.app.ai_identity_label.cget("bg")),
                          self.winmon.UI_SURFACE)
         self.assertNotEqual(str(self.app.ai_state_label.cget("bg")),

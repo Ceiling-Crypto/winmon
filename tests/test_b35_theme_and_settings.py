@@ -279,12 +279,12 @@ class TestThemeMainWindow(unittest.TestCase):
         h.destroy_root(cls.root)
         cls.winmon.apply_theme("sunlit")
 
-    def test_page_and_media_card_stay_distinct(self):
+    def test_page_and_status_band_stay_distinct(self):
         self.assertEqual(str(self.root.cget("background")), "#FAFDF6")
         ai = self.winmon.UI_CARDS["ai"]
-        #: 媒体栏已改成普通页面行（不是高亮卡），AI 卡仍有独立底色。
+        #: 媒体和 AI 共用一条中性状态带，底色是 surface，不是页面。
         self.assertEqual(str(self.app.media_label.cget("bg")),
-                         str(self.root.cget("background")))
+                         self.winmon.UI_SURFACE)
         self.assertEqual(str(self.app.ai_identity_label.cget("bg")), ai["bg"])
         self.assertEqual(str(self.app.ai_state_label.cget("bg")),
                          ai["state_warn_bg"])

@@ -200,8 +200,12 @@ class TestRound3MainPlacement(unittest.TestCase):
 
     def test_media_controls_above_full_width_title(self):
         keys = self.app.media_play_btn.master
-        self.assertIs(keys.master, self.app.media_app_combo.master,
+        self.assertIs(keys.master,
+                      self.app.media_app_combo.master.master,
                       "媒体键与播放器应在同一排")
+        self.assertLess(keys.winfo_rootx(),
+                        self.app.media_app_combo.winfo_rootx(),
+                        "媒体键应在播放器左边")
         self.assertLess(self.app.media_app_combo.winfo_rooty(),
                         self.app.media_label.winfo_rooty(),
                         "播放器应在曲名上方")
@@ -216,6 +220,18 @@ class TestRound3MainPlacement(unittest.TestCase):
             self.assertTrue(button._bare)
             self.assertTrue([i for i in button.find_all()
                              if "jelly-icon" in button.gettags(i)])
+
+    def test_media_and_ai_share_one_two_column_status_band(self):
+        self.assertTrue(self.app.status_band.winfo_exists())
+        self.assertIs(self.app.media_pane.master, self.app.status_band)
+        self.assertIs(self.app.ai_pane.master, self.app.status_band)
+        self.assertLess(self.app.media_pane.winfo_rootx(),
+                        self.app.ai_pane.winfo_rootx(),
+                        "媒体在左、AI 在右")
+        self.assertEqual(self.app._status_divider.winfo_manager(), "grid")
+        # 两栏高度由同一条 band 的行拉伸，不应该再是上下两条整宽横条。
+        self.assertLess(abs(self.app.media_pane.winfo_height()
+                            - self.app.ai_pane.winfo_height()), 3)
 
     def test_icon_only_controls_have_tooltips(self):
         for button in (self.app.settings_button, self.app.media_prev_btn,

@@ -182,11 +182,11 @@ class TestLightThemeAndPreviewFirst(unittest.TestCase):
         self.assertNotEqual(self.winmon.UI_INK, "#FAFDF6",
                             "浅色页面必须配深色字，否则什么都看不见")
         self.assertEqual(str(self.app.media_label.cget("bg")),
-                         str(self.root.cget("background")),
-                         "2026-10-22 起媒体栏是普通页面行，不再是高亮卡片")
+                         self.winmon.UI_SURFACE,
+                         "2026-10-22 起媒体与 AI 共用中性状态带")
         self.assertNotEqual(str(self.app.ai_state_label.cget("bg")),
                             str(self.root.cget("background")),
-                            "AI 高亮卡片不能被页面吃掉")
+                            "AI 状态小色条不能被页面吃掉")
         from tkinter import ttk
         style = ttk.Style(self.root)
         button_bg = str(style.lookup("TButton", "background"))
