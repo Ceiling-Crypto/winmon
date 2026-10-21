@@ -1161,6 +1161,25 @@ AI 工作区 →「打开助手…」打开窗口（或 `--ai-assist`）。**助
 
 ![WinMon 三套配色方向](docs/palette-directions.png)
 
+### 塞壬唱片专辑取色（待决议，尚未写入程序）
+
+从塞壬唱片[最新专辑列表](https://monster-siren.hypergryph.com/api/albums)的
+封面里各取 3–5 个主色，再压成白底可用的界面色板。**不是官方设计规范**，
+只是从封面配色推导出的候选：
+
+| 方案 | 参考专辑 | 页面 | 信号色 | 第二色 |
+| --- | --- | --- | --- | --- |
+| 钴蓝 / 电青 | [月行水上](https://monster-siren.hypergryph.com/music/7760) | `#F3F8FE` | `#064ED0` | `#24CBFD` |
+| 盐雾青 | [大地之盐](https://monster-siren.hypergryph.com/music/0227) | `#F4F7F6` | `#1E6F8B` | `#A0B8C3` |
+| 天青 / 酸橙 | [酸橙色信笺](https://monster-siren.hypergryph.com/music/5197) | `#F7FAF3` | `#A8C400`（深字） | `#3080E0` |
+| 琥珀 / 漆红 | [月明人间](https://monster-siren.hypergryph.com/music/1014) | `#FBF5EA` | `#B54E12` | `#E97F25` |
+| 霓虹粉 / 青 | [逐影集趣](https://monster-siren.hypergryph.com/music/0232) | `#FFF6FA` | `#C9256A` | `#2BB8C9` |
+| 可可 / 陶土 | [女士的游戏](https://monster-siren.hypergryph.com/music/4506) | `#F8F2EC` | `#A3533C` | `#CB6649` |
+| 水泥 / 酸绿 | [奇象巡展](https://monster-siren.hypergryph.com/music/9371) | `#F1F2EF` | `#B7D400`（深字） | `#7C7A77` |
+| 石墨 / 信号红 | [All by My Design](https://monster-siren.hypergryph.com/music/0234) | `#F2F4F6` | `#B3261E` | `#7487A0` |
+
+![塞壬唱片专辑取色方案](docs/siren-palette-options.png)
+
 ### 字体与圆角
 
 正文使用现代无衬线字体，按本机可用性依次尝试
