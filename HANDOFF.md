@@ -3,7 +3,7 @@
 > 用途：在新的对话里快速恢复上下文。读这一份即可继续开发。
 > **正式发布名 `winmon1.0`**（`APP_VER = "1.0"`，查版本：`py winmon.py --version`）。
 > **先读 §一点五「WinMon 的定位与能力边界」** —— 输入注入已明确不再投入。
-> 代码状态：**1032 个测试用例全绿**（约 110–120 秒；`--fast` 975 条约 45–52 秒；
+> 代码状态：**1035 个测试用例全绿**（约 108–120 秒；`--fast` 978 条约 48–52 秒；
 > 跳过数按当前桌面/媒体环境在 3–7 之间变化）+
 > 代码复检 0 新增问题（基线为空）、
 > 自检 8/8、界面冒烟通过、
@@ -22,10 +22,10 @@
 
 | | |
 | --- | --- |
-| 测试 | **1032 用例全绿**（`py tests\run_tests.py`，约 110–120 秒；跳过数按环境 3–7）；`--fast` 975 条约 45–52 秒 |
+| 测试 | **1035 用例全绿**（`py tests\run_tests.py`，约 108–120 秒；跳过数按环境 3–7）；`--fast` 978 条约 48–52 秒 |
 | 代码复检 | `py tests\lint_check.py` → **新增问题 0**（基线已清空，见 §四） |
 | 自检 / 冒烟 | `py winmon.py --selftest` 8/8 通过；`--smoke` 通过 |
-| 规模 | `winmon_core.py` ~6900 行 / `winmon.py` ~16040 行 / 测试 57 个 .py（43 个测试模块） |
+| 规模 | `winmon_core.py` ~6900 行 / `winmon.py` ~16580 行 / 测试 57 个 .py（43 个测试模块） |
 | 运行方式 | `py winmon.py`（GUI）或双击「winmon1.0」快捷方式；**单实例**：第二个实例会把已有窗口带到前台后自己退出 |
 | 窗口尺寸 | 设计稿 **1160×730**，开窗时**按 DPI 缩放**（本机 150% → 1740×1095；见 §9.15 第 14 条） |
 | 数据文件 | `winmon_settings.json`（界面偏好/收藏）、`winmon_history.log`（操作留痕）、`winmon_catalog.json`（程序目录缓存）、`winmon_media.jsonl`（媒体快照缓存，可删） |
@@ -102,12 +102,12 @@
 | 文件 | 行数级 | 作用 |
 | --- | --- | --- |
 | `winmon_core.py` | ~6750 | **核心层**：Win32 采集/捕获/终止/图标/程序目录/媒体会话/视频来源与视频操作/可清理文件。不依赖 tkinter，可当库用 |
-| `winmon.py` | ~11800 | GUI（6 个标签页 + 设置三合一）+ 命令行入口 |
+| `winmon.py` | ~16580 | GUI（6 个标签页 + 设置三合一）+ 命令行入口 |
 | `winmon_ai.py` | ~2800 | **AI 工作伴侣**：识别 / 本地事件 / 剧本 / 用量账本与预算 / token 估算 / 人设库。不依赖 tkinter |
 | `winmon_mcp.py` | ~800 | **MCP 服务器**：双时代 stdio + 本地 HTTP + 四个只读工具 |
 | `winmon_ai_provider.py` | ~250 | **可选**直连模型 API（默认关；精确 usage；key 只从环境变量读） |
 | `media_session.ps1` | ~230 | 系统媒体会话（GSMTC）桥接脚本（PowerShell + Windows 自带 WinRT 投影；**必须纯 ASCII 无 BOM**） |
-| `tests/` | 57 个 .py | **可重复运行的测试**（1032 用例，纯 unittest） + `_marks.py` 慢用例标记 + 开发辅助工具 + `lint_check.py` / `lint_baseline.txt` |
+| `tests/` | 57 个 .py | **可重复运行的测试**（1035 用例，纯 unittest） + `_marks.py` 慢用例标记 + 开发辅助工具 + `lint_check.py` / `lint_baseline.txt` |
 | `启动WinMon.bat` | — | 菜单式启动器（纯 ASCII，避免批处理编码问题） |
 | `scan_windows.py` | — | 命令行窗口清单 |
 | `close_others.py` | — | 批量关闭除当前窗口外的窗口 |
@@ -160,8 +160,8 @@ python winmon.py --videos --open 3 --watch --close-window   :: 完整视频链�
 python winmon.py --version          :: 打印版本（winmon1.0）
 python winmon.py --idle             :: 列出"长期开着、没人用"的程序（只看，不关任何东西）
 python winmon.py --idle --idle-minutes 5   :: 换个闲置阈值（分钟）
-py tests\run_tests.py               :: 全部测试（1032 用例，约 106 秒）
-py tests\run_tests.py --fast        :: 快跑（957 用例，约 48 秒；跳过真窗口/抓屏慢用例）
+py tests\run_tests.py               :: 全部测试（1035 用例，约 108 秒）
+py tests\run_tests.py --fast        :: 快跑（978 用例，约 48 秒；跳过真窗口/抓屏慢用例）
 ```
 
 ---
@@ -3280,6 +3280,61 @@ AI 深蓝卡可见；深色接入窗展开后目视无浅色卡残留。
   `--smoke` 退出 0，白底截图已目视确认。
 - 跳过数会随桌面是否有 Edge / 媒体会话变化。
 
+### 9.34 阶段 8.24：顶部概览、中性卡、媒体重排、Edge 蓝开关（2026-10-22）
+
+用户先否掉了“孤立的设置和搜索”，又明确：做方案 A、删彩色高亮卡、保留
+中性卡；其余按上一轮讨论的媒体/开关/tooltip 一起落。**没有做自绘标题栏**。
+
+1. **顶部工具栏（方案 A）**：保留原生 caption；把原来底栏右侧的
+   `窗口/程序/进程/总览/上屏` 概览搬到顶栏左侧，搜索框和齿轮仍按原坐标
+   贴右（`bar` 里先 pack 左侧概览，再 pack 右齿轮/搜索）。底栏只留
+   `status_text`，不再放 `overview_text`。这样解决“右侧两个控件孤零零”，
+   又没有去碰 `WM_NCCALCSIZE` 的拖动/缩放/贴边/任务栏风险。
+2. **彩色高亮卡全删**：`_build_palette()` 不再给 media/ai/mcp/key/
+   workspace/behavior/proactive 混栏目色，`UI_CARDS[*]["bg"] = UI_SURFACE`、
+   `border = UI_LINE`；栏目色只保留在 `tag_bg`、`state_*`、`accent`、
+   `warn` 这些小面积语义槽里。接入窗口的 `status_frame` 也从整块
+   `warn_bg/ok_bg` 改成中性卡 + 语义色文字。设置页的中性 `SoftPanel`
+   分组卡保留。注意：`UI_CARDS` 的键和字段不能删，很多调用/测试依赖；
+   这轮只换值。
+3. **媒体行**：从“标题 + 三键一行、播放器下一行”改成
+   `[媒体] 播放器+三键 / 曲名`。`content` 里先 pack `controls`
+   （`cluster` 右对齐：播放器 label → Combobox → keys），再 pack
+   `title_row`。媒体键 30×30、`bare=True`、`ring=False`，静止时填充色
+   等于页面，hover 7% 墨色/白色，pressed 12–14%；`RoundedButton._draw`
+   对 bare 跳过投影、rim、ring、高光/暗唇和果冻形变。
+4. **暂停刷新 / 移除总览**：同样 `bare=True`、去掉 `ring`，不再常驻
+   描边；有文字的按钮不加 tooltip。
+5. **开关**：`ToggleSwitch` 46×26，轨道 20px、滑块 16px；
+   `on` 固定 `SWITCH_ON_LIGHT=#2F6FCC` / 深色 `#4C8DFF`，off 灰
+   `#C7C7C7` / `#5F6368`；`variant` 仍保留但不再影响颜色。
+   120ms `1-(1-p)^3` 缓出，`_pos` 从当前位置插值；只在 FocusIn 画
+   细焦点环。`_install_check_indicators()` 的普通勾选圆点也改蓝，
+   `_winmon_check_images_startup` 保留旧属性名但指向同一组蓝图。
+6. **tooltip**：新增 `_HoverTip`（与列表 `_RowTip` 分开）：500ms、
+   `overrideredirect + topmost`、不 grab/focus、复用 Toplevel；文本可为
+   callable。`RoundedButton` 新增 `bare` 和 `tip` 参数、`set_tip()`；
+   只给齿轮、上一首/播放暂停/下一首、两处剪贴板 key 按钮挂。
+   播放按钮的 tip 是 `lambda: "暂停" if _media_playing else "播放"`，
+   `_sync_media_play_button()` 不用额外更新文字。
+7. **标签/文档**：`test_b43` 增加顶部概览、蓝色大开关滑动、tooltip；
+   `test_b37` 改中性卡断言，`test_b42`/`test_b35`/`test_b38`/`test_b33`
+   改裸媒体键/新布局；新截图 `docs/ui-8.24-{main,settings,dark-main,
+   dark-settings,main-1080-font12,ai-workspace}.png`。
+8. **遗留**：主窗口原生深色 caption 在部分 Windows 主题/远程会话下仍可能
+   显示白底（设置 Toplevel 正常）；这轮没有为它动 DWM/自绘窗口。若以后
+   必须统一，先单独查 `DwmSetWindowAttribute` 返回值与窗口激活状态，
+   不要顺手改成 `overrideredirect`。
+
+#### 一、测试与验收（8.24）
+
+- 全量 **1035 用例**，失败 0 / 错误 0，跳过 7，**111.057 秒**；
+  `--fast` **978 条**，失败 0 / 错误 0，跳过 6，**51.952 秒**；
+  `lint_check` 新增 0；`--selftest` 8/8；`--mcp-selftest` 13/13；
+  `--smoke` 退出 0。
+- 1080×660 / 12 号字截图已目视：顶栏概览、搜索/齿轮、媒体播放器/三键
+  仍在屏内；设置常规页 46×26 开关未挤坏行高。
+
 ### 9.33 阶段 8.23：Edge 开关、深色主题、滚动条收口（2026-10-22）
 
 用户圈出窗口列表右侧的浅色竖条，并追加三条：勾选改 Edge 开关、主界面要
@@ -4087,7 +4142,7 @@ README 的界面颜色一节也加了同样说明。
 ## 四、测试体系（**改代码后先跑这个**）
 
 ```bat
-py tests\run_tests.py            :: 1032 用例，约 106 秒（--fast 975 条约 48 秒）
+py tests\run_tests.py            :: 1035 用例，约 108 秒（--fast 978 条约 48 秒）
 py tests\run_tests.py -v         :: 逐个看
 py tests\run_tests.py -k capture :: 只跑关心的
 py tests\lint_check.py           :: 代码复检（退出码 1 = 有新增问题）
@@ -4771,8 +4826,8 @@ C 盘那份**保持原样、一字未改**（用户 2026-10-11 确认：暂不�
 
 > 继续开发 **winmon1.0** —— Windows 程序监控与终止工具，纯标准库，在 `项目根目录\`。
 > 请先读 `HANDOFF.md` 和 `README.md`，然后跑 `py tests\run_tests.py`
-> 确认基线是 **1032 用例全绿**（需要哔哩哔哩/UIA 页面的用例会按需 skip；
-> 日常改动用 `--fast` 跑 975 条，提交前跑全量）、
+> 确认基线是 **1035 用例全绿**（需要哔哩哔哩/UIA 页面的用例会按需 skip；
+> 日常改动用 `--fast` 跑 978 条，提交前跑全量）、
 > `py tests\lint_check.py` 退出码 0（无新增问题）。
 > **版式要另眼验收**：测试进程没有开 DPI 感知，布局检查看不到"真实 DPI 下控件被挤没"，
 > 所以改动界面后还要跑一次 `py winmon.py --smoke` 看截图（见 §9.15 第 14 条）。

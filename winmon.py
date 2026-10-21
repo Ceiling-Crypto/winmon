@@ -184,6 +184,12 @@ UI_OPACITY = UI_OPACITY_DEFAULT
 # 专辑封面提炼、并由用户挑选的浅色设计主题；2026-10-22 增加 Edge 深色。颜色只换语义槽位，不碰按键的
 # 果冻回弹、圆角、阴影等结构——那些是交互设计，不是颜色。
 #
+# 2026-10-22 第四轮：删除所有整块彩色“高亮卡”，卡片统一回到 surface + 1px
+# line，靠分组标题和留白组织内容；只有状态点/小徽标保留语义色。开关也改成
+# Edge 蓝，红色不再表示“打开”，只留给错误和危险操作。
+SWITCH_ON_LIGHT = "#2F6FCC"
+SWITCH_ON_DARK = "#4C8DFF"
+
 # 每套主题只描述“页面 / 面 / 字 / 主色 / 次色 / 危险色”，其余槽位由
 # `_build_palette()` 统一推导，保证各主题的卡片、状态、按钮语义一致。
 THEME_DEFAULT = "sunlit"
@@ -312,9 +318,9 @@ def _build_palette(spec: dict) -> dict:
     """
     把当前主题的“核心色”展开成完整语义色板。
 
-    卡片颜色不写死每个主题一份：媒体/AI/MCP/行为/主动搭子都从主色或次色混出淡底，
-    接入状态用固定的绿/琥珀语义，KEY 用固定的琥珀语义。这样换主题时
-    卡片仍保留各自的栏目锚点，又不会把 27 张卡写成 27 份重复代码。
+    2026-10-22 第四轮起，媒体/AI/MCP/KEY/工作区/行为/主动搭子不再各混一块
+    淡色底：它们统一用当前主题的 surface + line，只保留标题/小徽标/状态点的
+    语义色。这样 10 套主题只需要维护一组中性卡，不再逐张适配。
     """
     page = spec["page"]
     surface = spec["surface"]
@@ -337,25 +343,16 @@ def _build_palette(spec: dict) -> dict:
         dark = False
     hover = _blend_hex(surface, accent, 0.10)
     select = _blend_hex(surface, accent, 0.18)
-    card_muted = _blend_hex(muted, ink, 0.30)
     mcp_accent = _blend_hex(ink, accent_dark, 0.30)
-    media_bg = _blend_hex(surface, accent, 0.09)
-    media_border = _blend_hex(surface, accent, 0.26)
-    ai_bg = _blend_hex(surface, secondary, 0.09)
-    ai_border = _blend_hex(surface, secondary, 0.26)
     ok_bg = _blend_hex(surface, "#2F7D4E", 0.24 if dark else 0.12)
     ok_fg = "#9BD6AE" if dark else "#1F5A39"
     ok_border = _blend_hex(surface, "#2F7D4E", 0.42 if dark else 0.32)
     warn_bg = _blend_hex(surface, "#B7791F", 0.26 if dark else 0.13)
     warn_fg = "#F5C26B" if dark else "#6E4308"
     warn_border = _blend_hex(surface, "#B7791F", 0.45 if dark else 0.34)
-    key_bg = _blend_hex(surface, "#C9973A", 0.24 if dark else 0.12)
-    key_line = _blend_hex(surface, "#B7791F", 0.45 if dark else 0.30)
-    workspace_border = _blend_hex(ink, surface, 0.42)
-    behavior_bg = _blend_hex(surface, "#2F7D4E", 0.18 if dark else 0.09)
-    behavior_border = _blend_hex(surface, "#2F7D4E", 0.40 if dark else 0.30)
-    proactive_bg = _blend_hex(surface, "#6B4FA8", 0.20 if dark else 0.10)
-    proactive_border = _blend_hex(surface, "#6B4FA8", 0.42 if dark else 0.30)
+    #: 所有栏目卡共用同一块中性 surface；不同栏目只靠标题/小徽标/状态点区分。
+    #: 不再从主色/次色混出整块淡色底——那套卡在 10 套主题 + DPI 下太难逐张适配。
+    neutral = {"bg": surface, "fg": ink, "muted": muted, "border": line}
     return {
         "UI_BG": page,
         "UI_SURFACE": surface,
@@ -381,37 +378,22 @@ def _build_palette(spec: dict) -> dict:
         "UI_MEDIA_BTN_FG": on_accent,
         "UI_MEDIA_BTN_ACTIVE": accent_dark,
         "UI_CARDS": {
-            "media": {"bg": media_bg, "fg": ink, "muted": card_muted,
-                      "border": media_border, "tag_bg": accent,
-                      "tag_fg": on_accent},
-            "ai": {"bg": ai_bg, "fg": ink, "muted": card_muted,
-                   "border": ai_border, "tag_bg": secondary,
-                   "tag_fg": on_secondary,
-                   "state_ok_bg": ok_bg, "state_ok_fg": ok_fg,
-                   "state_warn_bg": warn_bg, "state_warn_fg": warn_fg},
+            "media": dict(neutral, tag_bg=accent, tag_fg=on_accent),
+            "ai": dict(neutral, tag_bg=secondary, tag_fg=on_secondary,
+                       state_ok_bg=ok_bg, state_ok_fg=ok_fg,
+                       state_warn_bg=warn_bg, state_warn_fg=warn_fg),
             "connect": {"ok_bg": ok_bg, "ok_fg": ok_fg,
                         "ok_border": ok_border,
                         "warn_bg": warn_bg, "warn_fg": warn_fg,
                         "warn_border": warn_border},
-            "mcp": {"bg": _blend_hex(surface, secondary, 0.07),
-                    "fg": ink, "muted": card_muted, "border": ai_border,
-                    "accent": mcp_accent, "code_bg": surface,
-                    "code_fg": ink},
-            "key": {"bg": key_bg,
-                    "fg": "#F3D19B" if dark else "#5B3D12",
-                    "muted": "#D6B77A" if dark else "#7A6240",
-                    "border": "#8C6A2A" if dark else "#B7791F",
-                    "accent": "#E8C06A" if dark else "#9A6A00",
-                    "warn": "#FFB4AB" if dark else danger,
-                    "state": "#F0C36A" if dark else "#8A5A00"},
-            "workspace": {"bg": alt, "fg": ink, "muted": card_muted,
-                          "border": workspace_border, "accent": muted},
-            "behavior": {"bg": behavior_bg, "fg": ink, "muted": card_muted,
-                         "border": behavior_border,
-                         "accent": "#7BC79A" if dark else "#2F7D4E"},
-            "proactive": {"bg": proactive_bg, "fg": ink, "muted": card_muted,
-                          "border": proactive_border,
-                          "accent": "#C4B1FF" if dark else "#5E4699"},
+            "mcp": dict(neutral, accent=mcp_accent, code_bg=alt,
+                        code_fg=ink),
+            "key": dict(neutral, accent=warn_fg,
+                        warn="#FFB4AB" if dark else danger,
+                        state=warn_fg),
+            "workspace": dict(neutral, accent=muted),
+            "behavior": dict(neutral, accent="#7BC79A" if dark else "#2F7D4E"),
+            "proactive": dict(neutral, accent="#C4B1FF" if dark else "#5E4699"),
         },
     }
 
@@ -1254,6 +1236,121 @@ class _RowTip:
             self.top = None
 
 
+class _HoverTip:
+    """
+    图标按钮的轻量 tooltip（Tk 没有内置 tooltip，项目不引第三方库）。
+
+    与 `_RowTip` 分开的原因：列表行提示要跟随鼠标位置并识别行；
+    这里只需要在某个控件下方固定弹一条说明，而且**不能抢焦点**：
+      · 500ms 延迟，鼠标扫过时不闪；
+      · `overrideredirect` + `-topmost`，不 `grab`、不 `focus`；
+      · 文本可以是字符串，也可以是可调用对象（播放/暂停按钮会随状态变化）；
+      · 只在进入控件时创建一次 Toplevel，之后复用。
+    """
+
+    DELAY_MS = 500
+
+    def __init__(self, widget: tk.Misc, text, *,
+                 delay: int | None = None) -> None:
+        self.widget = widget
+        self._text = text
+        self._delay = max(100, int(delay if delay is not None
+                                   else self.DELAY_MS))
+        self._after_id = None
+        self._top: tk.Toplevel | None = None
+        self._label: tk.Label | None = None
+        widget.bind("<Enter>", self._schedule, add="+")
+        widget.bind("<Leave>", lambda _e: self.hide(), add="+")
+        widget.bind("<ButtonPress>", lambda _e: self.hide(), add="+")
+
+    def set_text(self, text) -> None:
+        self._text = text
+
+    def _resolve(self) -> str:
+        value = self._text
+        if callable(value):
+            try:
+                value = value()
+            except Exception:
+                return ""
+        return str(value or "").strip()
+
+    def _schedule(self, _event=None) -> None:
+        self.hide()
+        if not self._resolve():
+            return
+        try:
+            self._after_id = self.widget.after(self._delay, self._show)
+        except Exception:
+            self._after_id = None
+
+    def _ensure(self) -> tk.Toplevel:
+        if self._top is None:
+            self._top = tk.Toplevel(self.widget)
+            self._top.overrideredirect(True)
+            self._top.attributes("-topmost", True)
+            self._label = tk.Label(
+                self._top, font=SMALL_FONT, bg=UI_SURFACE_ALT,
+                fg=UI_INK, justify="left", bd=0, padx=8, pady=4,
+                highlightthickness=1, highlightbackground=UI_LINE)
+            self._label.pack()
+            self._top.withdraw()
+        return self._top
+
+    def _show(self) -> None:
+        self._after_id = None
+        text = self._resolve()
+        if not text:
+            return
+        try:
+            if not self.widget.winfo_exists():
+                return
+        except tk.TclError:
+            return
+        top = self._ensure()
+        assert self._label is not None
+        self._label.configure(text=text)
+        top.update_idletasks()
+        try:
+            wx = self.widget.winfo_rootx()
+            wy = self.widget.winfo_rooty()
+            ww = self.widget.winfo_width()
+            wh = self.widget.winfo_height()
+        except tk.TclError:
+            return
+        tw, th = top.winfo_reqwidth(), top.winfo_reqheight()
+        x = wx + ww // 2 - tw // 2
+        y = wy + wh + 6
+        sw, sh = top.winfo_screenwidth(), top.winfo_screenheight()
+        x = max(4, min(int(x), sw - tw - 4))
+        y = max(4, min(int(y), sh - th - 4))
+        top.geometry(f"+{x}+{y}")
+        top.deiconify()
+        top.lift()
+
+    def hide(self) -> None:
+        if self._after_id is not None:
+            try:
+                self.widget.after_cancel(self._after_id)
+            except Exception:
+                pass
+            self._after_id = None
+        if self._top is not None:
+            try:
+                self._top.withdraw()
+            except tk.TclError:
+                pass
+
+    def destroy(self) -> None:
+        self.hide()
+        if self._top is not None:
+            try:
+                self._top.destroy()
+            except tk.TclError:
+                pass
+            self._top = None
+
+
 def _close_mode_slug(value: str) -> str:
     """
     下拉框里的中文（或旧设置里存的 slug）→ 核心层认识的 slug。
@@ -1388,7 +1485,7 @@ class RoundedButton(tk.Canvas):
                  radius: int = 15, font=None, padx: int = 12,
                  anchor: str = "center", style: str = "", lead: str = "",
                  shadow_room: int = 3, icon: str = "", ring: bool = False,
-                 **kw) -> None:
+                 bare: bool = False, tip=None, **kw) -> None:
         self._text = str(text)
         self._command = command
         self._kind = str(kind or "secondary")
@@ -1402,6 +1499,9 @@ class RoundedButton(tk.Canvas):
         self._icon = str(icon or "")
         #: 静默的强调色描边：给“暂停刷新 / 移除总览”这类小按钮一圈透明边框。
         self._ring = bool(ring)
+        #: 裸按钮：静止时与页面同色，只在 hover/pressed 时浮出一层非常轻的底色。
+        #: 媒体键、暂停刷新、移除总览用它，避免一圈常驻边框把界面切碎。
+        self._bare = bool(bare)
         self._shadow_room = max(2, min(8, int(shadow_room)))
         self._state = str(kw.pop("state", "normal") or "normal")
         self._hover = False
@@ -1437,11 +1537,23 @@ class RoundedButton(tk.Canvas):
         self.bind("<space>", lambda _e: self._invoke_event(), add="+")
         if self._fixed_width is None:
             super().configure(width=self._natural_width())
+        self._tip = None
+        if tip:
+            self.set_tip(tip)
 
     # -- 兼容 Tk Button 的一小部分接口 --
     def winfo_class(self):
         # 语义上它就是一个按钮；测试里的“找按钮”遍历依赖这一点。
         return "Button"
+
+    def set_tip(self, text) -> None:
+        """给只有图标的按钮补一条 tooltip；有文字的控件不调用。"""
+        if not text:
+            return
+        if getattr(self, "_tip", None) is None:
+            self._tip = _HoverTip(self, text)
+        else:
+            self._tip.set_text(text)
 
     def cget(self, key):
         if str(key) == "text":
@@ -1533,7 +1645,20 @@ class RoundedButton(tk.Canvas):
         """
         kind = self._kind
         light_bg = color_luminance(self._bg) > 0.55
-        if kind == "accent":
+        if self._bare:
+            # 裸按钮：静止时完全融进页面，hover 只浮出一层 7% 的墨色/白色。
+            # 不用阴影、不勾边，避免“每个图标都被一个胶囊框住”。
+            self._fill = self._bg
+            if light_bg:
+                self._hover_fill = mix_color(self._bg, UI_INK, 0.07)
+                self._pressed_fill = mix_color(self._bg, UI_INK, 0.12)
+            else:
+                self._hover_fill = mix_color(self._bg, "#ffffff", 0.08)
+                self._pressed_fill = mix_color(self._bg, "#ffffff", 0.14)
+            self._fg = UI_INK
+            self._disabled_fill = self._bg
+            self._shadow_tint = "#000000"
+        elif kind == "accent":
             self._fill = UI_ACCENT
             self._hover_fill = mix_color(UI_ACCENT, "#ffffff", 0.10)
             self._pressed_fill = UI_ACCENT_DARK
@@ -1640,12 +1765,13 @@ class RoundedButton(tk.Canvas):
             highlight, lip, _shadow = self._edge_colors(fill)
             self.delete("all")
 
-            # 果冻形变：横向略胀、纵向略压；松手后的负值代表回弹过冲。
-            squash = max(-0.85, min(1.4, float(self._squash or 0.0)))
+            # 果冻形变：裸按钮不做形变，只靠底色变化反馈，保持安静。
+            squash = 0.0 if self._bare else max(
+                -0.85, min(1.4, float(self._squash or 0.0)))
             sx = 1.0 + 0.046 * squash
             sy = 1.0 - 0.096 * squash
             hovering = self._hover and not disabled and squash <= 0.02
-            hover_lift = -1.2 if hovering else 0.0
+            hover_lift = -1.2 if (hovering and not self._bare) else 0.0
             margin_x = 2.5
             body_w = max(8.0, (width - margin_x * 2) * sx)
             # 给阴影留出真实空间：之前 body 只离底边 3px，投影层全被 Canvas
@@ -1667,7 +1793,7 @@ class RoundedButton(tk.Canvas):
 
             # 多层低透明投影：越靠外越淡，且所有层都在 shadow_room 里，
             # 不再被 Canvas 底边裁成一条硬线。深色底上用墨色下沉，靠亮边提气。
-            if not disabled:
+            if not disabled and not self._bare:
                 layers = ((room - 0.4, 1.9, 0.030),
                           (room - 1.0, 1.6, 0.042),
                           (room - 1.7, 1.35, 0.055),
@@ -1691,8 +1817,8 @@ class RoundedButton(tk.Canvas):
             # 主体：一颗完整的圆角胶囊。焦点不再额外画描边，避免点击后出现
             # 类似虚线框的“选中框”；键盘仍可 Tab 到按钮并回车触发。
             fill_lum = color_luminance(fill)
-            if self._kind == "rail":
-                rim = ""                     # 栏内只靠阴影和高光，不勾硬边
+            if self._kind == "rail" or self._bare:
+                rim = ""                     # 栏内/裸按钮只靠底色，不勾硬边
             elif fill_lum < 0.32:
                 rim = mix_color(fill, "#ffffff", 0.16)
             else:
@@ -1701,7 +1827,7 @@ class RoundedButton(tk.Canvas):
                 self._rounded_points(x1, y1, x2, y2, r),
                 smooth=True, splinesteps=28, fill=fill,
                 outline=rim, width=1, tags=("jelly-body",))
-            if self._ring and not disabled:
+            if self._ring and not disabled and not self._bare:
                 # 低透明强调色外环：不是焦点虚线，也不参与点击/焦点状态。
                 ring_color = mix_color(self._bg, UI_ACCENT, 0.52)
                 self.create_polygon(
@@ -1712,7 +1838,7 @@ class RoundedButton(tk.Canvas):
                     smooth=True, splinesteps=24, fill="",
                     outline=ring_color, width=1.6, tags=("jelly-ring",))
             # 顶部高光 / 底部内阴影：各一条细线，薄而有弹性，不压成厚塑料块。
-            if x2 - x1 > 12 and y2 - y1 > 8:
+            if x2 - x1 > 12 and y2 - y1 > 8 and not self._bare:
                 self.create_line(
                     x1 + r * 0.62, y1 + 1.35, x2 - r * 0.62, y1 + 1.35,
                     fill=highlight, width=1, tags=("jelly-highlight",))
@@ -1846,6 +1972,10 @@ class RoundedButton(tk.Canvas):
         都复现过）。重写 `destroy()` 没有这个绑定命令，时序也可控。
         """
         self._cancel_animation()
+        tip = getattr(self, "_tip", None)
+        if tip is not None:
+            tip.destroy()
+            self._tip = None
         _discard_widget_commands(self)
         try:
             super().destroy()
@@ -2272,24 +2402,35 @@ class RoundedBadge(tk.Canvas):
 
 class ToggleSwitch(tk.Canvas):
     """
-    Edge 风格的开关：胶囊轨道 + 圆形滑块，打开时滑到右侧。
+    Edge / Fluent 风格开关：46×26 胶囊轨道 + 16px 圆形滑块，120ms 滑动。
 
-    设置里的布尔项统一用它，不再画“实心圆点”。颜色仍遵守上一轮的两组：
-    普通项红色、启动/关闭黑色；深色界面下给黑色轨道补一圈浅边，
-    否则会和页面糊在一起。
+    2026-10-22 第四轮用户反馈：
+      · 原来的红色勾选“很差”，打开状态不能用红色；
+      · Edge 的开关更大、更圆，看起来比我们的小方块好。
+    所以现在所有布尔项统一成蓝色（深色主题用更亮的 Edge 蓝），
+    启动/关闭也不再单独用黑色；红色只留给错误和危险动作。
     """
 
+    ANIM_MS = 120
+
     def __init__(self, parent, variable, *, command=None,
-                 variant: str = "normal", width: int = 42, height: int = 22,
+                 variant: str = "normal", width: int = 46, height: int = 26,
                  bg: str | None = None, state: str = "normal") -> None:
         self._var = variable
         self._command = command
+        #: 保留 variant 只为兼容旧调用与测试；颜色不再按它分叉。
         self._variant = str(variant or "normal")
-        self._w = max(36, int(width))
-        self._h = max(20, int(height))
+        self._w = max(40, int(width))
+        self._h = max(22, int(height))
         self._bg = bg if bg is not None else _container_bg(parent)
         self._state = str(state or "normal")
         self._hover = False
+        self._focused = False
+        self._pos = 1.0 if self.get() else 0.0
+        self._anim_after = None
+        self._anim_start = 0.0
+        self._anim_from = 0.0
+        self._anim_to = 0.0
         self._trace = self._var.trace_add("write", self._on_var)
         super().__init__(parent, width=self._w, height=self._h, bg=self._bg,
                          bd=0, highlightthickness=0, takefocus=1,
@@ -2300,6 +2441,8 @@ class ToggleSwitch(tk.Canvas):
         self.bind("<space>", lambda _e: self.invoke(), add="+")
         self.bind("<Enter>", lambda _e: self._set_hover(True), add="+")
         self.bind("<Leave>", lambda _e: self._set_hover(False), add="+")
+        self.bind("<FocusIn>", lambda _e: self._set_focus(True), add="+")
+        self.bind("<FocusOut>", lambda _e: self._set_focus(False), add="+")
         self.bind("<Destroy>", self._on_destroy, add="+")
         self._draw()
 
@@ -2351,16 +2494,68 @@ class ToggleSwitch(tk.Canvas):
         self._hover = bool(hover) and self._state != "disabled"
         self._draw()
 
+    def _set_focus(self, focused: bool) -> None:
+        self._focused = bool(focused)
+        self._draw()
+
     def _on_var(self, *_args) -> None:
         try:
-            if self.winfo_exists():
-                self._draw()
+            if not self.winfo_exists():
+                return
         except Exception:
-            pass
+            return
+        self._animate_to(1.0 if self.get() else 0.0)
+
+    def _animate_to(self, target: float) -> None:
+        """从当前滑块位置滑到目标；重复设置同一个值不重启动画。"""
+        target = 1.0 if float(target) >= 0.5 else 0.0
+        self._cancel_animation()
+        if abs(self._pos - target) < 0.001:
+            self._pos = target
+            self._draw()
+            return
+        self._anim_from = float(self._pos)
+        self._anim_to = target
+        self._anim_start = time.perf_counter()
+        try:
+            self._anim_after = self.after(16, self._anim_tick)
+        except Exception:
+            self._pos = target
+            self._draw()
+
+    def _anim_tick(self) -> None:
+        self._anim_after = None
+        try:
+            if not self.winfo_exists():
+                return
+        except Exception:
+            return
+        elapsed = max(0.0, time.perf_counter() - self._anim_start)
+        progress = min(1.0, elapsed / (self.ANIM_MS / 1000.0))
+        eased = 1.0 - (1.0 - progress) ** 3
+        self._pos = self._anim_from + (self._anim_to - self._anim_from) * eased
+        self._draw()
+        if progress >= 1.0:
+            self._pos = self._anim_to
+            self._draw()
+            return
+        try:
+            self._anim_after = self.after(16, self._anim_tick)
+        except Exception:
+            self._anim_after = None
+
+    def _cancel_animation(self) -> None:
+        if self._anim_after is not None:
+            try:
+                self.after_cancel(self._anim_after)
+            except Exception:
+                pass
+            self._anim_after = None
 
     def _on_destroy(self, event=None) -> None:
         if event is not None and getattr(event, "widget", None) is not self:
             return
+        self._cancel_animation()
         try:
             self._var.trace_remove("write", self._trace)
         except Exception:
@@ -2374,47 +2569,55 @@ class ToggleSwitch(tk.Canvas):
             h = max(2, int(self.winfo_height() or self._h))
             self.delete("all")
             dark = color_luminance(UI_BG) < 0.35
-            on = self.get()
             disabled = self._state == "disabled"
-            if self._variant == "startup":
-                on_fill = "#101010"
-                on_outline = "#8A8A8A" if dark else "#000000"
-            else:
-                on_fill = "#D13438"
-                on_outline = "#8E1B10"
-            off_fill = mix_color(self._bg, UI_MUTED,
-                                 0.30 if dark else 0.24)
-            off_outline = mix_color(self._bg, UI_MUTED, 0.50 if dark else 0.34)
-            fill = on_fill if on else off_fill
-            outline = (on_outline if on else off_outline)
+            pos = max(0.0, min(1.0, float(self._pos)))
+            on_fill = SWITCH_ON_DARK if dark else SWITCH_ON_LIGHT
+            on_outline = mix_color(on_fill, "#000000", 0.20)
+            off_fill = "#5F6368" if dark else "#C7C7C7"
+            off_outline = "#80868B" if dark else "#AFAFAF"
+            fill = mix_color(off_fill, on_fill, pos)
+            outline = mix_color(off_outline, on_outline, pos)
+            if self._hover and not disabled:
+                fill = mix_color(fill, "#ffffff" if dark else "#000000",
+                                 0.05 if dark else 0.035)
+            knob = "#F7F7F7" if dark else "#FFFFFF"
             if disabled:
                 fill = mix_color(self._bg, UI_LINE, 0.55)
                 outline = mix_color(self._bg, UI_MUTED, 0.25)
-            track_h = max(14.0, h - 4.0)
+                knob = mix_color(self._bg, UI_INK, 0.35)
+
+            #: 26px 高时轨道 20px；DPI 放大到 39px 时轨道跟着到 33px，
+            #: 不能把轨道死扣在 20px，否则 150% 下会变成一根细条。
+            track_h = max(14.0, h - 6.0)
             y1 = (h - track_h) / 2.0
             y2 = y1 + track_h
             radius = track_h / 2.0
             self.create_polygon(
                 RoundedButton._rounded_points(
-                    self, 1.5, y1, w - 1.5, y2, radius),
-                smooth=True, splinesteps=24, fill=fill,
-                outline=outline, width=1.3, tags=("toggle-track",))
-            knob_r = max(5.0, track_h / 2.0 - 2.2)
-            off_x = 1.5 + track_h / 2.0
-            on_x = w - 1.5 - track_h / 2.0
-            cx = on_x if on else off_x
+                    self, 1.0, y1, w - 1.0, y2, radius),
+                smooth=True, splinesteps=28, fill=fill,
+                outline=outline, width=1.2, tags=("toggle-track",))
+
+            knob_r = max(6.0, track_h / 2.0 - 2.0)
+            off_x = 1.0 + track_h / 2.0
+            on_x = w - 1.0 - track_h / 2.0
+            cx = off_x + (on_x - off_x) * pos
             cy = h / 2.0
-            knob = "#F7F7F7" if dark else "#FFFFFF"
-            if disabled:
-                knob = mix_color(UI_BG, UI_INK, 0.35)
-            self.create_oval(cx - knob_r + 0.7, cy - knob_r + 1.6,
-                             cx + knob_r + 0.7, cy + knob_r + 1.6,
-                             fill=mix_color(fill, "#000000", 0.28),
+            self.create_oval(cx - knob_r + 0.4, cy - knob_r + 1.3,
+                             cx + knob_r + 0.4, cy + knob_r + 1.3,
+                             fill=mix_color(fill, "#000000", 0.26),
                              outline="", tags=("toggle-knob-shadow",))
             self.create_oval(cx - knob_r, cy - knob_r,
                              cx + knob_r, cy + knob_r,
                              fill=knob, outline="",
                              tags=("toggle-knob",))
+            if self._focused and not disabled:
+                self.create_polygon(
+                    RoundedButton._rounded_points(
+                        self, 0.6, 0.6, w - 0.6, h - 0.6, h / 2.0 - 0.6),
+                    smooth=True, splinesteps=24, fill="",
+                    outline=SWITCH_ON_DARK if dark else SWITCH_ON_LIGHT,
+                    width=1.6, tags=("toggle-focus",))
         except Exception:
             pass
 
@@ -3097,7 +3300,9 @@ class AmbientGlowFrame(SoftPanel):
     def _apply_level(self, level: float) -> None:
         self._level = max(0.0, min(1.0, float(level)))
         t = self._level
-        self._outer = mix_color(self._base, self._accent, 0.43 * t)
+        # t=0 时直接保留原色串（大小写也一致），避免“熄灭后底色变成另一个字符串”。
+        self._outer = (self._base if t <= 0.0
+                       else mix_color(self._base, self._accent, 0.43 * t))
         self._redraw()
 
     def set_active(self, active: bool, animate: bool = True) -> None:
@@ -3475,7 +3680,7 @@ class PreviewPane:
         self.btn_pause = RoundedButton(
             right_col, text="暂停刷新", command=self.app.toggle_pause,
             kind="ghost", bg=UI_BG, height=34, radius=17, padx=15,
-            ring=True)
+            bare=True)
         self.btn_pause.pack(anchor="e")
         self.lbl_stats = ttk.Label(right_col, text="", font=MONO_FONT,
                                    foreground=UI_OK, anchor="e")
@@ -3655,7 +3860,7 @@ class GalleryPane:
                  fg=UI_MUTED, bg=UI_BG, anchor="w").pack(side="left")
         self.remove_btn = RoundedButton(
             tool, text=i18n.pick("移除总览", "Remove"), kind="ghost",
-            bg=UI_BG, height=34, radius=17, padx=16, ring=True,
+            bg=UI_BG, height=34, radius=17, padx=16, bare=True,
             command=self.app.gallery_remove_selected)
         self.remove_btn.pack(side="right")
 
@@ -5673,10 +5878,15 @@ class _SettingsWindow:
 
     def _check_control(self, parent, variable, *, startup: bool = False,
                        command=None):
-        # Edge 同款开关；普通项红色、启动/关闭黑色（深色主题下自动补浅边）。
-        return ToggleSwitch(parent, variable, command=command,
-                            variant="startup" if startup else "normal",
-                            bg=UI_SURFACE)
+        # Edge 同款大开关：所有布尔项统一蓝色；variant 仅保留旧调用语义。
+        # Canvas 的宽高是物理像素，不跟字号/DPI 自动放大，这里按窗口缩放走。
+        scale = max(1.0, float(getattr(self, "_scale", 1.0) or 1.0))
+        return ToggleSwitch(
+            parent, variable, command=command,
+            variant="startup" if startup else "normal",
+            width=max(46, int(round(46 * scale))),
+            height=max(26, int(round(26 * scale))),
+            bg=UI_SURFACE)
 
     def _check_row(self, parent, title: str, variable, *, desc: str = "",
                    startup: bool = False, command=None, first: bool = False):
@@ -6021,7 +6231,7 @@ class _SettingsWindow:
 
     def _build_startup_section(self, wrap, close_mode, tray_available,
                                start_minimized) -> None:
-        """启动与关闭：这里的勾选统一黑色，和常规红色勾选区分。"""
+        """启动与关闭：所有布尔项都用同一枚 Edge 蓝开关，不再用黑色区分。"""
         self._section(wrap, i18n.pick("启动与关闭", "Startup and close"))
         card = self._card(wrap)
         self.autostart = tk.BooleanVar(value=bool(core.get_autostart()))
@@ -6676,8 +6886,9 @@ class _AiUsagePanel:
         tk.Label(line, textvariable=self.hour_text, font=SMALL_FONT,
                  bg=colors["bg"], fg=colors["muted"], anchor="e").pack(side="right")
         self.percent_text = tk.StringVar(value="0.0%")
+        #: 卡片已中性化，百分比必须用可读的主题强调色，不能再用浅色 tag_bg。
         tk.Label(line, textvariable=self.percent_text, font=SMALL_BOLD_FONT,
-                 bg=colors["bg"], fg=colors["tag_bg"], anchor="e").pack(
+                 bg=colors["bg"], fg=UI_ACCENT, anchor="e").pack(
             side="right", padx=(0, 10))
         amount = tk.Frame(hero, bg=colors["bg"])
         amount.pack(fill="x", pady=(2, 0))
@@ -6761,6 +6972,8 @@ class _AiUsagePanel:
         self.direct_key_paste = RoundedButton(
             key_line, text="粘贴", icon="paste", kind="ghost",
             bg=UI_SURFACE_ALT, width=30, height=30, radius=8, padx=0,
+            bare=True,
+            tip=i18n.pick("从剪贴板读取 key", "Read key from clipboard"),
             command=self.paste_direct_key)
         self.direct_key_paste.pack(side="left", padx=(4, 2))
         self.direct_key_save = RoundedButton(
@@ -6834,7 +7047,9 @@ class _AiUsagePanel:
                    command=self.refresh).pack(side="left", padx=(0, 6))
         self.exact_var = tk.BooleanVar(value=False)
         self.exact_toggle = ToggleSwitch(
-            bar, self.exact_var, command=self.toggle_exact, bg=UI_BG)
+            bar, self.exact_var, command=self.toggle_exact, bg=UI_BG,
+            width=max(46, int(round(46 * self._scale))),
+            height=max(26, int(round(26 * self._scale))))
         self.exact_toggle.pack(side="left", padx=(10, 5))
         exact_label = tk.Label(bar, text="MCP 结果精确分词", font=UI_FONT,
                                bg=UI_BG, fg=UI_INK, cursor="hand2")
@@ -6873,12 +7088,11 @@ class _AiUsagePanel:
             return
         if width <= 2:
             return
-        colors = UI_CARDS["ai"]
         pad = 3
         mid = 4
         self.progress.delete("all")
         self.progress.create_line(
-            pad, mid, width - pad, mid, fill=colors["border"],
+            pad, mid, width - pad, mid, fill=UI_LINE,
             width=6, capstyle="round")
         ratio = max(0.0, min(1.0, float(self._ratio or 0.0)))
         if ratio <= 0:
@@ -6887,7 +7101,7 @@ class _AiUsagePanel:
         if end - pad < 1:
             end = pad + 1
         self.progress.create_line(
-            pad, mid, end, mid, fill=colors["tag_bg"],
+            pad, mid, end, mid, fill=UI_ACCENT,
             width=6, capstyle="round")
 
     def _update_state_color(self, state: str) -> None:
@@ -7716,7 +7930,7 @@ _GUIDE_CONTENT = {
             ("h", "设置与颜色"),
             ("p", "界面颜色有 10 套设计主题：钴蓝电青、霓虹粉青、石墨信号、"
                   "青柠白昼、晴日天绿、暖阳橙绿、落日珊瑚、云白天蓝、"
-                  "山雪梅染、Edge 深色。保存后立即生效；高亮卡、媒体键、开关和"
+                  "山雪梅染、Edge 深色。保存后立即生效；中性卡片、媒体键、开关和"
                   "状态条一起换，但按键的果冻回弹、圆角、阴影不变。"),
             ("p", "配色参考：鹰角网络《明日方舟》/ 塞壬唱片（Monster Siren）"
                   "专辑封面。仅作色彩研究，不代表官方合作或官方配色。"),
@@ -7729,6 +7943,8 @@ _GUIDE_CONTENT = {
                   "过冲一点再收住），像按到有弹性的键帽。顶部高光、下沉阴影和"
                   "玻璃边缘是 Canvas 当场画的分层效果，不是图片。"),
             ("h", "媒体这一行"),
+            ("p", "播放器和三枚媒体键在上，曲名独占下一行；媒体键没有常驻边框，"
+                  "鼠标停上去会显示作用提示。"),
             ("p", "WinMon 先读 Windows 的媒体会话，显示“应用：曲名 · 状态”。"),
             ("p", "有些播放器（例如网易云音乐）不向系统发布会话，WinMon 会退一步"
                   "读它的窗口标题。这时曲名来自标题，可能带着额外文字；"
@@ -8046,7 +8262,7 @@ class _AiConnectWindow:
 
     用户 2026-10-19 的意见：AI 助手窗口文字太多、太杂；接入建议应当单独一个窗口。
     这个窗口只做“怎么接、key 放哪、工作区怎么分”，不掺日常问答。
-    同日进一步去技术化：MCP / key 用高亮卡片，长解释全部放进 `_Disclosure`，
+    同日进一步去技术化：MCP / key 用中性分组卡，长解释全部放进 `_Disclosure`，
     默认只看到状态、动作和一两行短句。
     """
 
@@ -8085,18 +8301,17 @@ class _AiConnectWindow:
         ttk.Button(head, text=i18n.pick("完整说明…", "Full guide…"),
                    command=self.open_guide).pack(side="right")
 
-        # 接入状态做成整块色条：这是整个窗口最该先看到的信息。
+        # 接入状态：中性卡 + 一行语义色文字，不再铺整块琥珀/绿色底。
         status_colors = UI_CARDS["connect"]
         self.status_frame = tk.Frame(
-            wrap, bg=status_colors["warn_bg"],
-            highlightbackground=status_colors["warn_border"],
+            wrap, bg=UI_SURFACE, highlightbackground=UI_LINE,
             highlightthickness=1, padx=10, pady=6)
         self.status_frame.pack(fill="x", pady=(6, 10))
         self.status_text = tk.StringVar(value="")
         self.status_label = tk.Label(
             self.status_frame, textvariable=self.status_text,
             font=SMALL_BOLD_FONT,
-            bg=status_colors["warn_bg"], fg=status_colors["warn_fg"],
+            bg=UI_SURFACE, fg=status_colors["warn_fg"],
             justify="left", anchor="w", wraplength=int(740 * scale))
         self.status_label.pack(fill="x")
 
@@ -8155,7 +8370,7 @@ class _AiConnectWindow:
             pass
 
     def _card(self, parent, title: str, kind: str):
-        """带色条标题的小卡片：颜色取自当前主题的高亮卡片色板。"""
+        """中性分组卡：统一 surface + line，只在标题/状态文字上保留栏目色。"""
         colors = UI_CARDS[kind]
         outer = tk.Frame(parent, bg=colors["bg"],
                          highlightbackground=colors["border"],
@@ -8267,6 +8482,8 @@ class _AiConnectWindow:
         self.key_paste_btn = RoundedButton(
             key_row, text="粘贴", icon="paste", kind="ghost",
             bg=colors["bg"], width=30, height=30, radius=8, padx=0,
+            bare=True,
+            tip=i18n.pick("从剪贴板读取 key", "Read key from clipboard"),
             command=self.paste_key)
         self.key_paste_btn.pack(side="right", padx=(0, 4))
         self.key_use_btn = ttk.Button(key_row, text=i18n.pick("保存", "Save"),
@@ -8571,17 +8788,9 @@ class _AiConnectWindow:
         status_colors = UI_CARDS["connect"]
         mcp = UI_CARDS["mcp"]
         if kind in ("mcp", "direct"):
-            self.status_frame.configure(
-                bg=status_colors["ok_bg"],
-                highlightbackground=status_colors["ok_border"])
-            self.status_label.configure(
-                bg=status_colors["ok_bg"], fg=status_colors["ok_fg"])
+            self.status_label.configure(fg=status_colors["ok_fg"])
         else:
-            self.status_frame.configure(
-                bg=status_colors["warn_bg"],
-                highlightbackground=status_colors["warn_border"])
-            self.status_label.configure(
-                bg=status_colors["warn_bg"], fg=status_colors["warn_fg"])
+            self.status_label.configure(fg=status_colors["warn_fg"])
         if hasattr(self, "mcp_state_text"):
             if kind == "mcp":
                 self.mcp_state_text.set(i18n.pick(
@@ -9641,8 +9850,8 @@ class WinMonApp:
         style.map("Accent.TButton",
                   background=[("active", UI_ACCENT_DARK), ("pressed", UI_ACCENT_DARK)],
                   foreground=[("disabled", UI_MUTED)])
-        # 媒体行右侧的 3 个按键（播放/暂停、上一首、下一首）单独一套高对比样式：
-        # 它们仍在**彩色高亮卡片**上，不能用深色页面的默认按钮色，否则会糊成一块。
+        # 旧版媒体键用的高对比样式；现在主界面媒体键已换成 Canvas 裸按钮，
+        # 这里保留给兼容调用，不再有彩色卡背景的约束。
         style.configure("Media.TButton", font=UI_FONT, background=UI_MEDIA_BTN_BG,
                         foreground=UI_MEDIA_BTN_FG, bordercolor=UI_MEDIA_BTN_ACTIVE,
                         relief="flat", borderwidth=0, padding=(7, 3))
@@ -9656,8 +9865,7 @@ class WinMonApp:
         style.map("TCheckbutton",
                   background=[("active", base_bg)],
                   foreground=[("disabled", UI_MUTED)])
-        # 高亮卡片里的勾选框：背景跟卡片走，否则会在卡片上挖出一块异色底。
-        # 深色主题下卡片本身也换成了深色高亮，这里直接取当前色板。
+        # 兼容旧样式：背景跟当前卡片的中性 surface 走，避免挖出异色底。
         for style_name, card_key in (("GreenCard", "behavior"),
                                      ("PurpleCard", "proactive"),
                                      ("MediaCard", "media")):
@@ -9755,7 +9963,7 @@ class WinMonApp:
                   darkcolor=[("active", UI_ACCENT_DARK)])
         self._install_check_indicators(style)
         # 主界面里还有少量 tk.Label/tk.Frame 没有显式背景；统一成页面底色和正文色。
-        # 高亮卡片都显式设置了 bg/fg，不会被这些默认值覆盖。
+        # 中性卡片/状态条都显式设置了 bg/fg，不会被这些默认值覆盖。
         try:
             for pattern, value in (
                     ("*Label.background", base_bg), ("*Label.foreground", ink),
@@ -9784,7 +9992,8 @@ class WinMonApp:
         """
         把勾选标记换成**圆形填充**（不再是方框/方块）。
 
-        用户 2026-10-21 的要求：「勾选选项按键将方块填充改为圆填充」。
+        用户 2026-10-21 的要求：「勾选选项按键将方块填充改为圆填充」；
+        2026-10-22 第四轮又要求红色不再表示选中，所以选中态统一为 Edge 蓝。
         14×14 的透明 PhotoImage 上逐像素画圆：外圈描边、内部填色；
         Tk 的 PhotoImage 没有画圆 API，14×14 逐点写入开销可以忽略。
 
@@ -9807,20 +10016,19 @@ class WinMonApp:
                         img.put(border, (x, y))
             return img
 
-        red = {
+        dark = color_luminance(UI_BG) < 0.35
+        blue = {
             "normal": disc(UI_SURFACE_ALT, UI_MUTED),
-            # 2026-10-22：普通勾选统一成红色圆点；启动/关闭卡单独用黑色。
-            "selected": disc("#D13438", "#A4262C"),
-            "disabled": disc(UI_SURFACE_ALT, UI_LINE),
-        }
-        black = {
-            "normal": disc(UI_SURFACE_ALT, UI_MUTED),
-            "selected": disc("#1F1F1F", "#000000"),
+            #: 2026-10-22 第四轮：红色不再表示“选中”；所有勾选统一为 Edge 蓝。
+            "selected": disc(SWITCH_ON_DARK if dark else SWITCH_ON_LIGHT,
+                             mix_color(SWITCH_ON_DARK if dark
+                                       else SWITCH_ON_LIGHT, "#000000", 0.22)),
             "disabled": disc(UI_SURFACE_ALT, UI_LINE),
         }
         #: 生命周期跟着 root；Tk 图片不能用完就丢。
-        self.root._winmon_check_images = red
-        self.root._winmon_check_images_startup = black
+        #: 旧属性名保留，外部测试/兼容代码仍能取到同一组蓝色圆点。
+        self.root._winmon_check_images = blue
+        self.root._winmon_check_images_startup = blue
         try:
             used = {n for n in style.element_names()
                     if str(n).startswith("WinMon.CheckIndicator")}
@@ -9851,11 +10059,11 @@ class WinMonApp:
                     }),
                 ])
 
-            install("TCheckbutton", "WinMon.CheckIndicator", red, UI_BG)
-            # 设置卡片里的普通勾选：红色；启动与关闭：黑色。
-            install("Settings.TCheckbutton", "WinMon.CheckSettings", red,
+            install("TCheckbutton", "WinMon.CheckIndicator", blue, UI_BG)
+            #: 设置页已经全部换成 ToggleSwitch；这两个旧样式只做兼容保留。
+            install("Settings.TCheckbutton", "WinMon.CheckSettings", blue,
                     UI_SURFACE)
-            install("Startup.TCheckbutton", "WinMon.CheckStartup", black,
+            install("Startup.TCheckbutton", "WinMon.CheckStartup", blue,
                     UI_SURFACE)
             layout = style.layout("TCheckbutton")
             for style_name in ("GreenCard", "PurpleCard", "MediaCard"):
@@ -9866,12 +10074,19 @@ class WinMonApp:
     def _build_ui(self) -> None:
         self._configure_style()
 
-        # ---- 标题栏行：搜索镜 + 齿轮 + 最小化（按用户指定的顺序）----
+        # ---- 顶部工具栏：左侧实时概览 + 右侧搜索/设置 ----
         #
-        # 2026-10-22：去掉左侧的「WinMon」文字，但**不移动**搜索框和齿轮；
-        # 它们仍按原坐标贴在原生标题栏按钮下方。刷新速度已收进设置。
+        # 2026-10-22 第四轮（方案 A）：保留原生标题栏，但不再让搜索/齿轮孤零零
+        # 挂在一行空白右侧。把原来底栏右侧的“窗口/程序/进程/总览/上屏”移到
+        # 这一行左侧；右侧搜索框和齿轮坐标不变（仍贴在原生最小化按钮下方）。
         bar = ttk.Frame(self.root, padding=(12, 7, 10, 3))
         bar.pack(fill="x")
+
+        self.overview_label = tk.Label(
+            bar, textvariable=self.overview_text, font=SMALL_FONT,
+            bg=UI_BG, fg=UI_MUTED, anchor="w")
+        self.overview_label.pack(side="left", fill="x", expand=True,
+                                 padx=(2, 12), pady=(1, 0))
 
         ui_scale = max(float(getattr(self, "dpi_scale", 1.0) or 1.0),
                        UI_FONT_SIZE / 9.0)
@@ -9880,7 +10095,8 @@ class WinMonApp:
             bg=UI_BG, width=max(32, int(round(34 * ui_scale))),
             height=max(28, int(round(30 * ui_scale))),
             radius=max(14, int(round(15 * ui_scale))), padx=0,
-            icon="gear", font=(UI_FONT_FAMILY, UI_FONT_SIZE + 2))
+            icon="gear", font=(UI_FONT_FAMILY, UI_FONT_SIZE + 2),
+            bare=True, tip=i18n.pick("设置", "Settings"))
         #: 右侧留出与原生标题栏按钮等宽的空档：齿轮落在最小化按钮左侧，
         #: 搜索框再位于齿轮左侧；不是简单贴到内容区最右边（那会落到关闭按钮下面）。
         gear.pack(side="right",
@@ -9999,8 +10215,7 @@ class WinMonApp:
             bottom, text="改为强制结束", kind="accent", bg=UI_BG,
             height=30, radius=15,
             command=self.action_escalate_close)
-        ttk.Label(bottom, textvariable=self.overview_text, font=MONO_FONT,
-                  foreground=UI_MUTED).pack(side="right")
+        #: 2026-10-22 第四轮：概览文字移到顶部工具栏左侧，底栏只留操作结果。
 
         # ---- 操作历史：**独立窗口**（约定），入口收进设置；主界面不再有常驻提示 ----
         self._history_window = None
@@ -10144,10 +10359,10 @@ class WinMonApp:
         之前把视频与媒体硬塞进同一行，结果两边都挤（媒体键的最后一排按钮被裁掉）。
         现在：
           · 第 1 行「视频联动：监视当前窗口 停止监视 直接关闭视频」—— 只有三个按钮，宽松；
-          · 媒体行：标题/状态在上，播放器选择在下，三枚媒体键在右。
+          · 媒体行：播放器 + 三枚媒体键在上，曲名/状态独占下一行。
 
-        2026-10-22 起：媒体不再自动唤醒/启动应用；播放器选择在标题下方，
-        媒体键参考网易云 / 抖音的同尺寸浅色图标，媒体区不再是高亮卡片。
+        2026-10-22 第四轮：媒体不再自动唤醒/启动应用；播放器与媒体键在曲名
+        上方，三枚键是裸按钮（无边框/阴影，只在悬停时浮出薄底）。
         """
         vbar = ttk.Frame(self.root, padding=(12, 2))
         #: 只有设置里的开关打开才 pack；关闭时保留控件（以后切换不用重建界面），
@@ -10171,11 +10386,13 @@ class WinMonApp:
                       height=30, radius=15,
                       command=self.action_stop_video).pack(side="left", padx=2)
 
-        # ---- 媒体：不再是高亮卡；标题与媒体键在同一行，播放器在下方 ----
+        # ---- 媒体：播放器 + 媒体键在上，曲名在下；整行回到普通页面 ----
         #
-        # 用户 2026-10-22 第三轮：媒体键“放回原来的位置”，也就是紧挨标题
-        # 右侧；播放器仍在标题下方，两者不共用同一行，窄窗口也不会互相压住。
-        # 图标改成 Canvas 矢量（上一首/播放/暂停/下一首），不再依赖 ⏮ ▶ ⏭。
+        # 用户 2026-10-22 第四轮定的顺序：
+        #   [媒体]                  [播放器：自动 ▾] [|◀] [▶] [▶|]
+        #   曲名 · 状态
+        # 这样曲名可以占满整行，播放器/按键不再和标题抢宽度；三枚媒体键
+        # 改成裸按钮（无边框、无描边），只在 hover/pressed 时浮出一层薄底。
         media = UI_CARDS["media"]
         self.media_glow = None
         self.media_bar = tk.Frame(self.root, bg=UI_BG, padx=10, pady=2)
@@ -10186,57 +10403,64 @@ class WinMonApp:
         RoundedBadge(mbar, text="媒体", fill=media["tag_bg"],
                      fg=media["tag_fg"], bg=UI_BG,
                      font=SMALL_BOLD_FONT, padx=8, height=18).grid(
-            row=0, column=0, sticky="nw", padx=(0, 7), pady=(1, 0))
+            row=0, column=0, rowspan=2, sticky="nw", padx=(0, 7), pady=(1, 0))
 
-        text_col = tk.Frame(mbar, bg=UI_BG)
-        text_col.grid(row=0, column=1, sticky="ew")
-        text_col.columnconfigure(0, weight=1)
-        title_row = tk.Frame(text_col, bg=UI_BG)
-        title_row.pack(fill="x")
+        content = tk.Frame(mbar, bg=UI_BG)
+        content.grid(row=0, column=1, rowspan=2, sticky="ew")
+        controls = tk.Frame(content, bg=UI_BG)
+        controls.pack(fill="x")
+        self._media_controls = controls
+        cluster = tk.Frame(controls, bg=UI_BG)
+        cluster.pack(side="right")
+        tk.Label(cluster, text="播放器：", font=SMALL_FONT,
+                 bg=UI_BG, fg=UI_MUTED).pack(side="left", padx=(0, 2))
+        self.media_app_combo = ttk.Combobox(
+            cluster, textvariable=self.media_app_pin, state="readonly",
+            width=self._media_combo_width(), font=UI_FONT,
+            values=[MEDIA_APP_ANY])
+        self.media_app_combo.pack(side="left", padx=(0, 10))
+
+        #: 媒体键：上一首、播放/暂停、下一首（网易云/抖音顺序）。
+        #: 裸按钮：静止时与页面同色，没有常驻边框/阴影；图标仍是 Canvas 矢量。
+        keys = tk.Frame(cluster, bg=UI_BG)
+        keys.pack(side="left")
+        key_font = (UI_FONT_FAMILY, UI_FONT_SIZE + 2)
+        media_scale = max(float(getattr(self, "dpi_scale", 1.0) or 1.0),
+                          UI_FONT_SIZE / 9.0)
+        key_size = max(30, int(round(30 * media_scale)))
+        self.media_prev_btn = RoundedButton(
+            keys, text="⏮", icon="media_prev", kind="ghost", bg=UI_BG,
+            width=key_size, height=key_size, radius=key_size // 2,
+            padx=0, bare=True, font=key_font,
+            tip=i18n.pick("上一首", "Previous"),
+            command=lambda: self.media_prev_next("previous"))
+        self.media_play_btn = RoundedButton(
+            keys, text="▶", icon="media_play", kind="ghost", bg=UI_BG,
+            width=key_size, height=key_size, radius=key_size // 2,
+            padx=0, bare=True, font=key_font,
+            tip=lambda: (i18n.pick("暂停", "Pause") if self._media_playing
+                         else i18n.pick("播放", "Play")),
+            command=self.media_toggle_play)
+        self.media_next_btn = RoundedButton(
+            keys, text="⏭", icon="media_next", kind="ghost", bg=UI_BG,
+            width=key_size, height=key_size, radius=key_size // 2,
+            padx=0, bare=True, font=key_font,
+            tip=i18n.pick("下一首", "Next"),
+            command=lambda: self.media_prev_next("next"))
+        self.media_prev_btn.pack(side="left", padx=(0, 2))
+        self.media_play_btn.pack(side="left", padx=2)
+        self.media_next_btn.pack(side="left", padx=(2, 0))
+
+        title_row = tk.Frame(content, bg=UI_BG)
+        title_row.pack(fill="x", pady=(2, 0))
         #: 当前在放什么（曲名 · 歌手 · 状态）。**没有进度**。
         self.media_text = tk.StringVar(value="（没有程序播放媒体）")
         self.MEDIA_TEXT_WIDTH = self._media_text_width()
-        # 不设固定字符宽度：短标题时媒体键紧挨标题，不会在中间空出一大段；
-        # 长标题由 `fit_media_text()` 按 MEDIA_TEXT_WIDTH 截断并补省略号。
         self.media_label = tk.Label(
             title_row, textvariable=self.media_text,
             font=(UI_FONT_FAMILY, UI_FONT_SIZE, "bold"), anchor="w",
             fg=UI_INK, bg=UI_BG)
-        self.media_label.pack(side="left")
-
-        #: 媒体键仍紧接标题：上一首、播放/暂停、下一首（网易云/抖音顺序）。
-        #: 三枚同尺寸、浅底细边；用矢量图标，字体缺字形也不会消失。
-        keys = tk.Frame(title_row, bg=UI_BG)
-        keys.pack(side="left", padx=(10, 0))
-        key_font = (UI_FONT_FAMILY, UI_FONT_SIZE + 2)
-        self.media_prev_btn = RoundedButton(
-            keys, text="⏮", icon="media_prev", kind="ghost", bg=UI_BG,
-            width=32, height=32, radius=16, padx=0, ring=True,
-            font=key_font,
-            command=lambda: self.media_prev_next("previous"))
-        self.media_play_btn = RoundedButton(
-            keys, text="▶", icon="media_play", kind="ghost", bg=UI_BG,
-            width=32, height=32, radius=16, padx=0, ring=True,
-            font=key_font,
-            command=self.media_toggle_play)
-        self.media_next_btn = RoundedButton(
-            keys, text="⏭", icon="media_next", kind="ghost", bg=UI_BG,
-            width=32, height=32, radius=16, padx=0, ring=True,
-            font=key_font,
-            command=lambda: self.media_prev_next("next"))
-        self.media_prev_btn.pack(side="left", padx=(0, 3))
-        self.media_play_btn.pack(side="left", padx=3)
-        self.media_next_btn.pack(side="left", padx=(3, 0))
-
-        player_row = tk.Frame(text_col, bg=UI_BG)
-        player_row.pack(fill="x", pady=(2, 0))
-        tk.Label(player_row, text="播放器：", font=SMALL_FONT,
-                 bg=UI_BG, fg=UI_MUTED).pack(side="left", padx=(0, 2))
-        self.media_app_combo = ttk.Combobox(
-            player_row, textvariable=self.media_app_pin, state="readonly",
-            width=self._media_combo_width(), font=UI_FONT,
-            values=[MEDIA_APP_ANY])
-        self.media_app_combo.pack(side="left")
+        self.media_label.pack(side="left", fill="x", expand=True)
         # 点下拉框 = 出**多选**面板（tkinter 的 Combobox 只能单选，见
         # `_edit_media_app_multi`）。这里必须由实例绑定返回 "break"：
         # 只用 postcommand 的话，原生单选下拉仍会跟着弹出，用户会看到
@@ -10587,16 +10811,11 @@ class WinMonApp:
     @staticmethod
     def _media_text_width() -> int:
         """
-        媒体行的字符宽度：每大一号收 10 个字符，给右边控件让位。
-
-        旧值 12 号时仍有 42 字符；1080×660 下曲名标签会占掉 426px，
-        播放器下拉框只剩 174px，中文自动项被截成「（自动：正在放的那个」。
-        收到 32 字符后，下拉框能完整显示。
-        2026-10-22 媒体改成“标题和媒体键一行、播放器在下”，标题基准回到 52，
-        12 号字仍保留 34 字符；媒体键是 32px 的固定块，播放器单独在下一行，
-        因此不会出现标题/播放器/媒体键互相挤压。
+        媒体行的字符宽度：播放器/媒体键已经移到曲名**上方**，曲名独占一行，
+        所以可以比上一版更宽；字号每大一号仍收一点，避免 12 号字在
+        1080×660 下把最后的多会话提示裁掉。
         """
-        return max(28, 52 - max(0, UI_FONT_SIZE - 9) * 6)
+        return max(30, 58 - max(0, UI_FONT_SIZE - 9) * 6)
 
     @staticmethod
     def _media_combo_width() -> int:
@@ -12119,13 +12338,13 @@ class WinMonApp:
         if i18n.get_language() == "en":
             extra = f" · hidden {n_hidden}" if n_hidden else ""
             self.overview_text.set(
-                f"Programs {n_app} · Windows {len(shown)}{extra} · "
+                f"Windows {len(shown)}{extra} · Programs {n_app} · "
                 f"Processes {len(self.proc_map)} · Overview {len(self.gallery_keys)} · "
                 f"FPS {self._current_fps():.1f}")
             return
         extra = f" · 隐藏 {n_hidden}" if n_hidden else ""
         self.overview_text.set(
-            f"程序 {n_app} · 窗口 {len(shown)}{extra} · 进程 {len(self.proc_map)} · "
+            f"窗口 {len(shown)}{extra} · 程序 {n_app} · 进程 {len(self.proc_map)} · "
             f"总览 {len(self.gallery_keys)} · 上屏 {self._current_fps():.1f} FPS")
 
     # ------------------------------------------------------------------

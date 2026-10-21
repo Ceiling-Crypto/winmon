@@ -2,11 +2,12 @@
 """
 B43 —— 2026-10-22 第三轮：AI/媒体归位、Edge 式设置与 key 隐私。
 
-这一轮用户点名的事实：
+这一轮用户点名的事实（含 2026-10-22 第四轮修订）：
   · AI 工作区回到最后一栏，标题行不再写 WinMon；
-  · 媒体键紧挨标题，播放器在下一行，不重叠；
-  · 设置改成 Edge 的左侧导航 + 右侧卡片；
-  · 启动/关闭的勾选是黑色，其余勾选是红色；
+  · 顶部左侧是实时概览，右侧是搜索/设置，设置不再孤立；
+  · 媒体播放器 + 媒体键在曲名上方，媒体键是无边框裸按钮；
+  · 设置改成 Edge 的左侧导航 + 中性卡片；
+  · 所有开关都是 46×26 的 Edge 蓝，红色不再表示“打开”；
   · key 只从剪贴板读入，始终掩码，没有“显示/复制 key”；
   · 透明度滑杆的已选填充必须连续，不能看起来断成两截。
   · 列表装得下时，右侧不能留下滚动条空白竖条。
@@ -15,6 +16,7 @@ from __future__ import annotations
 
 import os
 import sys
+import time
 import unittest
 from unittest import mock
 
@@ -96,7 +98,7 @@ class TestEdgeSettings(unittest.TestCase):
             self.assertEqual(dlg._nav_items[section]["frame"].winfo_manager(),
                              "pack")
 
-    def test_startup_toggles_are_black_and_others_are_red(self):
+    def test_all_toggles_are_large_edge_blue_switches(self):
         dlg = self._open()
         toggles = [w for w in walk(dlg._general_canvas)
                    if isinstance(w, self.winmon.ToggleSwitch)]
@@ -108,18 +110,46 @@ class TestEdgeSettings(unittest.TestCase):
             items = [i for i in toggle.find_all()
                      if "toggle-track" in toggle.gettags(i)]
             self.assertTrue(items, "开关没有画出胶囊轨道")
-            return str(toggle.itemcget(items[0], "fill"))
+            return str(toggle.itemcget(items[0], "fill")).lower()
 
-        normal = next(t for t in toggles
-                      if t._variant == "normal" and t.get())
-        startup = next(t for t in toggles
-                       if t._variant == "startup" and t.get())
-        self.assertEqual(track_fill(normal), "#D13438")
-        self.assertEqual(track_fill(startup), "#101010")
+        expected = self.winmon.SWITCH_ON_LIGHT.lower()
+        self.assertTrue(toggles, "设置页没有任何 ToggleSwitch")
+        for toggle in toggles:
+            self.assertGreaterEqual(int(toggle.cget("width")), 46)
+            self.assertGreaterEqual(int(toggle.cget("height")), 26)
+            self.assertEqual(str(toggle.cget("bg")).lower(),
+                             self.winmon.UI_SURFACE.lower())
+            if toggle.get():
+                self.assertEqual(track_fill(toggle), expected,
+                                 "打开状态必须统一为 Edge 蓝，不能再用红/黑")
+            else:
+                self.assertNotEqual(track_fill(toggle), expected,
+                                    "关闭状态不能是蓝色开启态")
         # 关掉的普通开关仍是胶囊，不是又退回圆点。
         off = next(t for t in toggles
                    if t._variant == "normal" and not t.get())
         self.assertEqual(off._state, "normal")
+        self.assertTrue([i for i in off.find_all()
+                         if "toggle-knob" in off.gettags(i)])
+
+    def test_toggle_slides_instead_of_jumping(self):
+        dlg = self._open()
+        toggles = [w for w in walk(dlg._general_canvas)
+                   if isinstance(w, self.winmon.ToggleSwitch)
+                   and w._state == "normal"]
+        toggle = next(t for t in toggles if not t.get())
+        toggle.set(True)
+        self.assertIsNotNone(toggle._anim_after, "打开时应启动 120ms 滑动")
+        deadline = time.time() + 0.5
+        while time.time() < deadline:
+            self.root.update()
+            if toggle._anim_after is None:
+                break
+            time.sleep(0.01)
+        self.assertIsNone(toggle._anim_after)
+        self.assertAlmostEqual(toggle._pos, 1.0, places=3)
+        self.assertLessEqual(self.winmon.ToggleSwitch.ANIM_MS, 160,
+                            "滑动应短促，不能拖成慢动画")
 
     def test_old_migration_hints_are_not_in_settings(self):
         dlg = self._open()
@@ -147,6 +177,16 @@ class TestRound3MainPlacement(unittest.TestCase):
     def tearDownClass(cls):
         h.destroy_root(cls.root)
 
+    def test_overview_is_the_left_side_of_the_top_toolbar(self):
+        label = self.app.overview_label
+        self.assertEqual(label.pack_info()["side"], "left")
+        self.assertIs(label.master, self.app.search_field.master)
+        self.assertLess(label.winfo_rootx(),
+                        self.app.search_field.winfo_rootx(),
+                        "左侧概览必须在搜索框左边，不能继续留空")
+        self.assertIn("窗口", self.app.overview_text.get())
+        self.assertNotIn("WinMon", self.app.overview_text.get())
+
     def test_ai_tab_is_last_and_title_row_has_no_winmon(self):
         nb = self.app.notebook
         self.assertEqual(nb.tab(len(nb.tabs()) - 1, "text"), "AI 工作区")
@@ -158,21 +198,40 @@ class TestRound3MainPlacement(unittest.TestCase):
                         self.app.settings_button.winfo_rootx(),
                         "搜索框仍应在齿轮左侧，位置没有互换")
 
-    def test_media_keys_sit_beside_title_and_player_below(self):
+    def test_media_controls_above_full_width_title(self):
         keys = self.app.media_play_btn.master
-        self.assertIs(keys.master, self.app.media_label.master)
-        self.assertIsNot(keys.master, self.app.media_app_combo.master)
-        self.assertGreater(self.app.media_app_combo.winfo_rooty(),
-                           self.app.media_label.winfo_rooty())
-        self.assertGreater(self.app.media_app_combo.winfo_rooty(),
-                           self.app.media_play_btn.winfo_rooty())
+        self.assertIs(keys.master, self.app.media_app_combo.master,
+                      "媒体键与播放器应在同一排")
+        self.assertLess(self.app.media_app_combo.winfo_rooty(),
+                        self.app.media_label.winfo_rooty(),
+                        "播放器应在曲名上方")
+        self.assertLess(self.app.media_play_btn.winfo_rooty(),
+                        self.app.media_label.winfo_rooty(),
+                        "媒体键应在曲名上方")
         for button, icon in (
                 (self.app.media_prev_btn, "media_prev"),
                 (self.app.media_play_btn, "media_play"),
                 (self.app.media_next_btn, "media_next")):
             self.assertEqual(button._icon, icon)
+            self.assertTrue(button._bare)
             self.assertTrue([i for i in button.find_all()
                              if "jelly-icon" in button.gettags(i)])
+
+    def test_icon_only_controls_have_tooltips(self):
+        for button in (self.app.settings_button, self.app.media_prev_btn,
+                       self.app.media_next_btn):
+            self.assertIsNotNone(button._tip, "图标按钮必须有 tooltip")
+            self.assertTrue(button._tip._resolve())
+        play = self.app.media_play_btn
+        self.assertIsNotNone(play._tip)
+        old = bool(self.app._media_playing)
+        try:
+            self.app._media_playing = False
+            self.assertIn(play._tip._resolve(), ("播放", "Play"))
+            self.app._media_playing = True
+            self.assertIn(play._tip._resolve(), ("暂停", "Pause"))
+        finally:
+            self.app._media_playing = old
 
     def test_window_scrollbar_disappears_when_the_list_fits(self):
         """用户圈出的右侧空白竖条：列表装得下时不能占位。"""

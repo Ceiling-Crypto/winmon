@@ -87,7 +87,8 @@ def build_app(width: int, height: int, video: bool = False):
     app.fps_choice = tk.StringVar(value="很流畅 10 FPS")
     app.search_text = tk.StringVar()
     app.status_text = tk.StringVar(value="WinMon 就绪（截图用）")
-    app.overview_text = tk.StringVar(value="窗口 3 · 程序 3 · 进程 285")
+    app.overview_text = tk.StringVar(
+        value="窗口 3 · 程序 3 · 进程 285 · 总览 2 · 上屏 10.0 FPS")
     app._init_video_vars()          # 视频联动 / 媒体 / 关闭行为等变量统一在这里创建
     app.video_link_visible.set(bool(video))
     app.video_close_mode.set("smart")

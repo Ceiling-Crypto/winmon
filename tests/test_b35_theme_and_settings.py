@@ -295,9 +295,10 @@ class TestThemeMainWindow(unittest.TestCase):
         for btn in (self.app.media_play_btn, self.app.media_prev_btn,
                     self.app.media_next_btn):
             self.assertIsInstance(btn, self.winmon.RoundedButton)
-            self.assertTrue(btn._ring, "媒体键要有低透明描边")
-            self.assertEqual(str(btn.cget("width")), "32")
-            self.assertEqual(str(btn.cget("height")), "32")
+            self.assertTrue(btn._bare, "媒体键应是裸按钮，只在悬停时浮出薄底")
+            self.assertFalse(btn._ring, "媒体键不再带常驻描边")
+            self.assertEqual(str(btn.cget("width")), "30")
+            self.assertEqual(str(btn.cget("height")), "30")
 
     def test_checkbox_and_top_right_controls_are_visible_on_light(self):
         normal = self.root._winmon_check_images["normal"]
@@ -322,7 +323,8 @@ class TestThemeMainWindow(unittest.TestCase):
                              self.winmon.UI_BG)
             self.assertIsInstance(self.app.media_play_btn,
                                   self.winmon.RoundedButton)
-            self.assertTrue(self.app.media_play_btn._ring)
+            self.assertTrue(self.app.media_play_btn._bare)
+            self.assertFalse(self.app.media_play_btn._ring)
             self.assertTrue(self.app.search_field.winfo_exists())
             self.assertTrue(self.app.settings_button.winfo_exists())
         finally:

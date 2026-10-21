@@ -216,10 +216,11 @@ class TestUnifiedSearchUi(unittest.TestCase):
     def test_rounded_buttons_keep_button_semantics(self):
         btn = self.app.media_play_btn
         self.assertEqual(btn.winfo_class(), "Button")
-        #: 2026-10-22 起媒体键是浅色圆角图标键，不再用深色 Media.TButton。
+        #: 2026-10-22 第四轮起媒体键是裸图标键，不再用深色 Media.TButton。
         self.assertIsInstance(btn, self.winmon.RoundedButton)
-        self.assertTrue(btn._ring)
-        self.assertEqual(str(btn.cget("width")), "32")
+        self.assertTrue(btn._bare)
+        self.assertFalse(btn._ring)
+        self.assertEqual(str(btn.cget("width")), "30")
         self.assertGreaterEqual(btn.winfo_reqheight(), 28)
 
 

@@ -11,9 +11,9 @@ B33 —— 界面去技术化：主界面只留动作和高亮数据，长解释
 
 这里守住的是**可见层级**，不是像素级截图：
   · 主界面不再出现那几句常驻技术说明；
-  · 识别对象用粗体，接入状态有底色；
+  · 识别对象用粗体，接入状态仍有小状态色条；
   · 说明窗口可按标签页切换；
-  · 接入窗口的 MCP / key 标题是高亮卡片，配置默认折叠。
+  · 接入窗口的 MCP / key 用中性分组卡，配置默认折叠。
 """
 from __future__ import annotations
 
@@ -141,12 +141,18 @@ class TestMainUiHierarchy(unittest.TestCase):
     def test_ai_and_media_are_visually_emphasized(self):
         self.assertIn("bold", str(self.app.ai_identity_label.cget("font")))
         self.assertIn("bold", str(self.app.media_label.cget("font")))
-        #: 2026-10-22：媒体栏不再是高亮卡片，回到页面底色；AI 卡仍有色。
+        #: 2026-10-22 第四轮：整块彩色高亮卡已删；AI 卡也回到中性 surface，
+        #: 只靠粗体身份行 + 小状态色条建立层级。媒体行仍是普通页面行。
         self.assertEqual(str(self.app.media_label.cget("bg")),
                          str(self.root.cget("background")))
+        self.assertEqual(str(self.app.ai_identity_label.cget("bg")),
+                         self.winmon.UI_SURFACE)
         self.assertNotEqual(str(self.app.ai_state_label.cget("bg")),
                             str(self.root.cget("background")))
-        self.assertTrue(self.app.media_play_btn._ring)
+        for btn in (self.app.media_prev_btn, self.app.media_play_btn,
+                    self.app.media_next_btn):
+            self.assertTrue(btn._bare)
+            self.assertFalse(btn._ring)
 
     def test_actions_are_no_longer_a_permanent_left_rail(self):
         """2026-10-21：左栏撤掉，搜索/设置收进右上角，加入总览只在右键菜单。"""

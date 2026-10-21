@@ -1,14 +1,11 @@
 # -*- coding: utf-8 -*-
 """
-B37 —— 深色高亮卡 + `--fast` 测试筛选。
+B37 —— 深色中性卡 + `--fast` 测试筛选。
 
-2026-10-20 用户决定：
-  · 先不做“跟随系统”实时监听，随后进一步删掉整个「跟随系统」选项；
-  · 其余建议继续做完 —— 其中两项就是**深色主题下的高亮卡**和**测试提速**。
-
-这里守两件事：
-  1. 深色主题的媒体/AI/接入卡必须真的变深色，且文字对比度够；
-     不能只是把页面刷黑、卡片仍留着刺眼的浅色块。
+2026-10-22 第四轮起，媒体/AI/MCP/KEY 等不再铺整块栏目色；所有卡统一
+surface + line，栏目色只留在小徽标和状态文字上。这里守两件事：
+  1. 10 套主题的卡片都跟当前 surface 走，深色主题下发白即失败；
+     文字/状态仍要满足 4.5:1 对比度。
   2. `run_tests.py --fast` 只跳过带 slow 标记的端到端用例；
      标记工具本身零依赖，不影响普通发现。
 """
@@ -57,7 +54,7 @@ class TestCardPalettes(unittest.TestCase):
         import winmon
         winmon.apply_theme("sunlit")
 
-    def test_every_theme_has_all_highlight_cards(self):
+    def test_every_theme_has_all_neutral_cards(self):
         import winmon
         for theme in winmon.THEME_ORDER:
             winmon.apply_theme(theme)
@@ -109,20 +106,18 @@ class TestCardPalettes(unittest.TestCase):
                     contrast(card[f"{prefix}_fg"], card[f"{prefix}_bg"]), 4.5,
                     f"{theme}/{prefix} 接入状态条对比度不足")
 
-    def test_switch_theme_changes_cards_but_stays_light(self):
+    def test_neutral_cards_track_surface_and_never_tint(self):
+        """2026-10-22 第四轮：卡片不再用栏目色铺底，全部跟 surface / line 走。"""
         import winmon
-        winmon.apply_theme("sunlit")
-        light = {key: winmon.UI_CARDS[key]["bg"] for key in CARD_KEYS}
-        winmon.apply_theme("snow")
-        for key, old_bg in light.items():
-            if key in ("key", "behavior", "proactive"):
-                # 这三张固定用琥珀/绿/紫语义，不随主题换底色；
-                # 否则状态色会跟主题一起漂移，失去提醒意义。
-                continue
-            self.assertNotEqual(winmon.UI_CARDS[key]["bg"], old_bg,
-                                f"{key} 卡在换主题后没有换底色")
-            self.assertGreater(luminance(old_bg), 0.7,
-                               f"{key} 卡应是浅色高亮卡")
+        for theme in winmon.THEME_ORDER:
+            winmon.apply_theme(theme)
+            for key in CARD_KEYS:
+                card = winmon.UI_CARDS[key]
+                self.assertEqual(card["bg"], winmon.UI_SURFACE,
+                                 f"{theme}/{key} 仍是有色高亮卡")
+                self.assertEqual(card["border"], winmon.UI_LINE,
+                                 f"{theme}/{key} 仍带栏目色边框")
+                self.assertEqual(card["fg"], winmon.UI_INK)
 
 
 class _Case:
@@ -235,8 +230,14 @@ class TestThemeConnectWindow(unittest.TestCase):
         self.addCleanup(win.close)
         self.root.update_idletasks()
         cards = self.winmon.UI_CARDS
+        #: 接入状态从整块色条收成“中性卡 + 语义色文字”。
         self.assertEqual(str(win.status_frame.cget("bg")),
-                         cards["connect"]["warn_bg"])
+                         self.winmon.UI_SURFACE)
+        self.assertEqual(str(win.status_label.cget("bg")),
+                         self.winmon.UI_SURFACE)
+        self.assertIn(str(win.status_label.cget("fg")),
+                      (cards["connect"]["ok_fg"],
+                       cards["connect"]["warn_fg"]))
         self.assertEqual(str(win.mcp_state_label.cget("bg")), cards["mcp"]["bg"])
         self.assertEqual(str(win.config_text.cget("bg")),
                          cards["mcp"]["code_bg"])

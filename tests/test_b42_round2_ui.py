@@ -4,8 +4,8 @@ B42 —— 2026-10-22 第二轮界面细节。
 
 覆盖这一轮容易再退化的点：
   · 齿轮是矢量图标，AI 回到最后一栏，AI 卡不再重复入口；
-  · 媒体栏是普通行、媒体键紧挨标题、播放器在下方、没有自动唤醒；
-  · 暂停刷新 / 移除总览加大并带低透明描边；
+  · 媒体栏是普通行、播放器/媒体键在曲名上方、没有自动唤醒；
+  · 媒体键、暂停刷新、移除总览都改成无边框裸按钮；
   · 设置常规页可滚轮、透明度滑杆只有一个滑块且填充连续；
   · AI 用量直连缺 key 时只在掩码框里读入，不从界面回显或复制。
 """
@@ -55,32 +55,38 @@ class TestRound2MainUi(unittest.TestCase):
         self.assertEqual(self.app.notebook.tab(last, "text"), "AI 工作区")
         self.assertEqual(self.app.notebook.tab(0, "text"), "实时预览")
 
-    def test_media_is_a_plain_row_with_keys_beside_title(self):
+    def test_media_controls_above_a_full_width_title(self):
         self.assertEqual(str(self.app.media_bar.cget("bg")), self.winmon.UI_BG)
         self.assertEqual(self.app.media_text.get(), "（没有程序播放媒体）")
-        self.assertGreater(self.app.media_app_combo.winfo_rooty(),
-                           self.app.media_label.winfo_rooty(),
-                           "播放器选择必须在状态文字下方")
+        #: 第四轮：播放器/媒体键在上，曲名在下；曲名独占整行。
+        self.assertLess(self.app.media_app_combo.winfo_rooty(),
+                        self.app.media_label.winfo_rooty(),
+                        "播放器选择应在曲名上方")
         keys = self.app.media_play_btn.master
-        self.assertIs(keys.master, self.app.media_label.master,
-                      "媒体键应与标题在同一行，不能跑到最右侧")
+        self.assertIs(keys.master, self.app.media_app_combo.master,
+                      "媒体键与播放器应在同一排")
+        self.assertLess(self.app.media_play_btn.winfo_rooty(),
+                        self.app.media_label.winfo_rooty(),
+                        "媒体键应在曲名上方")
         self.assertFalse(hasattr(self.app, "media_auto_wake"))
         for btn in (self.app.media_prev_btn, self.app.media_play_btn,
                     self.app.media_next_btn):
-            self.assertTrue(btn._ring)
+            self.assertTrue(btn._bare)
+            self.assertFalse(btn._ring)
             self.assertTrue(btn._icon.startswith("media_"),
                             "媒体键必须是矢量图标，不依赖字体字形")
             icons = [item for item in btn.find_all()
                      if "jelly-icon" in btn.gettags(item)]
             self.assertTrue(icons, f"{btn._icon} 没有画出矢量图标")
-            self.assertEqual(str(btn.cget("width")), "32")
+            self.assertEqual(str(btn.cget("width")), "30")
 
-    def test_pause_and_remove_buttons_are_larger_and_ringed(self):
+    def test_pause_and_remove_buttons_are_larger_and_bare(self):
         pause = self.app.preview.btn_pause
         remove = self.app.gallery.remove_btn
-        self.assertTrue(pause._ring)
-        self.assertTrue(remove._ring)
-        self.assertGreaterEqual(pause.winfo_reqheight(), 32)
+        for btn in (pause, remove):
+            self.assertTrue(btn._bare, "暂停/移除不再用常驻描边")
+            self.assertFalse(btn._ring)
+        self.assertGreaterEqual(pause.winfo_reqheight(), 30)
         self.assertGreaterEqual(remove.winfo_reqheight(), 30)
 
     def test_refresh_speed_moved_to_settings(self):
