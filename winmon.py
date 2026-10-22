@@ -7755,7 +7755,7 @@ class _AiUsagePanel:
     但一打开就是一大块文字。现在改成一张仪表盘：
       · 顶部一张蓝色预算卡（今日已用 + 进度线 + 本小时调用）；
       · 三张等宽小卡分别显示真实 / 精确 / 估算；
-      · 当前 AI 与直连模型各一张状态卡；
+      · 当前 AI 与直连 API 各一张状态卡；
       · 最近记录用表格，最多 5 行，不再拼成字符串。
 
     交互仍是**本地**恢复手段：暂停 / 恢复、重置今日、上限翻倍。
@@ -7910,7 +7910,7 @@ class _AiUsagePanel:
             self._status_card(row, "当前 AI")
         left.grid(row=0, column=0, sticky="nsew", padx=(0, 8))
         right, self.direct_title_text, self.direct_title_label, \
-            self.direct_detail_text = self._status_card(row, "直连模型")
+            self.direct_detail_text = self._status_card(row, "直连 API")
         right.grid(row=0, column=1, sticky="nsew")
 
         #: 缺 key 时**就在这张卡里**输入，不必再跳去接入窗口。
@@ -8108,16 +8108,20 @@ class _AiUsagePanel:
             title, detail, color = ("未配置直连",
                                     "纯本地模式，不会调用模型", UI_MUTED)
         elif info.get("configured"):
-            model = str(info.get("model") or "?")
+            profile_name = str(info.get("profile") or "")
+            label = (provider.profile_label(profile_name)
+                     if profile_name in provider.PROVIDER_PRESETS else "")
+            label = label or str(follow or info.get("ai") or "直连 API")
             if not info.get("enabled"):
-                title, detail, color = (f"{model} · 未启用",
+                title, detail, color = (f"{label} · 未启用",
                                         "开启主动 AI 后才会调用", UI_MUTED)
             elif not info.get("key_present"):
-                title, detail, color = (f"{model} · 缺 API key",
+                title, detail, color = (f"{label} · 缺 API key",
                                         "填入 key 后可用", UI_DANGER)
             else:
-                title = f"{model} · 已就绪"
-                detail = f"跟随 {follow or '当前 AI'}"
+                title = f"{label} · 已就绪"
+                detail = ("手动指定" if info.get("manual_direct")
+                          else f"跟随 {follow or '当前 AI'}")
                 color = UI_OK
         else:
             title, detail, color = ("正在读取…", "稍后自动刷新", UI_MUTED)
@@ -8921,10 +8925,10 @@ _GUIDE_CONTENT = {
                   "它会先问你，不会自己关。Space=关闭，Esc=继续。"),
             ("h", "AI 状态"),
             ("p", "高亮的「AI」显示 WinMon 识别到的外部 AI；右边只写接入状态："
-                  "`已接入 · MCP（客户端）`、`已接入 · API（模型）`，"
+                  "`已接入 · MCP（客户端）`、`已接入 · API（AI）`，"
                   "或 `未接入 · 纯本地`。"),
             ("p", "已接入 MCP：最近 15 分钟有桌面 AI 客户端真的调用过 WinMon 的只读工具。"),
-            ("p", "已接入 API：当前 AI 的直连配置（地址 / 模型 / key）可用；"
+            ("p", "已接入 API：当前 AI 的直连 key 可用；"
                   "只有「主动 AI」模式才真的会调用，平时仍可不花 token。"),
             ("p", "未接入纯本地：没有 MCP、也没有可用 API。WinMon 只做本地识别和界面操作，"
                   "不联网、不调用模型；这不是按键，也没有“复制现场”按钮。"),
@@ -8937,7 +8941,7 @@ _GUIDE_CONTENT = {
             ("h", "三种接入状态"),
             ("p", "MCP：让桌面 AI 客户端直接读取 WinMon，只读，最推荐；"
                   "状态条显示 `已接入 · MCP`。"),
-            ("p", "API：给当前 AI 配好直连 key 和模型后显示 `已接入 · API`；"
+            ("p", "API：给当前 AI 配好直连 key 后显示 `已接入 · API`；"
                   "只有你显式开启「主动 AI」模式才会调用，会产生 token 费用。"),
             ("p", "纯本地：两者都没有时显示 `未接入 · 纯本地`；不联网、不调模型，"
                   "只做识别、预览和本地事件。"),
@@ -9033,10 +9037,10 @@ _GUIDE_CONTENT = {
             ("h", "AI status"),
             ("p", "The highlighted “AI” is the external AI WinMon detected. The status "
                   "next to it only says how it is connected: `Connected · MCP (client)`, "
-                  "`Connected · API (model)`, or `Not connected · local only`."),
+                  "`Connected · API (AI)`, or `Not connected · local only`."),
             ("p", "MCP: an AI client has actually called WinMon's read-only tools in "
                   "the last 15 minutes."),
-            ("p", "API: the current AI has a usable direct endpoint/model/key. Only "
+            ("p", "API: the current AI has a usable direct API key. Only "
                   "Active AI mode actually calls it; otherwise it can stay at 0 tokens."),
             ("p", "Local only: neither MCP nor API. WinMon only identifies windows and "
                   "runs local actions; no network calls and no model calls. It is a "
@@ -9050,7 +9054,7 @@ _GUIDE_CONTENT = {
             ("h", "Three connection states"),
             ("p", "MCP: a desktop AI client can read WinMon directly. Read-only and "
                   "recommended; the card shows `Connected · MCP`."),
-            ("p", "API: with a direct endpoint/model/key for the current AI, the card "
+            ("p", "API: with a direct API key for the current AI, the card "
                   "shows `Connected · API`. Only Active AI mode calls it, and calls "
                   "cost tokens."),
             ("p", "Local only: with neither, the card shows `Not connected · local only`. "
@@ -9449,31 +9453,8 @@ class _AiConnectWindow:
         self.key_provider_combo.pack(side="left", padx=(4, 0))
         self.key_provider_combo.bind("<<ComboboxSelected>>",
                                      lambda _e: self.change_key_provider())
-        tk.Label(body, text=i18n.pick(
-            "只列有公开 API 的服务；Copilot 这类客户端请用上面的 MCP 接入。",
-            "Only services with a public API are listed; use MCP for clients "
-            "such as Copilot."),
-            font=SMALL_FONT, bg=colors["bg"], fg=colors["muted"],
-            anchor="w", justify="left", wraplength=720).pack(fill="x", pady=(0, 4))
-
-        # 模型名与接口地址可改：服务商换模型/换兼容地址时，用户不用等程序更新。
-        # 选了具体对象才会启用；「跟随当前 AI」时显示为空并置灰。
-        self.key_model_var = tk.StringVar(value="")
-        self.key_base_var = tk.StringVar(value="")
-        fields = (
-            (i18n.pick("模型", "Model"), self.key_model_var, "key_model_entry"),
-            (i18n.pick("接口地址", "Base URL"), self.key_base_var, "key_base_entry"),
-        )
-        for label_text, var, attr in fields:
-            frow = tk.Frame(body, bg=colors["bg"])
-            frow.pack(fill="x", pady=(0, 3))
-            tk.Label(frow, text=label_text, font=UI_FONT, bg=colors["bg"],
-                     fg=colors["fg"], width=8, anchor="w").pack(side="left")
-            ent = ttk.Entry(frow, textvariable=var)
-            ent.pack(side="left", fill="x", expand=True)
-            setattr(self, attr, ent)
+        # 直连对象下面直接就是 API key：桌面端不需要用户填接口地址/模型。
         self.key_env = self._key_env()
-        self._fill_key_fields(manual)
         # 环境变量名可能很长（WINMON_ANTHROPIC_API_KEY 等），单独一行，
         # 输入框和按钮放下一行；否则 10 号字下按钮会被卡片边缘切掉。
         self.key_env_text = tk.StringVar(
@@ -9484,6 +9465,8 @@ class _AiConnectWindow:
                  bg=colors["bg"], fg=colors["fg"], anchor="w").pack(fill="x")
         key_row = tk.Frame(body, bg=colors["bg"])
         key_row.pack(fill="x", pady=(2, 0))
+        tk.Label(key_row, text="API key：", font=UI_FONT,
+                 bg=colors["bg"], fg=colors["fg"]).pack(side="left")
         self.key_var = tk.StringVar(value="")
         self.key_entry = ttk.Entry(key_row, textvariable=self.key_var, show="●")
         self.key_entry.pack(side="left", fill="x", expand=True, padx=(0, 6))
@@ -9730,26 +9713,6 @@ class _AiConnectWindow:
         except Exception:
             return "WINMON_AI_API_KEY"
 
-    def _fill_key_fields(self, manual: str) -> None:
-        """把某个直连对象的默认/已保存的模型名与接口地址填进输入框。"""
-        if not hasattr(self, "key_model_var"):
-            return
-        self._key_fields_enabled = bool(manual)
-        if not manual:
-            self.key_model_var.set("")
-            self.key_base_var.set("")
-        else:
-            defaults = provider.provider_defaults(manual)
-            try:
-                cfg = provider.resolve_profile(manual)
-            except Exception:
-                cfg = None
-            self.key_model_var.set(
-                str(getattr(cfg, "model", "") or defaults.get("model") or ""))
-            self.key_base_var.set(
-                str(getattr(cfg, "base_url", "") or defaults.get("base_url") or ""))
-        self._sync_key_controls()
-
     def _sync_key_controls(self) -> None:
         state = "normal" if getattr(self, "key_env", "") else "disabled"
         for widget in (getattr(self, "key_entry", None),
@@ -9758,15 +9721,6 @@ class _AiConnectWindow:
             if widget is not None:
                 try:
                     widget.configure(state=state)
-                except Exception:
-                    pass
-        fields_state = ("normal" if getattr(self, "_key_fields_enabled", False)
-                        else "disabled")
-        for widget in (getattr(self, "key_model_entry", None),
-                       getattr(self, "key_base_entry", None)):
-            if widget is not None:
-                try:
-                    widget.configure(state=fields_state)
                 except Exception:
                     pass
 
@@ -9783,7 +9737,7 @@ class _AiConnectWindow:
                                                "Choose a target first"))
         except Exception:
             pass
-        self._fill_key_fields(manual)
+        self._sync_key_controls()
         self._refresh()
         try:
             self.app._update_ai_bar()
@@ -9796,7 +9750,7 @@ class _AiConnectWindow:
         elif manual:
             self.status_text.set(i18n.pick(
                 f"直连对象已手动指定为 {provider.profile_label(manual)}；"
-                "WinMon 不会再跟随当前识别结果换模型。",
+                "WinMon 不会再跟随当前识别结果换对象。",
                 f"Direct target set to {provider.profile_label(manual)} manually; "
                 "WinMon will no longer switch with the detected AI."))
         else:
@@ -9814,9 +9768,10 @@ class _AiConnectWindow:
             text = i18n.pick(f"已接入 · MCP（{conn.get('client')}）",
                              f"Connected · MCP ({conn.get('client')})")
         elif kind == "direct":
+            label = str(conn.get("ai") or "API")
             text = i18n.pick(
-                f"已接入 · API（{conn.get('ai')} → {conn.get('model')}）",
-                f"Connected · API ({conn.get('ai')} → {conn.get('model')})")
+                f"已接入 · API（{label}）",
+                f"Connected · API ({label})")
         else:
             text = i18n.pick("未接入 · 纯本地（不联网、不调用模型）",
                              "Not connected · local only (no network or model calls)")
@@ -9916,17 +9871,12 @@ class _AiConnectWindow:
         manual = "" if selected in ("__none__", "") else selected
         if manual:
             ok, msg = provider.save_profile(
-                manual,
-                base_url=self.key_base_var.get(),
-                model=self.key_model_var.get(),
-                api_key_env=self.key_env,
-                enabled=True)
+                manual, api_key_env=self.key_env, enabled=True)
             if not ok:
                 self.status_text.set(msg)
                 return
         os.environ[self.key_env or "WINMON_AI_API_KEY"] = key
         self.key_var.set("")
-        self._fill_key_fields(manual)
         self._refresh()
         self.status_text.set(i18n.t("connect.key_saved", env=self.key_env))
         try:
@@ -11218,7 +11168,7 @@ class WinMonApp:
         self._build_status_band()
         # ---- 视频联动 + 媒体（合成工具栏里的一行；拆成独立方法，免得 _build_ui 过长）----
         self._build_video_bars()
-        # ---- AI 状态条（识别到的 AI + 真实/估算用量 + 直连模型状态）----
+        # ---- AI 状态条（识别到的 AI + 真实/估算用量 + 直连 API 状态）----
         self._build_ai_bar()
 
         # 只绑一次：换主题会重建界面，重复 trace 会让每次改动触发多份保存任务。
@@ -13821,7 +13771,7 @@ class WinMonApp:
                                           connection=connection)
             self.ai_identity_text.set(parts["identity"])
             # 状态行只保留“接入没有、走哪条路”：
-            #   已接入 · MCP（客户端）/ 已接入 · API（模型）/ 未接入 · 纯本地。
+            #   已接入 · MCP（客户端）/ 已接入 · API（AI）/ 未接入 · 纯本地。
             # 不再显示模式、跟随对象和前台计时，也不再放任何“复制现场”按钮。
             self.ai_state_text.set(parts["connection"] or i18n.pick(
                 "未接入 · 纯本地", "not connected · local only"))
@@ -14171,8 +14121,9 @@ class WinMonApp:
                 line1 += (f" (last {stamp}, today {conn.get('calls', 0)} calls)" if en
                           else f"（最近 {stamp}，今日 {conn.get('calls', 0)} 次）")
         elif kind == "direct":
-            line1 = (f"Connected · API: {conn.get('ai')} → {conn.get('model')}" if en else
-                     f"接入：已接入 · API（{conn.get('ai')} → {conn.get('model')}）")
+            direct_name = str(conn.get("ai") or "API")
+            line1 = (f"Connected · API: {direct_name}" if en else
+                     f"接入：已接入 · API（{direct_name}）")
         else:
             ai_name = str(conn.get("ai") or "")
             if en:
@@ -17537,7 +17488,7 @@ def ai_usage_cli(as_json: bool = False) -> int:
     if last and fresh_mcp:
         connection = f"已接入 · MCP（{last.get('client') or 'MCP 客户端'}）"
     elif cfg is not None and not cfg.validate():
-        connection = f"已接入 · API（{cfg.model}）"
+        connection = f"已接入 · API（{name or '当前对象'}）"
     else:
         connection = "未接入 · 纯本地"
     mode = str(ai.load_assist().get("mode") or "local")

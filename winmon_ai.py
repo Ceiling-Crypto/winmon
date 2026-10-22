@@ -1175,12 +1175,12 @@ def format_ai_summary(primary: dict | None, status: dict | None,
         connection_text = p(f"已接入 · MCP（{client}）", f"Connected · MCP ({client})")
         status_kind = "mcp"
     elif kind == "direct":
-        model = str(connection.get("model") or "")
+        ai_name = str(connection.get("ai") or "")
         details = []
         if connection.get("manual"):
             details.append(p("手动", "manual"))
-        if model:
-            details.append(model)
+        if ai_name:
+            details.append(ai_name)
         connection_text = p("已接入 · API", "Connected · API")
         if details:
             connection_text += f"（{' · '.join(details)}）"

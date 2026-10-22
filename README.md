@@ -1125,38 +1125,35 @@ HTTP 模式必须带 `Authorization: Bearer <token>`
   托盘右键的「设置…」也打开同一个窗口。**MCP 没有任何修改预算的工具**
   （防止提示注入自己解锁）。
 
-### 可选：直连模型 API（默认关闭，**按 AI 分别配置**）
+### 可选：直连 API（默认关闭，**按 AI 分别配置**）
 
 直连不是"WinMon 自己的 AI"，而是给**你正在用的 AI** 准备的钥匙：
 识别到智谱就找 `zhipu`，识别到 Claude 就找 `anthropic`，找不到就只用剪贴板交接。
 **不会再出现"用户用 DeepSeek、WinMon 却调 GLM"的情况。**
 
-**直连对象不再只列四家**。接入窗口的下拉框现在列出所有有公开 API 的服务，
-用户自己选；选中后会带出**可改的默认模型名和接口地址**，保存时只写地址/模型/
-环境变量名，不写 key：
+**直连对象只列大众常用的 10 家**。接入窗口的下拉框选你正在用的 AI；
+选中后**下面直接就是 API key 输入框**——桌面端用户不需要填模型名或接口地址，
+这两项由 WinMon 内置（每家一套默认值，只用于发请求）：
 
-| 服务 | 默认模型示例 | 环境变量 |
-| --- | --- | --- |
-| DeepSeek | `deepseek-chat` | `WINMON_DEEPSEEK_API_KEY` |
-| 智谱 GLM | `glm-5.3` | `WINMON_AI_API_KEY` |
-| OpenAI | `gpt-4o-mini` | `WINMON_OPENAI_API_KEY` |
-| Claude | `claude-3-5-haiku-latest` | `WINMON_ANTHROPIC_API_KEY` |
-| Gemini | `gemini-2.5-flash` | `WINMON_GEMINI_API_KEY` |
-| Grok (xAI) | `grok-4` | `WINMON_XAI_API_KEY` |
-| Kimi | `kimi-k2-0905-preview` | `WINMON_MOONSHOT_API_KEY` |
-| 通义千问 | `qwen-plus` | `WINMON_DASHSCOPE_API_KEY` |
-| 文心一言 | `ernie-4.5-turbo-128k` | `WINMON_QIANFAN_API_KEY` |
-| 豆包 | `doubao-seed-1-6-250615` | `WINMON_DOUBAO_API_KEY` |
-| 腾讯元宝 | `hunyuan-turbos-latest` | `WINMON_HUNYUAN_API_KEY` |
-| Mistral / Groq / OpenRouter | 各家默认 | `WINMON_*_API_KEY` |
-| 硅基流动 / Perplexity | 各家默认 | `WINMON_*_API_KEY` |
-| Ollama / LM Studio（本机） | `llama3.1` / `local-model` | `WINMON_OLLAMA_API_KEY` / `WINMON_LMSTUDIO_API_KEY` |
-| 自定义 / 中转 | 自己填 | 自己填 |
+| 服务 | 环境变量 |
+| --- | --- |
+| DeepSeek | `WINMON_DEEPSEEK_API_KEY` |
+| 豆包 | `WINMON_DOUBAO_API_KEY` |
+| Kimi | `WINMON_MOONSHOT_API_KEY` |
+| 通义千问 | `WINMON_DASHSCOPE_API_KEY` |
+| 文心一言 | `WINMON_QIANFAN_API_KEY` |
+| 智谱 GLM | `WINMON_AI_API_KEY` |
+| 腾讯元宝 | `WINMON_HUNYUAN_API_KEY` |
+| OpenAI | `WINMON_OPENAI_API_KEY` |
+| Claude | `WINMON_ANTHROPIC_API_KEY` |
+| Gemini | `WINMON_GEMINI_API_KEY` |
 
 > Copilot 这类**没有公开 API** 的客户端不放在直连列表里（选了也连不上）；
-> 它们走上面的 MCP 接入。模型名只是默认值，服务商改名时在界面上直接改。
+> 它们走上面的 MCP 接入。Grok / Mistral / Groq / OpenRouter / 硅基流动 /
+> Perplexity / Ollama / LM Studio / 自定义中转仍保留在后端，供旧配置和 CLI 使用，
+> 但不再占用新版设置页的下拉框。
 
-![直连对象：选中 Kimi 后自动带出模型与接口地址，所有有公开 API 的服务都在下拉里](docs/ui-8.30-provider-list.png)
+![直连对象：只列 10 家；选中后直接填 API key，没有模型/接口地址输入框](docs/ui-8.35-direct-key.png)
 
 ```bat
 set WINMON_AI_DIRECT=1
@@ -1220,9 +1217,9 @@ AI 工作区 →「打开助手…」打开窗口（或 `--ai-assist`）。**助
   1. **MCP 接入（中性分组卡，推荐）**：状态 + 「复制配置」常驻，
      JSON 片段和详细步骤默认折叠在「查看配置与步骤」里；
   2. **直连 API key（中性分组卡，可选）**：默认收在「高级」里，展开后先选
-     “直连对象”（默认是占位项，
-     不预绑定厂商；选跟随当前 AI 或手动智谱 / OpenAI / Claude / DeepSeek 后才出现
-     key 输入框），**不会默认写死某个厂商的 key**；
+     “直连对象”（默认是占位项，不预绑定厂商；只列大众常用的 10 家；选中后
+     下面直接出现 key 输入框，不需要填模型/接口地址），
+     **不会默认写死某个厂商的 key**；
      key 只放环境变量，本次运行临时输入也不写盘；
      “不要写进仓库/文档/对话”用红色粗体常驻；
   3. **独立工作区（可选）**：给新项目单独建工作区/新对话，避免旧上下文串味；
@@ -1372,7 +1369,7 @@ py tests\lint_check.py             :: 代码复检（新增问题才退出码 1�
 | `test_b44_usability_and_startup.py` | **交互收口与启动提速**（7 用例，2026-10-22）：`media_app_path` 可复用同一份进程快照（不重新枚举）；一次媒体清单重建只取一份快照；AI 接入窗口的滚轮方向/步长、内容装得下时不空转；建界面时不预扫媒体清单；首帧前点开播放器下拉会按需补扫 |
 | `test_b45_drawers_and_idle_live.py` | **闲置即时生效与类别抽屉**（8 用例，2026-10-22）：空清单仍打开闲置窗口（正在计时 / 未开启两种状态）；设置里的闲置开关即时同步运行态、取消还原；「打开清单」真的到达主界面；类别抽屉列出「全部 + 9 类 + 多选…」、单选立即生效、点抽屉外收起 |
 | `test_b46_desktop_pet.py` | **可选桌宠**（9 用例，2026-10-22）：187/238/306 三档精灵与正/侧/左/背四视图齐全；尺寸档位往返；位置夹取与默认右下角；无边框置顶窗口创建/换档/拖动/单击/双击取消单击/销毁；不抢焦点、不进 Alt+Tab；设置开关即时出现、取消收回；气泡打开并显示媒体；摘要只取有窗口的程序、不把 System 算进后台占用 |
-| `test_b47_provider_catalog.py` | **直连厂商全列出**（7 用例，2026-10-22）：19 个有公开 API 的对象齐全、每家默认字段完整；常见 AI 名映射；保存单个 profile 保留其它项且不写 key；自定义必填地址/模型；本机 http 放行、远程 http 拒绝；界面下拉真的列出全部；保存 key 后 profile 落盘且 key 只进环境变量 |
+| `test_b47_provider_catalog.py` | **直连对象常用列表**（7 用例，2026-10-23）：只列 10 家大众常用对象、每家有内置默认；界面不再出现模型/接口地址输入；常见 AI 名映射；保存单个 profile 保留其它项且不写 key；旧自定义 profile 仍可校验；本机 http 放行、远程 http 拒绝；保存 key 后 profile 落盘且 key 只进环境变量 |
 | `test_b48_pet_actions.py` | **桌宠动作与独立设置**（18 用例，2026-10-22）：闭眼帧三档齐全；`side_left` 是真镜像（逐像素抽检）；眨眼帧确实改变眼睛区域；媒体粗分类 music/video/未知；约 60 FPS 动作（呼吸/眨眼/跳/走/睡）与左右朝向；`perform()` 与按下反馈立即提交一帧；greet/spin/stretch/look/wake；音乐吐泡泡不打断、视频正面看并唤醒；窗口使用 GDI+ 逐像素 alpha（无 `SetWindowRgn`、无颜色键、Tk 重绘被抑制）；动作抽屉在托盘状态可见、执行后收起；桌宠面板在主窗口隐藏时仍可见、面板关宠不消失；完整设置 `attach=False` 在托盘状态可见；活泼度归一与持久化 |
 
 几点说明：

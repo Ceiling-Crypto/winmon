@@ -1,12 +1,12 @@
 # -*- coding: utf-8 -*-
 """
-B47 —— 2026-10-22：直连 API 的「全部厂商」目录。
+B47 —— 2026-10-22：直连 API 的「常用厂商」目录。
 
-用户的原话：接入 AI 那里的直连 API key「没有罗列出所有 ai 软件」，
-想法是「全写出来用户自己选」。这里守住三件事：
-  · 目录覆盖常见厂商，每家都有可改的默认地址/模型/环境变量；
-  · 界面的下拉框真的列出全部，不是只改了后端常量；
-  · 保存一个厂商的配置时只写地址/模型/环境变量名，**绝不写 key 本身**。
+用户先要求列出所有有公开 API 的 AI，随后纠正：桌面端用户不需要填
+模型名和接口地址，直连对象下面直接就是 API key。这里守住三件事：
+  · 下拉框只列大众常用的 10 家；
+  · 界面不再出现模型/接口地址输入框；
+  · 保存一个厂商的 profile 时只写后端需要的字段，**绝不写 key 本身**。
 """
 from __future__ import annotations
 
@@ -24,24 +24,26 @@ import winmon_ai_provider as provider       # noqa: E402
 
 
 class TestProviderCatalog(unittest.TestCase):
-    def test_catalog_has_all_major_providers(self):
-        expected = {
-            "openai", "anthropic", "google", "xai", "deepseek", "zhipu",
-            "moonshot", "dashscope", "qianfan", "doubao", "hunyuan",
-            "mistral", "groq", "openrouter", "siliconflow", "perplexity",
-            "ollama", "lmstudio", "custom",
-        }
-        self.assertEqual(set(provider.PROFILE_ORDER), expected)
-        self.assertEqual(len(provider.PROFILE_ORDER), len(expected))
-        for key, spec in provider.PROVIDER_PRESETS.items():
+    def test_catalog_only_exposes_common_providers(self):
+        expected = (
+            "deepseek", "doubao", "moonshot", "dashscope", "qianfan",
+            "zhipu", "hunyuan", "openai", "anthropic", "google",
+        )
+        self.assertEqual(tuple(provider.PROFILE_ORDER), expected)
+        self.assertEqual(len(provider.PROFILE_ORDER), 10)
+        for key in expected:
+            spec = provider.PROVIDER_PRESETS[key]
             with self.subTest(provider=key):
                 self.assertTrue(spec.get("label"), key)
                 self.assertIn(spec.get("kind"), provider.PROVIDER_KINDS)
                 self.assertTrue(spec.get("api_key_env"), key)
-                if key != "custom":
-                    self.assertTrue(str(spec.get("base_url", "")).startswith("http"),
-                                    key)
-                    self.assertTrue(spec.get("model"), key)
+                self.assertTrue(str(spec.get("base_url", "")).startswith("http"),
+                                key)
+                self.assertTrue(spec.get("model"), key)
+        # 旧 preset 仍保留给已保存配置/CLI，但不能再出现在下拉框里。
+        for hidden in ("xai", "mistral", "groq", "ollama", "custom"):
+            self.assertNotIn(hidden, provider.PROFILE_ORDER)
+            self.assertIn(hidden, provider.PROVIDER_PRESETS)
 
     def test_known_ai_names_map_to_the_new_profiles(self):
         cases = {
@@ -148,7 +150,7 @@ class TestProviderPickerUi(unittest.TestCase):
         self.winmon = winmon
         self.app = self.FakeApp()
 
-    def test_dropdown_lists_every_provider_and_prefills_fields(self):
+    def test_dropdown_lists_common_providers_without_model_or_url_fields(self):
         with mock.patch.object(provider, "resolve_profile", return_value=None):
             win = self.winmon._AiConnectWindow(self.root, self.app)
             try:
@@ -156,12 +158,18 @@ class TestProviderPickerUi(unittest.TestCase):
                 for key in provider.PROFILE_ORDER:
                     self.assertIn(provider.profile_label(key), values)
                 self.assertIn(win._key_target_placeholder, values)
+                self.assertNotIn(provider.profile_label("xai"), values,
+                                 "Grok 不在大众常用列表里")
+                self.assertFalse(hasattr(win, "key_model_entry"),
+                                 "不再让用户填模型")
+                self.assertFalse(hasattr(win, "key_base_entry"),
+                                 "不再让用户填接口地址")
+                self.assertFalse(hasattr(win, "key_model_var"))
+                self.assertFalse(hasattr(win, "key_base_var"))
                 win.key_provider_var.set(provider.profile_label("moonshot"))
                 win.change_key_provider()
                 self.assertEqual(win.key_env, "WINMON_MOONSHOT_API_KEY")
-                self.assertEqual(win.key_model_var.get(),
-                                 "kimi-k2-0905-preview")
-                self.assertIn("api.moonshot.cn", win.key_base_var.get())
+                self.assertEqual(str(win.key_entry.cget("state")), "normal")
             finally:
                 win.close()
 

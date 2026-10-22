@@ -39,11 +39,11 @@ DEFAULT_ANTHROPIC_MODEL = "claude-3-5-haiku-latest"
 DEFAULT_ZHIPU_MODEL = "glm-5.3"
 PROVIDER_KINDS = ("openai", "anthropic", "zhipu")
 
-#: 直连对象目录。界面**全部列出来让用户自己选**，不再只写四家。
+#: 直连对象目录（后端保留全部 preset，兼容旧配置/CLI）。
 #:
-#: 这里只放“真有公开 HTTP API、能在用户自己的 key 下直连”的服务；
-#: Copilot 这类没有公开 API 的客户端不列，避免选了却根本连不上。
-#: `model` 只是**可改的默认值**，服务商改模型名时在界面上直接改。
+#: 界面只列 `PROFILE_ORDER` 里大众常用的 10 家；模型名和接口地址由
+#: WinMon 内置，用户只需要选对象、填 key。这里保留的其它 preset 不会再
+#: 出现在下拉框里，但旧配置仍可解析，不会因为升级把用户已有的 key 弄丢。
 #: 全部走 OpenAI 兼容形状（`/chat/completions`），只有 `anthropic` / `zhipu`
 #: 有各自的请求细节；本地服务允许 http://127.0.0.1。
 PROVIDER_PRESETS: dict[str, dict] = {
@@ -153,12 +153,12 @@ PROVIDER_PRESETS: dict[str, dict] = {
         "api_key_env": "WINMON_AI_API_KEY",
     },
 }
-#: 界面的固定顺序：从最常用到本地/自定义。
+#: 界面下拉框的固定顺序：只列大众常用的 10 家。
+#: 其余 preset（Grok / Mistral / Groq / OpenRouter / 硅基流动 / Perplexity /
+#: Ollama / LM Studio / 自定义）仍保留给旧配置和 CLI，不再占用设置页。
 PROFILE_ORDER: tuple[str, ...] = (
-    "deepseek", "zhipu", "openai", "anthropic", "google", "xai",
-    "moonshot", "dashscope", "qianfan", "doubao", "hunyuan",
-    "mistral", "groq", "openrouter", "siliconflow", "perplexity",
-    "ollama", "lmstudio", "custom",
+    "deepseek", "doubao", "moonshot", "dashscope", "qianfan",
+    "zhipu", "hunyuan", "openai", "anthropic", "google",
 )
 PROFILE_LABELS = {key: spec["label"]
                   for key, spec in PROVIDER_PRESETS.items()}
@@ -167,7 +167,7 @@ PROFILE_KEY_ENVS = {key: spec["api_key_env"]
 
 
 def provider_defaults(name: str) -> dict:
-    """某个直连对象的默认字段（供设置页填 base_url / model / env）。"""
+    """某个直连对象的默认字段（界面不再展示 base_url/model，只用于后端请求）。"""
     spec = PROVIDER_PRESETS.get(str(name or "").strip())
     return dict(spec) if spec else {}
 

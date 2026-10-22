@@ -71,8 +71,8 @@ class TestAiSummary(unittest.TestCase):
             {"name": "DeepSeek", "kind": "desktop", "proc": "deepseek.exe"},
             {"provider_tokens": 5, "tokenizer_tokens": 0, "estimated_tokens": 0},
             {"enabled": True, "key_present": True, "model": "glm-5.3"},
-            connection={"kind": "direct", "model": "glm-5.3", "manual": True})
-        self.assertIn("已接入 · API（手动 · glm-5.3）", text)
+            connection={"kind": "direct", "ai": "DeepSeek", "manual": True})
+        self.assertIn("已接入 · API（手动 · DeepSeek）", text)
 
     def test_provider_profile_lookup_and_key_env(self):
         with tempfile.TemporaryDirectory(prefix="winmon-b33-prof-") as tmp:

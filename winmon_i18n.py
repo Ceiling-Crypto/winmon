@@ -68,8 +68,8 @@ _STRINGS = {
         "connect.key": "2）直连 API key（可选）",
         "connect.key_hint": "key 只放环境变量，不要写进仓库、文档或对话。"
                             "WinMon 不保存 key 内容，只检查它在不在。",
-        "connect.key_short": "可选。先选直连对象：跟随当前 AI，或手动指定一个；"
-                             "不选就不会写任何 key，也不会自己换模型。",
+        "connect.key_short": "可选。先选你正在用的 AI（大众常用的 10 家），"
+                             "只用填它的 API key；地址和模型由 WinMon 内置。",
         "connect.key_target": "直连对象：",
         "connect.key_target_follow": "跟随当前 AI",
         "connect.key_warning": "不要写进仓库、文档或对话；WinMon 不保存 key 内容。",
@@ -203,8 +203,8 @@ _STRINGS = {
         "connect.key": "2) Direct API key (optional)",
         "connect.key_hint": "Keep the key in an environment variable only. Never put it in "
                             "a repo, document, or chat. WinMon checks presence, not content.",
-        "connect.key_short": "Optional. Pick a direct target first: follow the current "
-                             "AI, or choose one manually. Nothing is written until you do.",
+        "connect.key_short": "Optional. Pick the AI you are using (10 common services), "
+                             "then enter its API key only; endpoint and model are built in.",
         "connect.key_target": "Direct target:",
         "connect.key_target_follow": "Follow current AI",
         "connect.key_warning": "Never put it in a repo, document, or chat. WinMon does not "
