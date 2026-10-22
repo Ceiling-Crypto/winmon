@@ -44,6 +44,7 @@ from __future__ import annotations
 
 import ctypes
 from ctypes import wintypes
+import json
 import math
 import os
 import random
@@ -90,6 +91,11 @@ def asset_dir() -> str:
 
 def sprite_path(height: int, name: str) -> str:
     return os.path.join(asset_dir(), str(int(height)), f"{name}.png")
+
+
+def action_dir() -> str:
+    """21 段动作条带图与 manifest 的目录（构建产物，运行时只读）。"""
+    return os.path.join(project_dir(), "actions")
 
 
 def available_heights() -> tuple[int, ...]:
@@ -208,6 +214,171 @@ def avatar_image(master: tk.Misc, size: int = 52) -> tk.PhotoImage:
     return img
 
 
+class ActionLibrary:
+    """
+    动作条带图库：读 `desktop pet/actions/manifest.json`，按需加载一段动作。
+
+    每段动作是若干张横向条带 PNG（默认 10 帧/条），运行时只保留**当前一段**
+    的条带；切到下一段时释放上一段，避免 21 段 × 100 帧全部驻留内存。
+    只读本地文件，不联网、不依赖 ffmpeg/Pillow。
+    """
+
+    def __init__(self, root: str = "") -> None:
+        self.root = os.path.abspath(root or action_dir())
+        self.surface = None
+        self._manifest: dict = {}
+        self._clips: dict[str, dict] = {}
+        self._groups: list[dict] = []
+        self._loaded = ""
+        self._meta: dict = {}
+        self._images: dict[int, LayerImage] = {}
+        self._strip_paths: list[str] = []
+        self._read_manifest()
+
+    def _read_manifest(self) -> None:
+        path = os.path.join(self.root, "manifest.json")
+        try:
+            with open(path, "r", encoding="utf-8") as handle:
+                data = json.load(handle)
+        except (OSError, ValueError, TypeError):
+            return
+        if not isinstance(data, dict):
+            return
+        clips = data.get("clips")
+        if not isinstance(clips, dict):
+            return
+        for clip_id, meta in clips.items():
+            if not isinstance(meta, dict):
+                continue
+            strips = meta.get("strips")
+            if not isinstance(strips, list) or not strips:
+                continue
+            try:
+                frames = int(meta.get("frames", 0))
+                width = int(meta.get("width", 0))
+                height = int(meta.get("height", 0))
+                per_strip = int(meta.get("per_strip", 10))
+                fps = float(meta.get("fps", 0))
+            except (TypeError, ValueError):
+                continue
+            if frames <= 0 or width <= 0 or height <= 0 or per_strip <= 0:
+                continue
+            item = dict(meta)
+            item.update({"frames": frames, "width": width, "height": height,
+                         "per_strip": per_strip, "fps": fps or 10.0,
+                         "label": str(meta.get("label") or clip_id)})
+            self._clips[str(clip_id)] = item
+        groups = data.get("groups")
+        if isinstance(groups, list):
+            for group in groups:
+                if not isinstance(group, dict):
+                    continue
+                ids = [str(cid) for cid in group.get("clips", [])
+                       if str(cid) in self._clips]
+                if ids:
+                    self._groups.append({
+                        "id": str(group.get("id") or group.get("label") or ""),
+                        "label": str(group.get("label") or group.get("id") or ""),
+                        "clips": ids,
+                    })
+        self._manifest = data
+
+    # ---- 查询 -------------------------------------------------------
+
+    def available(self) -> bool:
+        return bool(self._clips)
+
+    def has(self, clip_id: str) -> bool:
+        return str(clip_id or "") in self._clips
+
+    def meta(self, clip_id: str) -> dict:
+        return self._clips.get(str(clip_id or ""), {})
+
+    def label(self, clip_id: str) -> str:
+        return str(self.meta(clip_id).get("label") or clip_id)
+
+    def groups(self) -> list[dict]:
+        if self._groups:
+            return [dict(group) for group in self._groups]
+        return [{"id": "all", "label": "动作", "clips": list(self._clips)}]
+
+    def duration(self, clip_id: str) -> float:
+        meta = self.meta(clip_id)
+        if not meta:
+            return 0.0
+        return float(meta["frames"]) / max(0.1, float(meta["fps"]))
+
+    def max_width(self, target_height: int) -> int:
+        """所有动作按目标高度缩放后的最大宽度（窗口要装得下，不能裁边）。"""
+        if not self._clips:
+            return 0
+        target = max(1, int(target_height))
+        return max(
+            int(round(int(meta["width"]) * target / max(1, int(meta["height"]))))
+            for meta in self._clips.values()
+        )
+
+    # ---- 加载 / 释放 ------------------------------------------------
+
+    def load(self, clip_id: str) -> bool:
+        clip_id = str(clip_id or "")
+        meta = self._clips.get(clip_id)
+        if meta is None:
+            return False
+        if self._loaded == clip_id and self._strip_paths:
+            return True
+        self.release()
+        if self.surface is None:
+            return False
+        paths = []
+        for rel in meta["strips"]:
+            path = os.path.join(self.root, str(rel).replace("/", os.sep))
+            if not os.path.isfile(path):
+                return False
+            paths.append(path)
+        self._loaded = clip_id
+        self._meta = meta
+        self._strip_paths = paths
+        #: 条带按需解码：刚创建桌宠时只解码第 0 条，测试/启动更快；
+        #: 播到第 10 帧再读下一条，10 秒后才占满一段动作的内存。
+        return True
+
+    def release(self) -> None:
+        clip_id = self._loaded
+        self._loaded = ""
+        self._meta = {}
+        self._images = {}
+        self._strip_paths = []
+        if clip_id and self.surface is not None:
+            try:
+                self.surface.drop_images(os.path.join(self.root, clip_id))
+            except Exception:
+                pass
+
+    # ---- 取帧 -------------------------------------------------------
+
+    def frame(self, index: int):
+        """返回 `(image, src_x, src_y, src_w, src_h)`；没加载时返回 None。"""
+        meta = self._meta
+        if not meta or not self._strip_paths or self.surface is None:
+            return None
+        frames = int(meta["frames"])
+        per = max(1, int(meta["per_strip"]))
+        index = max(0, int(index)) % max(1, frames)
+        strip_index, frame_index = divmod(index, per)
+        if strip_index >= len(self._strip_paths):
+            return None
+        image = self._images.get(strip_index)
+        if image is None:
+            try:
+                image = self.surface.image(self._strip_paths[strip_index])
+            except Exception:
+                return None
+            self._images[strip_index] = image
+        return (image, frame_index * int(meta["width"]),
+                0, int(meta["width"]), int(meta["height"]))
+
+
 class DesktopPet:
     """
     无边框、置顶、透明底的桌宠窗口。
@@ -292,6 +463,10 @@ class DesktopPet:
         self.top.protocol("WM_DELETE_WINDOW", self.destroy)
 
         self._images: dict[str, LayerImage] = {}
+        self._actions = ActionLibrary()
+        self._clip_id = ""
+        self._clip_elapsed = 0.0
+        self._clip_loop = False
         self._w, self._h = 1, 1
         self._x = int(x or 0)
         self._y = int(y or 0)
@@ -365,6 +540,10 @@ class DesktopPet:
                     pass
                 setattr(self, attr, None)
         self._clear_particles()
+        try:
+            self._actions.release()
+        except Exception:
+            pass
         if self._surface is not None:
             try:
                 self._surface.close()
@@ -501,6 +680,89 @@ class DesktopPet:
         self._render(self._bob(now), self._sway(now))
         return name
 
+    # ---- 动作条带（21 段 WebM 的离线转码产物） --------------------
+
+    def _play_clip(self, clip_id: str, *, loop: bool | None = None) -> bool:
+        clip_id = str(clip_id or "")
+        if not self._actions.available() or not self._actions.has(clip_id):
+            return False
+        if not self._actions.load(clip_id):
+            return False
+        if self._mode == "walk":
+            self._walk_remaining = 0
+            self._walk_accum = 0.0
+            self._mode = "idle"
+        meta = self._actions.meta(clip_id)
+        self._clip_id = clip_id
+        self._clip_elapsed = 0.0
+        self._clip_loop = (bool(meta.get("loop"))
+                           if loop is None else bool(loop))
+        self._render(self._bob(time.monotonic()), self._sway(time.monotonic()))
+        return True
+
+    def _clear_clip(self) -> None:
+        self._clip_id = ""
+        self._clip_elapsed = 0.0
+        self._clip_loop = False
+        self._actions.release()
+
+    def _advance_clip(self, dt: float) -> None:
+        if not self._clip_id:
+            return
+        # 气泡/菜单打开时也继续播动作帧：只停“自动走动”，不冻住表情；
+        # 否则点一下桌宠，点击回应会卡在第一帧。
+        self._clip_elapsed += max(0.0, float(dt))
+        meta = self._actions.meta(self._clip_id)
+        if not meta:
+            self._clear_clip()
+            return
+        duration = float(meta["frames"]) / max(0.1, float(meta["fps"]))
+        if not self._clip_loop and self._clip_elapsed >= duration:
+            self._clear_clip()
+            if self._mode != "sleep":
+                self._play_clip("idle", loop=True)
+
+    def _clip_frame(self):
+        if not self._clip_id:
+            return None
+        meta = self._actions.meta(self._clip_id)
+        if not meta:
+            return None
+        frames = max(1, int(meta["frames"]))
+        fps = max(0.1, float(meta["fps"]))
+        index = int(self._clip_elapsed * fps)
+        index = index % frames if self._clip_loop else min(frames - 1, index)
+        return self._actions.frame(index)
+
+    def perform_action(self, action: str) -> str:
+        """
+        执行一段 21 动作里的动作；没有动作包时回退到旧的本地点动作。
+
+        与 `perform()` 分开：旧词表（hop/walk/watch…）仍被测试和旧调用使用，
+        不能因为新素材接入就改变它们的语义。
+        """
+        name = str(action or "").strip().lower()
+        now = time.monotonic()
+        self._last_interaction = now
+        if name == "sleep":
+            self._enter_sleep(now, manual=True)
+            if self._play_clip("sleep", loop=True):
+                return "sleep"
+        elif name == "wake":
+            self._wake(now)
+            if self._play_clip("wake", loop=False):
+                return "wake"
+        elif name == "idle":
+            self._wake(now)
+            if self._play_clip("idle", loop=True):
+                return "idle"
+        else:
+            if self._mode == "sleep":
+                self._wake(now)
+            if self._play_clip(name, loop=None):
+                return name
+        return self.perform(action)
+
     # ---- 尺寸 / 精灵 ----
 
     def _load_height(self, height: int, *, keep_bottom: bool,
@@ -519,9 +781,13 @@ class DesktopPet:
             raise FileNotFoundError(f"缺少桌宠精灵：{sprite_path(height, 'front')}")
         self._height = height
         self._images = images
-        self._w = max(img.width() for img in images.values()) + PAD_X * 2
+        action_w = (self._actions.max_width(height)
+                    if self._actions.available() else 0)
+        self._w = max(max(img.width() for img in images.values()),
+                      action_w) + PAD_X * 2
         self._h = max(img.height() for img in images.values()) + PAD_TOP
         self._surface.resize(self._w, self._h)
+        self._actions.surface = self._surface
         self._clear_particles()
         if x is None or y is None:
             self._x, self._y = default_position(self._w, self._h)
@@ -536,6 +802,10 @@ class DesktopPet:
         self._geometry()
         self._sprite = "front"
         self._render(0)
+        # 有动作包时用真实的呼吸循环替换“静态图 + 合成眨眼”；
+        # 没有动作包则保持原来的精灵动画，完全不影响旧安装。
+        if not self._clip_id:
+            self._play_clip("idle", loop=True)
 
     def _geometry(self) -> None:
         try:
@@ -563,6 +833,26 @@ class DesktopPet:
         if self._surface is None:
             return
         try:
+            clip = self._clip_frame() if self._mode != "walk" else None
+            if clip is not None:
+                image, src_x, src_y, src_w, src_h = clip
+                target_h = max(1, int(self._height))
+                target_w = max(1, round(src_w * target_h / max(1, src_h)))
+                clip_x = self._w // 2 - target_w // 2
+                clip_y = self._h - target_h
+                self._surface.begin()
+                self._surface.draw_image_rect(
+                    image, src_x, src_y, src_w, src_h,
+                    clip_x, clip_y, target_w, target_h)
+                self._draw_particles()
+                if not self._surface.present():
+                    self._render_error = (self._surface.last_error
+                                          or "UpdateLayeredWindow 失败")
+                    return
+                self._last_render_args = (f"clip:{self._clip_id}", 0, 0)
+                self._frame_count += 1
+                self._render_error = ""
+                return
             name = self._sprite_name()
             image = self._images.get(name) or self._images["front"]
             sway = max(-PAD_X + 1, min(PAD_X - 1, int(round(sway))))
@@ -760,6 +1050,7 @@ class DesktopPet:
                 return
             if self._mode == "sleep":
                 self._sleep_tick(now)
+                self._advance_clip(dt)
                 self._render(self._bob(now), 0)
                 return
             if self._mode == "walk" and not self._paused:
@@ -769,6 +1060,7 @@ class DesktopPet:
             if self._mode == "walk" and self._paused:
                 self._mode = "idle"
             self._idle_tick(now)
+            self._advance_clip(dt)
             self._render(self._bob(now), self._sway(now))
         finally:
             self._schedule_tick()
@@ -804,7 +1096,8 @@ class DesktopPet:
             return
         if now >= self._next_action:
             self._next_action = now + self._rng.uniform(4.0, 8.5) / self._speed
-            self._play_once(now)
+            if not self._clip_id:
+                self._play_once(now)
         if (not self._paused and now >= self._next_walk
                 and self._walk_remaining <= 0):
             self._next_walk = now + self._rng.uniform(7.0, 14.0) / self._speed
@@ -869,6 +1162,7 @@ class DesktopPet:
         self._walk_remaining = 0
         self._next_zzz = now
         self._last_interaction = now
+        self._play_clip("sleep", loop=True)
 
     def _sleep_tick(self, now: float) -> None:
         if self._paused or self._ambient:
@@ -890,6 +1184,8 @@ class DesktopPet:
         self._sprite = "front"
         self._next_walk = now + self._rng.uniform(4.0, 8.0)
         self._next_action = now + self._rng.uniform(1.5, 3.0)
+        if self._clip_id in ("", "sleep"):
+            self._play_clip("idle", loop=True)
 
     def _bob(self, now: float) -> float:
         if self._mode == "sleep":
@@ -953,6 +1249,8 @@ class DesktopPet:
         self._sprite = "front"
         self._next_walk = now + self._rng.uniform(6.0, 12.0) / self._speed
         self._spawn_particle("dust")
+        if not self._clip_id:
+            self._play_clip("idle", loop=True)
 
     def _start_walk(self, now: float, *, force: bool = False) -> None:
         if self._paused and not force:
@@ -1125,6 +1423,13 @@ class DesktopPet:
         if not self._alive:
             return
         self._wake()
+        # 点击的即时回应：四段“点击回应”随机一段；动作包缺失时
+        # perform_action 会回退到本地点动作，不会报错。
+        try:
+            self.perform_action(self._rng.choice(
+                ("wave", "joy", "shy", "pout")))
+        except Exception:
+            pass
         if self._on_click is not None:
             try:
                 self._on_click(self)
@@ -1152,14 +1457,11 @@ class DesktopPet:
 
     def _on_right_click(self, event) -> None:
         self._wake()
-        self.set_paused(True)
         if self._on_menu is not None:
             try:
                 self._on_menu(self, int(event.x_root), int(event.y_root))
             except Exception:
                 pass
-        if self._alive:
-            self.set_paused(False)
 
     def _notify_moved(self, force: bool = False) -> None:
         if self._on_moved is None:

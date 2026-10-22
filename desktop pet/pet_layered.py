@@ -144,6 +144,12 @@ def _load_gdiplus():
     _proto(gp, "GdipGraphicsClear", [ptr, ctypes.c_uint32], ctypes.c_int)
     _proto(gp, "GdipDrawImageI",
            [ptr, ptr, ctypes.c_int, ctypes.c_int], ctypes.c_int)
+    #: 从一张雪碧图/条带里取子矩形，可同时缩放（动作帧用）。
+    #: srcUnit = UnitPixel(2)；imageAttributes / callback 传 NULL。
+    _proto(gp, "GdipDrawImageRectRectI",
+           [ptr, ptr, ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+            ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+            ctypes.c_int, ptr, ptr, ptr], ctypes.c_int)
     _proto(gp, "GdipSetSmoothingMode", [ptr, ctypes.c_int], ctypes.c_int)
     _proto(gp, "GdipSetTextRenderingHint", [ptr, ctypes.c_int], ctypes.c_int)
     _proto(gp, "GdipSetInterpolationMode", [ptr, ctypes.c_int], ctypes.c_int)
@@ -428,6 +434,32 @@ class LayeredSurface:
     def draw_image(self, image: LayerImage, x: int, y: int) -> None:
         self._gp.GdipDrawImageI(self._graphics, image.handle,
                                 int(x), int(y))
+
+    def draw_image_rect(self, image: LayerImage,
+                        src_x: int, src_y: int, src_w: int, src_h: int,
+                        dst_x: int, dst_y: int, dst_w: int, dst_h: int) -> None:
+        """从条带图取一帧，按目标矩形缩放后画到画布（UnitPixel）。"""
+        self._gp.GdipDrawImageRectRectI(
+            self._graphics, image.handle,
+            int(dst_x), int(dst_y), int(dst_w), int(dst_h),
+            int(src_x), int(src_y), int(src_w), int(src_h),
+            2, None, None, None)
+
+    def drop_image(self, path: str) -> None:
+        """释放一张已解码图片；切换动作条带时用，避免缓存越积越大。"""
+        path = os.path.abspath(path)
+        image = self._images.pop(path, None)
+        if image is not None:
+            try:
+                self._gp.GdipDisposeImage(image.handle)
+            except Exception:
+                pass
+
+    def drop_images(self, prefix: str) -> None:
+        """释放某个目录下的所有图片（动作包切换时用）。"""
+        prefix = os.path.abspath(prefix)
+        for path in [p for p in self._images if p.startswith(prefix)]:
+            self.drop_image(path)
 
     def draw_text(self, text: str, cx: float, cy: float, px: int,
                   color: int, alpha: int = 255) -> None:

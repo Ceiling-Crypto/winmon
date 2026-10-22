@@ -3724,9 +3724,39 @@ class PopupMenu(tk.Toplevel):
     def add_command(self, label: str = "", command=None, **kw) -> int:
         self._items.append({"kind": "command", "label": str(label),
                             "command": command,
-                            "state": str(kw.get("state", "normal"))})
+                            "state": str(kw.get("state", "normal")),
+                            "keep_open": bool(kw.get("keep_open", False))})
         self._invalidate()
         return len(self._items) - 1
+
+    @staticmethod
+    def command_item(label: str = "", command=None, *,
+                     keep_open: bool = False,
+                     state: str = "normal") -> dict:
+        """给 `set_items()` 用的纯数据项；不像 `add_command` 那样改菜单。"""
+        return {"kind": "command", "label": str(label), "command": command,
+                "state": str(state), "keep_open": bool(keep_open)}
+
+    @staticmethod
+    def separator_item() -> dict:
+        return {"kind": "separator", "label": "", "command": None,
+                "state": "normal", "keep_open": False}
+
+    def set_items(self, items: list[dict]) -> None:
+        """
+        原地换一组菜单项（动作分类/返回用）。
+
+        只重建内容，不关闭窗口、不释放 grab；菜单已经在 `wait_window()` 里，
+        换项后重新按内容尺寸定位，右键菜单不会消失。
+        """
+        self._items = [dict(item) for item in items]
+        self._selected = -1
+        if not self.winfo_viewable():
+            self._invalidate()
+            return
+        self._build()
+        self.update_idletasks()
+        self._fit_geometry()
 
     def add_separator(self, **kw) -> int:
         self._items.append({"kind": "separator", "label": "",
@@ -3880,6 +3910,13 @@ class PopupMenu(tk.Toplevel):
         if item["kind"] != "command" or item["state"] == "disabled":
             return
         callback = item["command"]
+        if item.get("keep_open"):
+            if callable(callback):
+                try:
+                    callback()
+                except Exception:
+                    pass
+            return
         self._close()
         if callable(callback):
             callback()
@@ -3898,23 +3935,33 @@ class PopupMenu(tk.Toplevel):
         except Exception:
             pass
 
-    def tk_popup(self, x: int, y: int, entry: str = "") -> None:
-        """弹出并阻塞到选中/关闭（与 tk.Menu.tk_popup 的调用方式一致）。"""
-        if self._closing:
-            return
-        self._build()
+    def _fit_geometry(self, x: int | None = None,
+                      y: int | None = None) -> None:
+        """按当前内容尺寸重新摆放；保持左上角，超出屏幕时往里收。"""
         try:
             self.update_idletasks()
             width = max(180, self.winfo_reqwidth())
             height = max(20, self.winfo_reqheight())
             screen_w = self.winfo_screenwidth()
             screen_h = self.winfo_screenheight()
-            px = max(0, min(int(x), max(0, screen_w - width - 4)))
-            py = max(0, min(int(y), max(0, screen_h - height - 4)))
+            px = self.winfo_rootx() if x is None else int(x)
+            py = self.winfo_rooty() if y is None else int(y)
+            px = max(0, min(px, max(0, screen_w - width - 4)))
+            py = max(0, min(py, max(0, screen_h - height - 4)))
             self.geometry(f"{width}x{height}+{px}+{py}")
-            apply_window_opacity(self)
             self.deiconify()
             self.lift()
+        except tk.TclError:
+            pass
+
+    def tk_popup(self, x: int, y: int, entry: str = "") -> None:
+        """弹出并阻塞到选中/关闭（与 tk.Menu.tk_popup 的调用方式一致）。"""
+        if self._closing:
+            return
+        self._build()
+        try:
+            self._fit_geometry(x, y)
+            apply_window_opacity(self)
             try:
                 self.grab_set_global()
                 self._grab = True
@@ -5990,6 +6037,10 @@ class _PetBubble:
     只读：正在播放 / 占 CPU 最高的几个程序 / 窗口规模；不改任何状态。
     `overrideredirect` + 透明键色把外层方块藏掉，只留圆角卡片与阴影；
     不抢焦点、不 grab，9 秒自动收起，点「收起」或再点桌宠也能关。
+
+    点空白处也能关：这里**不铺全屏遮罩、不用 grab**，只每 30ms 读一次
+    全局鼠标键状态；检测到“在气泡和桌宠之外的新按下”就关。这样不会像
+    全屏覆盖层那样挡住右键菜单或整个屏幕。
     """
 
     WIDTH = 370
@@ -6000,6 +6051,10 @@ class _PetBubble:
         self._on_close = on_close
         self._closed = False
         self._after_id = None
+        self._poll_id = None
+        self._left_down = self._button_down(0x01)
+        self._right_down = self._button_down(0x02)
+        self._ignore_until = time.monotonic() + 0.25
         self.top = tk.Toplevel(parent)
         self.top.withdraw()
         self.top.overrideredirect(True)
@@ -6060,6 +6115,11 @@ class _PetBubble:
         self.top.bind("<Leave>", lambda _e: self._schedule_auto_close(), add="+")
         self._show_near_pet()
         self._schedule_auto_close()
+        if not self._closed:
+            try:
+                self._poll_id = self.top.after(30, self._poll_outside)
+            except tk.TclError:
+                self._poll_id = None
 
     @staticmethod
     def _section(parent, title: str, value: str, *, last: bool = False) -> None:
@@ -6097,6 +6157,73 @@ class _PetBubble:
                 pass
             self._after_id = None
 
+    @staticmethod
+    def _button_down(vk: int) -> bool:
+        """全局鼠标键是否按下；只读状态，不安装钩子、不抢事件。"""
+        try:
+            user32 = ctypes.windll.user32
+            user32.GetAsyncKeyState.restype = ctypes.c_short
+            return bool(int(user32.GetAsyncKeyState(int(vk))) & 0x8000)
+        except Exception:
+            return False
+
+    @staticmethod
+    def _cursor_pos() -> tuple[int, int]:
+        try:
+            class _Point(ctypes.Structure):
+                _fields_ = [("x", ctypes.c_long), ("y", ctypes.c_long)]
+            point = _Point()
+            if ctypes.windll.user32.GetCursorPos(ctypes.byref(point)):
+                return int(point.x), int(point.y)
+        except Exception:
+            pass
+        return -1, -1
+
+    def _inside(self, x: int, y: int) -> bool:
+        """点在气泡或桌宠身上都算“里面”；点在别处才关。"""
+        try:
+            left = self.top.winfo_rootx()
+            top = self.top.winfo_rooty()
+            right = left + self.top.winfo_width()
+            bottom = top + self.top.winfo_height()
+            if left <= x < right and top <= y < bottom:
+                return True
+        except tk.TclError:
+            return True
+        try:
+            px, py, pw, ph = self.pet.bounds()
+            return px <= x < px + pw and py <= y < py + ph
+        except Exception:
+            return False
+
+    def _poll_outside(self) -> None:
+        """
+        空白处关闭：轮询全局鼠标键，不铺遮罩、不 grab。
+
+        只在“从松开变成按下”的那一拍判断，避免鼠标按住拖动时误关；
+        初始 `_left_down/_right_down` 是创建气泡那一刻的状态，所以打开
+        气泡的这一次点击不会被当成“外面点了一下”。
+        """
+        self._poll_id = None
+        if self._closed:
+            return
+        try:
+            left = self._button_down(0x01)
+            right = self._button_down(0x02)
+            if time.monotonic() >= self._ignore_until:
+                clicked = ((left and not self._left_down)
+                           or (right and not self._right_down))
+                if clicked:
+                    x, y = self._cursor_pos()
+                    if not self._inside(x, y):
+                        self.close()
+                        return
+            self._left_down = left
+            self._right_down = right
+            self._poll_id = self.top.after(30, self._poll_outside)
+        except tk.TclError:
+            pass
+
     def _schedule_auto_close(self) -> None:
         self._cancel_auto_close()
         if self._closed:
@@ -6123,7 +6250,8 @@ class _PetBubble:
     def _open_actions(self) -> None:
         self.close()
         try:
-            self.app.show_pet_action_drawer()
+            px, py, pw, _ph = self.pet.bounds()
+            self.app.show_pet_action_menu(px + pw // 2, py)
         except Exception:
             pass
 
@@ -6132,6 +6260,12 @@ class _PetBubble:
             return
         self._closed = True
         self._cancel_auto_close()
+        if self._poll_id:
+            try:
+                self.top.after_cancel(self._poll_id)
+            except tk.TclError:
+                pass
+            self._poll_id = None
         try:
             self.top.destroy()
         except tk.TclError:
@@ -6141,6 +6275,24 @@ class _PetBubble:
                 self._on_close()
             except Exception:
                 pass
+
+
+#: 动作包没加载时的回退菜单；label 尽量与 manifest 一致。
+#: 右键菜单优先用 `ActionLibrary.groups()` 的真实标签，这里只保证“至少有入口”。
+_PET_ACTION_FALLBACK = (
+    ("待机", (("呼吸 / 待机", "idle"), ("东张西望", "look"),
+              ("小憩", "sleep"), ("惊醒", "wake"))),
+    ("点击回应", (("元气挥手", "wave"), ("开心跃动", "joy"),
+                  ("害羞惊讶", "shy"), ("傲娇生气", "pout"))),
+    ("工作状态", (("思考冒泡", "think"), ("忙碌点按", "busy"),
+                  ("清点归档", "tidy"), ("雀跃庆祝", "celebrate"),
+                  ("垂头叹气", "sigh"))),
+    ("说话", (("碎碎念", "talk"),)),
+    ("日常", (("伸个懒腰", "stretch"), ("撸猫", "cat"),
+              ("转个圈", "spin"), ("吐泡泡", "bubble"))),
+    ("舞蹈", (("优雅女仆舞", "maid_dance"), ("轻快摇摆舞", "sway_dance"),
+              ("屈膝礼仪", "curtsy"))),
+)
 
 
 class _PetPanel:
@@ -9402,14 +9554,12 @@ class _AboutPanel:
                             "Community fan art “Big Blue Fish”"),
                   first=True, link=self.RYANFFY)
         self._row(card, i18n.pick("动作", "Animations"),
-                  i18n.pick("dsh-pet（21 段，待接入）",
-                            "dsh-pet (21 clips, pending)"),
+                  i18n.pick("dsh-pet（21 段）",
+                            "dsh-pet (21 clips)"),
                   link=self.DSH_PET)
         self._para(card, i18n.pick(
-            "动作播放器接入后，WinMon 只保留 21 段常用动作，"
-            "并做裁切、降采样和透明化。",
-            "Once the player lands, WinMon will keep only 21 common clips "
-            "and crop/downscale them."))
+            "WinMon 只保留 21 段常用动作，并做裁切、降采样和透明化。",
+            "WinMon keeps only 21 common clips and crops/downscales them."))
         self._para(card, i18n.pick(
             "动作素材按原作者条款仅用于非商业用途；WinMon 本体免费，"
             "不对素材收费。",
@@ -17255,15 +17405,105 @@ class WinMonApp:
             except Exception:
                 pass
 
-    def show_pet_menu(self, x: int, y: int) -> None:
-        """
-        桌宠右键菜单（复用主界面的自绘 PopupMenu，主题一致）。
+    # ---- 桌宠动作菜单 ------------------------------------------------
 
-        `PopupMenu` 是**一次性**的：关闭时 `_closing=True`，缓存的菜单再次
-        `tk_popup()` 会直接 return。以前这里把菜单缓存进 `_pet_menu`，所以
-        第一次右键正常、第二次开始就“没反应”。现在每次右键都重建（菜单很小），
-        顺便让媒体标题/播放状态保持最新。
-        """
+    def _pet_action_groups(self) -> list[tuple[str, list[tuple[str, str]]]]:
+        """优先用 manifest 的真实分组/标签；没有动作包时退回内置表。"""
+        pet = getattr(self, "_pet", None)
+        library = getattr(pet, "_actions", None)
+        if library is not None and library.available():
+            groups = []
+            for group in library.groups():
+                actions = [(library.label(cid), cid)
+                           for cid in group.get("clips", [])
+                           if library.has(cid)]
+                if actions:
+                    groups.append((str(group.get("label")
+                                        or group.get("id") or "动作"),
+                                   actions))
+            if groups:
+                return groups
+        return [(group, list(actions))
+                for group, actions in _PET_ACTION_FALLBACK]
+
+    def _pet_menu_main_items(self, menu) -> list[dict]:
+        playing = bool(getattr(self, "_media_playing", False))
+        title = str((getattr(self, "_media_last_pick", {}) or {}).get("title")
+                    or "").strip()
+        if len(title) > 28:
+            title = title[:27] + "…"
+        if title:
+            media_label = f"{'正在播放' if playing else '已暂停'}：{title}"
+        else:
+            media_label = "正在播放" if playing else "未在播放媒体"
+        return [
+            menu.command_item("打开 winmon1.0", self.restore_from_tray),
+            menu.command_item("看看在放什么", self.show_pet_bubble),
+            menu.command_item(media_label, state="disabled"),
+            menu.command_item("⏮ 上一首",
+                              lambda: self.media_prev_next("previous")),
+            menu.command_item("⏸ 暂停" if playing else "▶ 播放",
+                              self.media_toggle_play),
+            menu.command_item("⏭ 下一首",
+                              lambda: self.media_prev_next("next")),
+            menu.command_item(
+                "动作 ▸",
+                lambda: menu.set_items(self._pet_action_root_items(menu)),
+                keep_open=True),
+            menu.separator_item(),
+            menu.command_item("桌宠设置…", self.show_pet_panel),
+            menu.command_item("完整设置…",
+                              lambda: self.action_settings("general")),
+            menu.separator_item(),
+            menu.command_item("隐藏桌宠", self.hide_pet_from_menu),
+            menu.command_item("退出 winmon1.0", self.quit_app),
+        ]
+
+    def _pet_action_root_items(self, menu, *, back: bool = True) -> list[dict]:
+        items = []
+        for group, actions in self._pet_action_groups():
+            items.append(menu.command_item(
+                f"{group} ▸",
+                (lambda g=group, a=actions: menu.set_items(
+                    self._pet_action_group_items(menu, g, a))),
+                keep_open=True))
+        items.append(menu.separator_item())
+        if back:
+            items.append(menu.command_item(
+                "← 返回",
+                lambda: menu.set_items(self._pet_menu_main_items(menu)),
+                keep_open=True))
+        else:
+            items.append(menu.command_item("关闭", menu._close))
+        return items
+
+    def _pet_action_group_items(self, menu, group: str,
+                                actions: list[tuple[str, str]]) -> list[dict]:
+        items = [menu.command_item(f"{group}（{len(actions)}）",
+                                   state="disabled")]
+        for label, clip_id in actions:
+            items.append(menu.command_item(
+                label, lambda cid=clip_id: self._run_pet_action(cid)))
+        items.append(menu.separator_item())
+        items.append(menu.command_item(
+            "← 返回",
+            lambda: menu.set_items(self._pet_action_root_items(menu)),
+            keep_open=True))
+        return items
+
+    def _run_pet_action(self, action: str) -> None:
+        pet = getattr(self, "_pet", None)
+        if pet is None:
+            return
+        try:
+            pet.perform_action(str(action))
+        except Exception as exc:
+            try:
+                self._set_status(f"动作执行失败：{type(exc).__name__}: {exc}")
+            except Exception:
+                pass
+
+    def _new_pet_menu(self):
         old = getattr(self, "_pet_menu", None)
         if old is not None:
             try:
@@ -17272,32 +17512,32 @@ class WinMonApp:
                 pass
             self._pet_menu = None
         menu = PopupMenu(self.root, font=UI_FONT)
-        playing = bool(getattr(self, "_media_playing", False))
-        title = str((getattr(self, "_media_last_pick", {}) or {}).get("title") or "").strip()
-        if len(title) > 28:
-            title = title[:27] + "…"
-        if title:
-            media_label = f"{'正在播放' if playing else '已暂停'}：{title}"
-        else:
-            media_label = "正在播放" if playing else "未在播放媒体"
-        menu.add_command(label="打开 winmon1.0", command=self.restore_from_tray)
-        menu.add_command(label="看看在放什么", command=self.show_pet_bubble)
-        menu.add_command(label=media_label, state="disabled")
-        menu.add_command(label="⏮ 上一首",
-                         command=lambda: self.media_prev_next("previous"))
-        menu.add_command(label=("⏸ 暂停" if playing else "▶ 播放"),
-                         command=self.media_toggle_play)
-        menu.add_command(label="⏭ 下一首",
-                         command=lambda: self.media_prev_next("next"))
-        menu.add_command(label="动作抽屉…", command=self.show_pet_action_drawer)
-        menu.add_separator()
-        menu.add_command(label="桌宠设置…", command=self.show_pet_panel)
-        menu.add_command(label="完整设置…",
-                         command=lambda: self.action_settings("general"))
-        menu.add_separator()
-        menu.add_command(label="隐藏桌宠", command=self.hide_pet_from_menu)
-        menu.add_command(label="退出 winmon1.0", command=self.quit_app)
         self._pet_menu = menu
+        return menu
+
+    def show_pet_menu(self, x: int, y: int) -> None:
+        """
+        桌宠右键菜单（复用主界面的自绘 PopupMenu，主题一致）。
+
+        动作不再另开抽屉：主菜单里是「动作 ▸」，点进去是 6 个分类，再点
+        分类展开 21 段动作。全程是**同一个菜单窗口原地换项**，不铺全屏
+        遮罩、不另开 grab，所以右键菜单不会因为“点空白处关闭”而失灵。
+
+        `PopupMenu` 是**一次性**的：关闭时 `_closing=True`，缓存的菜单再次
+        `tk_popup()` 会直接 return。现在每次右键都重建（菜单很小），
+        顺便让媒体标题/播放状态保持最新。
+        """
+        menu = self._new_pet_menu()
+        pet = getattr(self, "_pet", None)
+        self._close_pet_bubble()
+        # 关气泡会把桌宠从 paused 里放出来（气泡自己的收尾）；右键菜单
+        # 还要继续挡住自动走动，所以这里重新暂停，结束后再还原。
+        if pet is not None:
+            try:
+                pet.set_paused(True)
+            except Exception:
+                pass
+        menu.set_items(self._pet_menu_main_items(menu))
         try:
             menu.tk_popup(int(x), int(y))
         finally:
@@ -17305,6 +17545,37 @@ class WinMonApp:
                 menu.grab_release()
             except Exception:
                 pass
+            if pet is not None and getattr(self, "_pet_bubble", None) is None:
+                # 菜单里点「看看在放什么」会开气泡；气泡自己要保持暂停，
+                # 这里不能把它刚设好的 paused 又放掉。
+                try:
+                    pet.set_paused(False)
+                except Exception:
+                    pass
+
+    def show_pet_action_menu(self, x: int, y: int) -> None:
+        """气泡里的「动作…」：直接打开动作分类，不经过完整右键菜单。"""
+        pet = getattr(self, "_pet", None)
+        if pet is None:
+            return
+        menu = self._new_pet_menu()
+        menu.set_items(self._pet_action_root_items(menu, back=False))
+        try:
+            pet.set_paused(True)
+        except Exception:
+            pass
+        try:
+            menu.tk_popup(int(x), int(y))
+        finally:
+            try:
+                menu.grab_release()
+            except Exception:
+                pass
+            try:
+                pet.set_paused(False)
+            except Exception:
+                pass
+
 
     def action_settings(self, section: str = "general",
                         guide_section: str = "main") -> None:

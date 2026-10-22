@@ -39,9 +39,10 @@ Agent 层 PetAgent
   且键鼠闲置才睡。
 - **没人理**：系统键鼠闲置超过 150 秒且没有媒体，动作变慢、闭眼睡着；
   一动键鼠就醒。
-- **动作**：呼吸、眨眼（正/侧都有闭眼帧）、左右看、小跳、转圈、打招呼、
-  伸懒腰、散步；`perform("idle|walk|watch|sleep|bubble|hop|greet|spin|stretch|look|wake")`
-  给未来 Agent 用。右键/气泡的「动作抽屉」也调用同一套词表。
+- **动作**：21 段条带动作（待机/点击/工作/说话/日常/舞蹈），
+  `perform("idle|walk|watch|sleep|bubble|hop|greet|spin|stretch|look|wake")`
+  仍保留给旧调用；新菜单走 `perform_action(clip_id)`。右键「动作 ▸」和
+  气泡「动作…」都调用同一套动作 id。
 - **全屏漫游（已实现基础版）**：不再只沿任务栏横着走；在**工作区**内选二维目标点，
   横走用侧面（向左/向右各用一张镜像图）、向上用背面、向下用正面；
   碰到屏幕边/任务栏就停。拖拽仍然优先，拖到哪儿记哪儿。
@@ -51,41 +52,44 @@ Agent 层 PetAgent
 
 这些行为**不调用模型**，保证没有 key 的用户也能看到“活的”桌宠。
 
-### 2.2 动作包（开源素材“喂进去”）
+### 2.2 动作包（已实现：条带版）
 
-不把某套 GIF 写死在代码里，而是读**动作包目录**：
+早期草案是“每帧一张 PNG”；实际实现改成**每 10 帧一条横向条带**，
+减少文件数并把运行时内存压到“当前一段”：
 
 ```text
-desktop pet/actions/<pack>/
+desktop pet/actions/
 ├─ manifest.json
-├─ front/001.png ...
-├─ side/...
-└─ sleep/...
+├─ idle/strip_00.png ... strip_09.png
+├─ wave/strip_00.png ...
+└─ ...
 ```
+
+`manifest.json` 的关键字段：
 
 ```json
 {
-  "name": "community-whale-idle",
-  "license": "MIT",
-  "source": "https://github.com/...",
-  "frame_size": [238, 238],
-  "actions": {
-    "idle":  {"frames": ["front/001.png", "front/002.png"], "fps": 6, "loop": true},
-    "walk":  {"frames": ["side/001.png"], "fps": 8, "loop": true},
-    "watch": {"frames": ["front/010.png"], "fps": 2, "loop": true},
-    "sleep": {"frames": ["sleep/001.png"], "fps": 1, "loop": true},
-    "bubble": {"frames": ["front/020.png"], "fps": 6, "loop": false}
+  "fps": 10, "height": 300, "per_strip": 10,
+  "groups": [{"id": "待机", "label": "待机", "clips": ["idle", "look"]}],
+  "clips": {
+    "idle": {
+      "label": "呼吸 / 待机", "group": "待机",
+      "strips": ["idle/strip_00.png"], "frames": 100,
+      "width": 268, "height": 300, "fps": 10,
+      "per_strip": 10, "loop": true
+    }
   }
 }
 ```
 
 规则：
-- **只认本地文件**，不在启动时联网下载；用户自己从 GitHub 下载后放进目录。
-- `license` / `source` 必填，界面上显示；没有明确开源许可的包不加载。
-- 缺某个动作就退回默认三视图，不因为一个包坏掉让桌宠消失。
-- 动作包只提供**画面**，不提供可执行代码；`manifest.json` 不解析 Python。
-
-第一版可以先不用外部包，把 `assets/` 当内置包；等 loader 稳定后再接社区动作。
+- **只认本地文件**，启动/运行都不联网下载；`build_actions.py` 是构建工具，
+  运行时不依赖 ffmpeg/Pillow。
+- 条带按需解码：启动只读当前动作第 0 条，播到第 10 帧再读下一条；
+  切换动作时释放上一段。
+- 缺某段动作就回退到旧三视图精灵，不让桌宠消失。
+- 素材条款见 `actions/LICENSE.txt` 与仓库根目录 `THIRD_PARTY_NOTICES.md`。
+- 动作包只提供**画面**，`manifest.json` 不解析 Python、不执行代码。
 
 ### 2.3 Agent 层（人格由模型决定）
 
@@ -111,8 +115,8 @@ desktop pet/actions/<pack>/
 
 - 桌宠：开关、大小、**活泼度（安静 / 标准 / 活泼）**、回到右下角；
   右键「桌宠设置…」是**独立面板**，主窗口在托盘里也能用，改完立即生效。
-- 动作抽屉：右键/气泡「动作…」收录本地动作，只影响桌宠表现；
-  Agent 以后也走同一套动作词表。
+- 动作菜单：右键「动作 ▸」/ 气泡「动作…」打开 6 类 21 段，只影响桌宠表现；
+  Agent 以后也走同一套 `perform_action(clip_id)`。
 - 完整设置：主窗口隐藏/最小化时，设置窗不再 `transient(root)`，
   会独立显示（这是“桌宠没法脱离主界面响应设置”的修复）。
 - Agent：开关、频率、最大每日调用、使用哪个人设、当前直连对象（复用）——

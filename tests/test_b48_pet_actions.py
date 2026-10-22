@@ -127,8 +127,10 @@ class TestPetBehavior(unittest.TestCase):
         self.assertLess(pet._speed, 1.0)
         pet.set_motion("活泼")
         self.assertGreater(pet._speed, 1.0)
-        # 窗口只保留摇摆/跳跃的透明留白，不再有旧的 +12 / +16 大边。
-        self.assertEqual(pet._w, max(img.width() for img in pet._images.values())
+        # 窗口只保留摇摆/跳跃的透明留白；有动作包时还要装得下条带帧的宽度。
+        action_w = pet._actions.max_width(pet._height)
+        self.assertEqual(pet._w, max(
+            max(img.width() for img in pet._images.values()), action_w)
                          + petmod.PAD_X * 2)
         self.assertEqual(pet._h, max(img.height() for img in pet._images.values())
                          + petmod.PAD_TOP)

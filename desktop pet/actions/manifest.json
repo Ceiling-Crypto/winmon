@@ -1,0 +1,546 @@
+{
+  "version": 1,
+  "fps": 10,
+  "height": 300,
+  "colors": 96,
+  "per_strip": 10,
+  "groups": [
+    {
+      "id": "待机",
+      "label": "待机",
+      "clips": [
+        "idle",
+        "look",
+        "sleep",
+        "wake"
+      ]
+    },
+    {
+      "id": "点击回应",
+      "label": "点击回应",
+      "clips": [
+        "wave",
+        "joy",
+        "shy",
+        "pout"
+      ]
+    },
+    {
+      "id": "工作状态",
+      "label": "工作状态",
+      "clips": [
+        "think",
+        "busy",
+        "tidy",
+        "celebrate",
+        "sigh"
+      ]
+    },
+    {
+      "id": "说话",
+      "label": "说话",
+      "clips": [
+        "talk"
+      ]
+    },
+    {
+      "id": "日常",
+      "label": "日常",
+      "clips": [
+        "stretch",
+        "cat",
+        "spin",
+        "bubble"
+      ]
+    },
+    {
+      "id": "舞蹈",
+      "label": "舞蹈",
+      "clips": [
+        "maid_dance",
+        "sway_dance",
+        "curtsy"
+      ]
+    }
+  ],
+  "clips": {
+    "idle": {
+      "label": "呼吸 / 待机",
+      "group": "待机",
+      "source": "待机呼吸休闲.webm",
+      "strips": [
+        "idle/strip_00.png",
+        "idle/strip_01.png",
+        "idle/strip_02.png",
+        "idle/strip_03.png",
+        "idle/strip_04.png",
+        "idle/strip_05.png",
+        "idle/strip_06.png",
+        "idle/strip_07.png",
+        "idle/strip_08.png",
+        "idle/strip_09.png"
+      ],
+      "frames": 100,
+      "width": 268,
+      "height": 300,
+      "fps": 10,
+      "per_strip": 10,
+      "loop": true
+    },
+    "look": {
+      "label": "东张西望",
+      "group": "待机",
+      "source": "东张西望.webm",
+      "strips": [
+        "look/strip_00.png",
+        "look/strip_01.png",
+        "look/strip_02.png",
+        "look/strip_03.png",
+        "look/strip_04.png",
+        "look/strip_05.png",
+        "look/strip_06.png",
+        "look/strip_07.png",
+        "look/strip_08.png",
+        "look/strip_09.png"
+      ],
+      "frames": 100,
+      "width": 262,
+      "height": 300,
+      "fps": 10,
+      "per_strip": 10,
+      "loop": false
+    },
+    "sleep": {
+      "label": "小憩",
+      "group": "待机",
+      "source": "原地小憩沉眠.webm",
+      "strips": [
+        "sleep/strip_00.png",
+        "sleep/strip_01.png",
+        "sleep/strip_02.png",
+        "sleep/strip_03.png",
+        "sleep/strip_04.png",
+        "sleep/strip_05.png",
+        "sleep/strip_06.png",
+        "sleep/strip_07.png",
+        "sleep/strip_08.png",
+        "sleep/strip_09.png"
+      ],
+      "frames": 100,
+      "width": 228,
+      "height": 300,
+      "fps": 10,
+      "per_strip": 10,
+      "loop": true
+    },
+    "wake": {
+      "label": "惊醒",
+      "group": "待机",
+      "source": "打瞌睡被惊醒.webm",
+      "strips": [
+        "wake/strip_00.png",
+        "wake/strip_01.png",
+        "wake/strip_02.png",
+        "wake/strip_03.png",
+        "wake/strip_04.png",
+        "wake/strip_05.png",
+        "wake/strip_06.png",
+        "wake/strip_07.png",
+        "wake/strip_08.png",
+        "wake/strip_09.png"
+      ],
+      "frames": 100,
+      "width": 244,
+      "height": 300,
+      "fps": 10,
+      "per_strip": 10,
+      "loop": false
+    },
+    "wave": {
+      "label": "元气挥手",
+      "group": "点击回应",
+      "source": "点击回应-元气挥手.webm",
+      "strips": [
+        "wave/strip_00.png",
+        "wave/strip_01.png",
+        "wave/strip_02.png",
+        "wave/strip_03.png",
+        "wave/strip_04.png",
+        "wave/strip_05.png",
+        "wave/strip_06.png",
+        "wave/strip_07.png",
+        "wave/strip_08.png",
+        "wave/strip_09.png"
+      ],
+      "frames": 100,
+      "width": 234,
+      "height": 300,
+      "fps": 10,
+      "per_strip": 10,
+      "loop": false
+    },
+    "joy": {
+      "label": "开心跃动",
+      "group": "点击回应",
+      "source": "点击回应-开心跃动.webm",
+      "strips": [
+        "joy/strip_00.png",
+        "joy/strip_01.png",
+        "joy/strip_02.png",
+        "joy/strip_03.png",
+        "joy/strip_04.png",
+        "joy/strip_05.png",
+        "joy/strip_06.png",
+        "joy/strip_07.png",
+        "joy/strip_08.png",
+        "joy/strip_09.png"
+      ],
+      "frames": 100,
+      "width": 264,
+      "height": 300,
+      "fps": 10,
+      "per_strip": 10,
+      "loop": false
+    },
+    "shy": {
+      "label": "害羞惊讶",
+      "group": "点击回应",
+      "source": "点击回应-害羞惊讶.webm",
+      "strips": [
+        "shy/strip_00.png",
+        "shy/strip_01.png",
+        "shy/strip_02.png",
+        "shy/strip_03.png",
+        "shy/strip_04.png",
+        "shy/strip_05.png",
+        "shy/strip_06.png",
+        "shy/strip_07.png",
+        "shy/strip_08.png",
+        "shy/strip_09.png"
+      ],
+      "frames": 100,
+      "width": 260,
+      "height": 300,
+      "fps": 10,
+      "per_strip": 10,
+      "loop": false
+    },
+    "pout": {
+      "label": "傲娇生气",
+      "group": "点击回应",
+      "source": "点击回应-傲娇生气.webm",
+      "strips": [
+        "pout/strip_00.png",
+        "pout/strip_01.png",
+        "pout/strip_02.png",
+        "pout/strip_03.png",
+        "pout/strip_04.png",
+        "pout/strip_05.png",
+        "pout/strip_06.png",
+        "pout/strip_07.png",
+        "pout/strip_08.png",
+        "pout/strip_09.png"
+      ],
+      "frames": 100,
+      "width": 254,
+      "height": 300,
+      "fps": 10,
+      "per_strip": 10,
+      "loop": false
+    },
+    "think": {
+      "label": "思考冒泡",
+      "group": "工作状态",
+      "source": "工作状态-思考冒泡.webm",
+      "strips": [
+        "think/strip_00.png",
+        "think/strip_01.png",
+        "think/strip_02.png",
+        "think/strip_03.png",
+        "think/strip_04.png",
+        "think/strip_05.png",
+        "think/strip_06.png",
+        "think/strip_07.png",
+        "think/strip_08.png",
+        "think/strip_09.png"
+      ],
+      "frames": 100,
+      "width": 273,
+      "height": 300,
+      "fps": 10,
+      "per_strip": 10,
+      "loop": true
+    },
+    "busy": {
+      "label": "忙碌点按",
+      "group": "工作状态",
+      "source": "工作状态-忙碌点按.webm",
+      "strips": [
+        "busy/strip_00.png",
+        "busy/strip_01.png",
+        "busy/strip_02.png",
+        "busy/strip_03.png",
+        "busy/strip_04.png",
+        "busy/strip_05.png",
+        "busy/strip_06.png",
+        "busy/strip_07.png",
+        "busy/strip_08.png",
+        "busy/strip_09.png"
+      ],
+      "frames": 100,
+      "width": 252,
+      "height": 300,
+      "fps": 10,
+      "per_strip": 10,
+      "loop": true
+    },
+    "tidy": {
+      "label": "清点归档",
+      "group": "工作状态",
+      "source": "工作状态-清点归档.webm",
+      "strips": [
+        "tidy/strip_00.png",
+        "tidy/strip_01.png",
+        "tidy/strip_02.png",
+        "tidy/strip_03.png",
+        "tidy/strip_04.png",
+        "tidy/strip_05.png",
+        "tidy/strip_06.png",
+        "tidy/strip_07.png",
+        "tidy/strip_08.png",
+        "tidy/strip_09.png"
+      ],
+      "frames": 100,
+      "width": 249,
+      "height": 300,
+      "fps": 10,
+      "per_strip": 10,
+      "loop": true
+    },
+    "celebrate": {
+      "label": "雀跃庆祝",
+      "group": "工作状态",
+      "source": "工作状态-雀跃庆祝.webm",
+      "strips": [
+        "celebrate/strip_00.png",
+        "celebrate/strip_01.png",
+        "celebrate/strip_02.png",
+        "celebrate/strip_03.png",
+        "celebrate/strip_04.png",
+        "celebrate/strip_05.png",
+        "celebrate/strip_06.png",
+        "celebrate/strip_07.png",
+        "celebrate/strip_08.png",
+        "celebrate/strip_09.png"
+      ],
+      "frames": 100,
+      "width": 287,
+      "height": 300,
+      "fps": 10,
+      "per_strip": 10,
+      "loop": false
+    },
+    "sigh": {
+      "label": "垂头叹气",
+      "group": "工作状态",
+      "source": "工作状态-垂头叹气冒汗.webm",
+      "strips": [
+        "sigh/strip_00.png",
+        "sigh/strip_01.png",
+        "sigh/strip_02.png",
+        "sigh/strip_03.png",
+        "sigh/strip_04.png"
+      ],
+      "frames": 49,
+      "width": 288,
+      "height": 300,
+      "fps": 10,
+      "per_strip": 10,
+      "loop": false
+    },
+    "talk": {
+      "label": "碎碎念",
+      "group": "说话",
+      "source": "碎碎念-对屏碎碎念.webm",
+      "strips": [
+        "talk/strip_00.png",
+        "talk/strip_01.png",
+        "talk/strip_02.png",
+        "talk/strip_03.png",
+        "talk/strip_04.png",
+        "talk/strip_05.png",
+        "talk/strip_06.png",
+        "talk/strip_07.png",
+        "talk/strip_08.png",
+        "talk/strip_09.png"
+      ],
+      "frames": 100,
+      "width": 245,
+      "height": 300,
+      "fps": 10,
+      "per_strip": 10,
+      "loop": true
+    },
+    "stretch": {
+      "label": "伸个懒腰",
+      "group": "日常",
+      "source": "超大伸懒腰.webm",
+      "strips": [
+        "stretch/strip_00.png",
+        "stretch/strip_01.png",
+        "stretch/strip_02.png",
+        "stretch/strip_03.png",
+        "stretch/strip_04.png",
+        "stretch/strip_05.png",
+        "stretch/strip_06.png",
+        "stretch/strip_07.png",
+        "stretch/strip_08.png",
+        "stretch/strip_09.png"
+      ],
+      "frames": 100,
+      "width": 247,
+      "height": 300,
+      "fps": 10,
+      "per_strip": 10,
+      "loop": false
+    },
+    "cat": {
+      "label": "撸猫",
+      "group": "日常",
+      "source": "撸猫.webm",
+      "strips": [
+        "cat/strip_00.png",
+        "cat/strip_01.png",
+        "cat/strip_02.png",
+        "cat/strip_03.png",
+        "cat/strip_04.png",
+        "cat/strip_05.png",
+        "cat/strip_06.png",
+        "cat/strip_07.png",
+        "cat/strip_08.png",
+        "cat/strip_09.png"
+      ],
+      "frames": 100,
+      "width": 255,
+      "height": 300,
+      "fps": 10,
+      "per_strip": 10,
+      "loop": false
+    },
+    "spin": {
+      "label": "转个圈",
+      "group": "日常",
+      "source": "小幅度原地360度旋转展示.webm",
+      "strips": [
+        "spin/strip_00.png",
+        "spin/strip_01.png",
+        "spin/strip_02.png",
+        "spin/strip_03.png",
+        "spin/strip_04.png",
+        "spin/strip_05.png",
+        "spin/strip_06.png",
+        "spin/strip_07.png",
+        "spin/strip_08.png",
+        "spin/strip_09.png"
+      ],
+      "frames": 100,
+      "width": 297,
+      "height": 300,
+      "fps": 10,
+      "per_strip": 10,
+      "loop": false
+    },
+    "bubble": {
+      "label": "吐泡泡",
+      "group": "日常",
+      "source": "鲸鱼吐泡泡特效.webm",
+      "strips": [
+        "bubble/strip_00.png",
+        "bubble/strip_01.png",
+        "bubble/strip_02.png",
+        "bubble/strip_03.png",
+        "bubble/strip_04.png",
+        "bubble/strip_05.png",
+        "bubble/strip_06.png",
+        "bubble/strip_07.png",
+        "bubble/strip_08.png",
+        "bubble/strip_09.png"
+      ],
+      "frames": 100,
+      "width": 323,
+      "height": 300,
+      "fps": 10,
+      "per_strip": 10,
+      "loop": false
+    },
+    "maid_dance": {
+      "label": "优雅女仆舞",
+      "group": "舞蹈",
+      "source": "优雅女仆舞.webm",
+      "strips": [
+        "maid_dance/strip_00.png",
+        "maid_dance/strip_01.png",
+        "maid_dance/strip_02.png",
+        "maid_dance/strip_03.png",
+        "maid_dance/strip_04.png",
+        "maid_dance/strip_05.png",
+        "maid_dance/strip_06.png",
+        "maid_dance/strip_07.png",
+        "maid_dance/strip_08.png",
+        "maid_dance/strip_09.png"
+      ],
+      "frames": 100,
+      "width": 282,
+      "height": 300,
+      "fps": 10,
+      "per_strip": 10,
+      "loop": true
+    },
+    "sway_dance": {
+      "label": "轻快摇摆舞",
+      "group": "舞蹈",
+      "source": "轻快摇摆舞.webm",
+      "strips": [
+        "sway_dance/strip_00.png",
+        "sway_dance/strip_01.png",
+        "sway_dance/strip_02.png",
+        "sway_dance/strip_03.png",
+        "sway_dance/strip_04.png",
+        "sway_dance/strip_05.png",
+        "sway_dance/strip_06.png",
+        "sway_dance/strip_07.png",
+        "sway_dance/strip_08.png",
+        "sway_dance/strip_09.png"
+      ],
+      "frames": 100,
+      "width": 310,
+      "height": 300,
+      "fps": 10,
+      "per_strip": 10,
+      "loop": true
+    },
+    "curtsy": {
+      "label": "屈膝礼仪",
+      "group": "舞蹈",
+      "source": "女仆屈膝礼仪.webm",
+      "strips": [
+        "curtsy/strip_00.png",
+        "curtsy/strip_01.png",
+        "curtsy/strip_02.png",
+        "curtsy/strip_03.png",
+        "curtsy/strip_04.png",
+        "curtsy/strip_05.png",
+        "curtsy/strip_06.png",
+        "curtsy/strip_07.png",
+        "curtsy/strip_08.png",
+        "curtsy/strip_09.png"
+      ],
+      "frames": 100,
+      "width": 248,
+      "height": 300,
+      "fps": 10,
+      "per_strip": 10,
+      "loop": false
+    }
+  }
+}
