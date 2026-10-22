@@ -19,10 +19,13 @@
    `front_blink.png` / `side_blink.png` / `side_left_blink.png`：在眼睛位置
    覆一层与眼周肤色一致的椭圆，再画下垂睫毛线；没有重新绘制角色。
    `build_assets.py` 只是开发工具（需要 Pillow），**运行时不依赖 Pillow**；
-5. `avatar.png` 由 `small-whale.png` 裁切/缩放到 160px 并做同样的 alpha 二值化。
+5. 同一脚本把四视图的 alpha 轮廓压成 `masks.json`（每行若干段不透明区间），
+   运行时用 `SetWindowRgn` 把窗口裁成精灵本体；这份数据也只是轮廓，
+   不含任何新图像/可执行代码；
+6. `avatar.png` 由 `small-whale.png` 裁切/缩放到 160px 并做同样的 alpha 二值化。
 
 原始 PNG 没有提交，避免仓库里同时放两套图；需要原图或其它尺寸请回来源仓库。
-闭眼帧/镜像帧都可以用 `python "desktop pet/build_assets.py"` 重新生成。
+闭眼帧/镜像帧/`masks.json` 都可以用 `python "desktop pet/build_assets.py"` 重新生成。
 
 ## 重要说明
 

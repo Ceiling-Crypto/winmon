@@ -3,7 +3,7 @@
 > 用途：在新的对话里快速恢复上下文。读这一份即可继续开发。
 > **正式发布名 `winmon1.0`**（`APP_VER = "1.0"`，查版本：`py winmon.py --version`）。
 > **先读 §一点五「WinMon 的定位与能力边界」** —— 输入注入已明确不再投入。
-> 代码状态：**1087 个测试用例全绿**（约 115–120 秒；`--fast` 1030 条约 60–62 秒；
+> 代码状态：**1089 个测试用例全绿**（约 115–120 秒；`--fast` 1032 条约 60–62 秒；
 > 跳过数按当前桌面/媒体环境在 3–7 之间变化）+
 > 代码复检 0 新增问题（基线为空）、
 > 自检 8/8、界面冒烟通过、
@@ -22,7 +22,7 @@
 
 | | |
 | --- | --- |
-| 测试 | **1087 用例全绿**（`py tests\run_tests.py`，约 115–120 秒；跳过数按环境 3–7）；`--fast` 1030 条约 60–62 秒 |
+| 测试 | **1089 用例全绿**（`py tests\run_tests.py`，约 115–120 秒；跳过数按环境 3–7）；`--fast` 1032 条约 60–62 秒 |
 | 代码复检 | `py tests\lint_check.py` → **新增问题 0**（基线已清空，见 §四） |
 | 自检 / 冒烟 | `py winmon.py --selftest` 8/8 通过；`--smoke` 通过 |
 | 规模 | `winmon_core.py` ~6950 行 / `winmon.py` ~18150 行 / `desktop pet/winmon_pet.py` ~1040 行 / 测试 62 个 .py（48 个测试模块） |
@@ -109,7 +109,7 @@
 | `winmon_ai_provider.py` | ~250 | **可选**直连模型 API（默认关；精确 usage；key 只从环境变量读） |
 | `desktop pet/` | ~1040 | **可选桌宠的全部运行文件**：`winmon_pet.py`、精灵（187/238/306 × 正/侧/左/背 + 闭眼）、头像、`LICENSE` / `NOTICE.md`、截图。`winmon_pet.py` 不 import `winmon.py` |
 | `media_session.ps1` | ~230 | 系统媒体会话（GSMTC）桥接脚本（PowerShell + Windows 自带 WinRT 投影；**必须纯 ASCII 无 BOM**） |
-| `tests/` | 62 个 .py | **可重复运行的测试**（1087 用例，纯 unittest） + `_marks.py` 慢用例标记 + 开发辅助工具 + `lint_check.py` / `lint_baseline.txt` |
+| `tests/` | 62 个 .py | **可重复运行的测试**（1089 用例，纯 unittest） + `_marks.py` 慢用例标记 + 开发辅助工具 + `lint_check.py` / `lint_baseline.txt` |
 | `启动WinMon.bat` | — | 菜单式启动器（纯 ASCII，避免批处理编码问题） |
 | `scan_windows.py` | — | 命令行窗口清单 |
 | `close_others.py` | — | 批量关闭除当前窗口外的窗口 |
@@ -162,8 +162,8 @@ python winmon.py --videos --open 3 --watch --close-window   :: 完整视频链�
 python winmon.py --version          :: 打印版本（winmon1.0）
 python winmon.py --idle             :: 列出"长期开着、没人用"的程序（只看，不关任何东西）
 python winmon.py --idle --idle-minutes 5   :: 换个闲置阈值（分钟）
-py tests\run_tests.py               :: 全部测试（1087 用例，约 117 秒）
-py tests\run_tests.py --fast        :: 快跑（1030 用例，约 61 秒；跳过真窗口/抓屏慢用例）
+py tests\run_tests.py               :: 全部测试（1089 用例，约 117 秒）
+py tests\run_tests.py --fast        :: 快跑（1032 用例，约 61 秒；跳过真窗口/抓屏慢用例）
 ```
 
 ---
@@ -3282,6 +3282,35 @@ AI 深蓝卡可见；深色接入窗展开后目视无浅色卡残留。
   `--smoke` 退出 0，白底截图已目视确认。
 - 跳过数会随桌面是否有 Edge / 媒体会话变化。
 
+### 9.42 阶段 8.32：只留桌宠本体 + 动作抽屉（2026-10-22）
+
+用户发来屏幕照片，画了一张蓝圈：桌宠背后还有一圈**白色圆角卡片**；同时提两件事：
+1. 去掉边框，只保留桌宠本体；
+2. 动作太少，把动作收进一个抽屉菜单，自己选。
+
+诊断与处理：
+1. **白卡**：`SetWindowRgn` 之前只靠颜色键透明；只要 DWM/驱动把窗口底画成白色，
+   或透明键没按预期生效，就会露出一整块矩形。现在 `build_assets.py` 从四视图 alpha
+   生成 `assets/<高度>/masks.json`，运行时按当前精灵轮廓建 HRGN 并 `SetWindowRgn`；
+   呼吸/摇摆/换视图时同步更新（每帧重算，实测 GDI 句柄稳定在 33 左右）。
+   轮廓外没有窗口，边框/阴影/白卡都没有地方可画；颜色键保留作兜底。
+2. **动作抽屉**：新增 `_PetActionDrawer`，从桌宠右侧（放不下就左侧）贴出，
+   收录 9 个本地动作；右键和气泡「动作…」都能打开，主窗口在托盘里仍然可见。
+   抽屉只调用 `DesktopPet.perform()`，动作词表扩到
+   `idle/walk/watch/sleep/bubble/hop/greet/spin/stretch/look/wake`；
+   自动发呆也加入转圈、打招呼、伸懒腰。
+3. **一个必须说清的观察**：用户照片里的精灵是**举手帧**，而 `desktop pet/assets/`
+   里的正/侧/背都是垂手静态图；白卡也不是本目录当前窗口的样式（本机 150% DPI
+   实测透明/轮廓裁剪后背景完全透出）。所以照片里那只**很可能不是 `D:\winmon`
+   这版桌宠**，而是另一个桌宠程序/旧副本。本轮改动只针对本仓库；
+   重开后若仍看到白卡 + 举手帧，应先确认运行的是哪个程序。
+4. **测试**：`test_b48` 增至 17 条（窗口轮廓 `GetWindowRgn` 非空且小于窗口、
+   动作抽屉在托盘状态可见/执行后收起、greet/spin/stretch/look/wake）。
+   全量 **1089 用例**，失败 0 / 错误 0，跳过 7，**116.285 秒**；
+   `--fast` **1032 条**，失败 0 / 错误 0，跳过 6，**61.095 秒**；lint 新增 0；
+   `--selftest` 8/8；`--smoke` 退出 0。
+5. **截图**：`desktop pet/docs/ui-8.32-pet-actions.png`（动作抽屉）。
+
 ### 9.41 阶段 8.31：桌宠会动、去掉透明框架、独立设置（2026-10-22）
 
 用户这轮只说了三件事：
@@ -4479,7 +4508,7 @@ README 的界面颜色一节也加了同样说明。
 ## 四、测试体系（**改代码后先跑这个**）
 
 ```bat
-py tests\run_tests.py            :: 1087 用例，约 117 秒（--fast 1030 条约 61 秒）
+py tests\run_tests.py            :: 1089 用例，约 116 秒（--fast 1032 条约 61 秒）
 py tests\run_tests.py -v         :: 逐个看
 py tests\run_tests.py -k capture :: 只跑关心的
 py tests\lint_check.py           :: 代码复检（退出码 1 = 有新增问题）
@@ -5163,8 +5192,8 @@ C 盘那份**保持原样、一字未改**（用户 2026-10-11 确认：暂不�
 
 > 继续开发 **winmon1.0** —— Windows 程序监控与终止工具，纯标准库，在 `项目根目录\`。
 > 请先读 `HANDOFF.md` 和 `README.md`，然后跑 `py tests\run_tests.py`
-> 确认基线是 **1087 用例全绿**（需要哔哩哔哩/UIA 页面的用例会按需 skip；
-> 日常改动用 `--fast` 跑 1030 条，提交前跑全量）、
+> 确认基线是 **1089 用例全绿**（需要哔哩哔哩/UIA 页面的用例会按需 skip；
+> 日常改动用 `--fast` 跑 1032 条，提交前跑全量）、
 > `py tests\lint_check.py` 退出码 0（无新增问题）。
 > **版式要另眼验收**：测试进程没有开 DPI 感知，布局检查看不到"真实 DPI 下控件被挤没"，
 > 所以改动界面后还要跑一次 `py winmon.py --smoke` 看截图（见 §9.15 第 14 条）。

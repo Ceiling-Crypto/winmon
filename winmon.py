@@ -6047,6 +6047,9 @@ class _PetBubble:
         RoundedButton(actions, text="设置", kind="ghost", bg=UI_SURFACE,
                       height=30, radius=15, padx=12,
                       command=self._open_settings).pack(side="left", padx=(6, 0))
+        RoundedButton(actions, text="动作…", kind="ghost", bg=UI_SURFACE,
+                      height=30, radius=15, padx=12,
+                      command=self._open_actions).pack(side="left", padx=(6, 0))
         RoundedButton(actions, text="收起", kind="ghost", bg=UI_SURFACE,
                       height=30, radius=15, padx=12,
                       command=self.close).pack(side="right")
@@ -6113,6 +6116,13 @@ class _PetBubble:
         self.close()
         try:
             self.app.show_pet_panel()
+        except Exception:
+            pass
+
+    def _open_actions(self) -> None:
+        self.close()
+        try:
+            self.app.show_pet_action_drawer()
         except Exception:
             pass
 
@@ -6310,6 +6320,128 @@ class _PetPanel:
         self._closed = True
         if getattr(self.app, "_pet_panel", None) is self:
             self.app._pet_panel = None
+        pet = getattr(self.app, "_pet", None)
+        if pet is not None:
+            try:
+                pet.set_paused(False)
+            except Exception:
+                pass
+        try:
+            self.top.destroy()
+        except tk.TclError:
+            pass
+
+
+class _PetActionDrawer:
+    """
+    从桌宠旁边滑出的「动作抽屉」。
+
+    用户 2026-10-22 的反馈：动作太少，而且应该收在一个抽屉里自己选。
+    这里只放**桌宠自己的表现动作**（不碰窗口/进程/系统），点一下就执行并收起；
+    抽屉不是主窗口的 transient，主窗口在托盘里也能打开。
+    """
+
+    WIDTH = 236
+    ACTIONS = (
+        ("打个招呼", "greet"),
+        ("跳一下", "hop"),
+        ("散个步", "walk"),
+        ("左右看看", "look"),
+        ("转个圈", "spin"),
+        ("伸个懒腰", "stretch"),
+        ("吐个泡泡", "bubble"),
+        ("睡觉", "sleep"),
+        ("叫醒", "wake"),
+    )
+
+    def __init__(self, parent: tk.Misc, app) -> None:
+        self.app = app
+        self._closed = False
+        self.top = tk.Toplevel(parent)
+        self.top.withdraw()
+        self.top.overrideredirect(True)
+        self.top.configure(bg=UI_BG)
+        try:
+            self.top.attributes("-topmost", True)
+            self.top.wm_attributes("-transparentcolor", UI_BG)
+        except tk.TclError:
+            pass
+        panel = SoftPanel(self.top, UI_SURFACE, radius=13, shadow=5,
+                          pad=10, border=UI_LINE)
+        panel.pack(fill="both", expand=True, padx=6, pady=6)
+        body = tk.Frame(panel.content, bg=UI_SURFACE, width=self.WIDTH)
+        body.pack(fill="both", expand=True)
+
+        head = tk.Frame(body, bg=UI_SURFACE)
+        head.pack(fill="x")
+        tk.Label(head, text="动作", font=BOLD_FONT, bg=UI_SURFACE,
+                 fg=UI_INK, anchor="w").pack(side="left")
+        RoundedButton(head, text="×", kind="ghost", bg=UI_SURFACE,
+                      width=26, height=26, radius=13, padx=0,
+                      command=self.close).pack(side="right")
+        tk.Label(body, text="只影响桌宠，不控制系统", font=SMALL_FONT,
+                 bg=UI_SURFACE, fg=UI_MUTED, anchor="w").pack(
+            fill="x", pady=(1, 7))
+
+        for label, action in self.ACTIONS:
+            RoundedButton(
+                body, text=label, kind="ghost", bg=UI_SURFACE,
+                width=self.WIDTH, height=29, radius=9, anchor="w", padx=12,
+                command=lambda name=action: self._run(name)).pack(
+                    fill="x", pady=1)
+
+        self.top.bind("<Escape>", lambda _e: self.close(), add="+")
+        pet = getattr(app, "_pet", None)
+        if pet is not None:
+            try:
+                pet.set_paused(True)
+            except Exception:
+                pass
+        self._place_near_pet()
+        self.top.deiconify()
+        self.top.lift()
+        try:
+            self.top.focus_force()
+        except tk.TclError:
+            pass
+
+    def _place_near_pet(self) -> None:
+        try:
+            self.top.update_idletasks()
+            width = max(self.WIDTH + 30, self.top.winfo_reqwidth())
+            height = max(260, self.top.winfo_reqheight())
+            pet = getattr(self.app, "_pet", None)
+            if pet is not None:
+                px, py, pw, ph = pet.bounds()
+                x = px + pw + 6
+                y = py + ph // 2 - height // 2
+                left, top, right, bottom = petmod.work_area()
+                if x + width > right - 4:
+                    x = px - width - 6
+                x, y = petmod.clamp_position(x, y, width, height,
+                                             left, top, right, bottom)
+            else:
+                x = (self.top.winfo_screenwidth() - width) // 2
+                y = (self.top.winfo_screenheight() - height) // 3
+            self.top.geometry(f"{width}x{height}+{x}+{y}")
+        except Exception:
+            pass
+
+    def _run(self, action: str) -> None:
+        pet = getattr(self.app, "_pet", None)
+        if pet is not None:
+            try:
+                pet.perform(action)
+            except Exception:
+                pass
+        self.close()
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        if getattr(self.app, "_pet_action_drawer", None) is self:
+            self.app._pet_action_drawer = None
         pet = getattr(self.app, "_pet", None)
         if pet is not None:
             try:
@@ -10735,6 +10867,7 @@ class WinMonApp:
         self._pet_bubble = None
         self._pet_menu = None
         self._pet_panel = None
+        self._pet_action_drawer = None
         #: 最近一次媒体类型（music / video / 空），供新建桌宠时恢复
         self._pet_ambient = ""
         #: 创建失败的原因（设置页/状态栏如实说明，不静默）
@@ -16297,6 +16430,7 @@ class WinMonApp:
         self._close_pet_bubble()
         self._destroy_pet()
         self._destroy_pet_panel()
+        self._destroy_pet_action_drawer()
         try:
             if self._pet_menu is not None:
                 self._pet_menu.destroy()
@@ -16831,6 +16965,32 @@ class WinMonApp:
             except Exception:
                 pass
 
+    def show_pet_action_drawer(self) -> None:
+        """打开桌宠动作抽屉（主窗口在托盘里也能用）。"""
+        drawer = getattr(self, "_pet_action_drawer", None)
+        if drawer is not None:
+            try:
+                if drawer.top.winfo_exists():
+                    drawer.top.deiconify()
+                    drawer.top.lift()
+                    return
+            except Exception:
+                self._pet_action_drawer = None
+        try:
+            self._pet_action_drawer = _PetActionDrawer(self.root, self)
+        except Exception as exc:
+            self._pet_action_drawer = None
+            self._set_status(f"动作抽屉打不开：{type(exc).__name__}: {exc}")
+
+    def _destroy_pet_action_drawer(self) -> None:
+        drawer = getattr(self, "_pet_action_drawer", None)
+        self._pet_action_drawer = None
+        if drawer is not None:
+            try:
+                drawer.close()
+            except Exception:
+                pass
+
     def show_pet_menu(self, x: int, y: int) -> None:
         """桌宠右键菜单（复用主界面的自绘 PopupMenu，主题一致）。"""
         menu = getattr(self, "_pet_menu", None)
@@ -16838,6 +16998,7 @@ class WinMonApp:
             menu = PopupMenu(self.root, font=UI_FONT)
             menu.add_command(label="打开 winmon1.0", command=self.restore_from_tray)
             menu.add_command(label="看看在放什么", command=self.show_pet_bubble)
+            menu.add_command(label="动作抽屉…", command=self.show_pet_action_drawer)
             menu.add_separator()
             menu.add_command(label="桌宠设置…", command=self.show_pet_panel)
             menu.add_command(label="完整设置…",

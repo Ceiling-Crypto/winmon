@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import ctypes
 from ctypes import wintypes
+import json
 import math
 import os
 import random
@@ -196,6 +197,77 @@ def avatar_image(master: tk.Misc, size: int = 52) -> tk.PhotoImage:
     return img
 
 
+def load_masks(height: int) -> dict[str, list[list[int]]]:
+    """
+    读 `assets/<高度>/masks.json`（`build_assets.py` 生成）。
+
+    没有文件就返回空字典，桌宠退回颜色键透明；生成失败不影响启动。
+    """
+    path = os.path.join(asset_dir(), str(int(height)), "masks.json")
+    if not os.path.isfile(path):
+        return {}
+    try:
+        with open(path, encoding="utf-8") as fh:
+            raw = json.load(fh)
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(raw, dict):
+        return {}
+    out: dict[str, list[list[int]]] = {}
+    for name, rows in raw.items():
+        if not isinstance(rows, list):
+            continue
+        clean = []
+        for row in rows:
+            if (isinstance(row, list) and len(row) >= 3
+                    and all(isinstance(value, int) for value in row)):
+                clean.append(row)
+        if clean:
+            out[str(name)] = clean
+    return out
+
+
+class _RGNDATAHEADER(ctypes.Structure):
+    _fields_ = [("dwSize", wintypes.DWORD), ("iType", wintypes.DWORD),
+                ("nCount", wintypes.DWORD), ("nRgnSize", wintypes.DWORD),
+                ("rcBound", wintypes.RECT)]
+
+
+def make_window_region(rects: list[tuple[int, int, int, int]],
+                       width: int, height: int):
+    """
+    用一批窗口坐标矩形创建 HRGN。
+
+    只用于 Windows；失败返回 0，调用方会关闭裁剪并保留透明窗口。
+    """
+    if not rects:
+        return 0
+    try:
+        count = len(rects)
+        header_size = ctypes.sizeof(_RGNDATAHEADER)
+        rect_size = ctypes.sizeof(wintypes.RECT)
+        total = header_size + count * rect_size
+        buffer = ctypes.create_string_buffer(total)
+        header = ctypes.cast(buffer, ctypes.POINTER(_RGNDATAHEADER)).contents
+        header.dwSize = header_size
+        header.iType = 1                 # RDH_RECTANGLES
+        header.nCount = count
+        header.nRgnSize = count * rect_size
+        header.rcBound = wintypes.RECT(0, 0, int(width), int(height))
+        array = (wintypes.RECT * count)(
+            *[wintypes.RECT(int(x0), int(y0), int(x1), int(y1))
+              for x0, y0, x1, y1 in rects])
+        ctypes.memmove(ctypes.addressof(buffer) + header_size,
+                       array, count * rect_size)
+        gdi32 = ctypes.windll.gdi32
+        gdi32.ExtCreateRegion.restype = wintypes.HRGN
+        gdi32.ExtCreateRegion.argtypes = [ctypes.c_void_p, wintypes.DWORD,
+                                           ctypes.c_void_p]
+        return gdi32.ExtCreateRegion(None, total, buffer)
+    except Exception:
+        return 0
+
+
 class DesktopPet:
     """
     无边框、置顶、透明底的桌宠窗口。
@@ -232,6 +304,9 @@ class DesktopPet:
         self._drag_sparked = False
         self._hop_until = 0.0
         self._watch_until = 0.0
+        self._spin_until = 0.0
+        self._spin_next = 0.0
+        self._spin_side = "side"
         self._blink_until = 0.0
         self._look_until = 0.0
         self._look_sprite = "side"
@@ -255,6 +330,11 @@ class DesktopPet:
         self._rng = random.Random()
         self._particles: list[dict] = []
         self._sprite = "front"
+        self._masks: dict[str, list[list[int]]] = {}
+        self._hwnd = 0
+        self._region_ok = True
+        self._region_key = None
+        self._last_render_args = ("front", 0, 0)
 
         self.top = tk.Toplevel(parent)
         self.top.withdraw()
@@ -406,6 +486,25 @@ class DesktopPet:
         if name == "hop":
             self._hop_until = now + max(0.35, float(duration or 0.5))
             self._spawn_particle("heart")
+        elif name == "greet":
+            self._hop_until = now + 0.6
+            self._look_until = now + 1.0
+            self._look_sprite = "side"
+            for _ in range(2):
+                self._spawn_particle("heart")
+        elif name == "spin":
+            self._spin_until = now + 0.9
+            self._spin_next = 0.0
+            self._spin_side = "side"
+            self._hop_until = now + 0.45
+        elif name == "stretch":
+            self._hop_until = now + 0.8
+            self._spawn_particle("sparkle")
+        elif name == "look":
+            self._look_until = now + 1.6
+            self._look_sprite = self._rng.choice(("side", "side_left"))
+        elif name == "wake":
+            self._wake(now)
         elif name == "walk":
             self._start_walk(now, force=True)
         elif name == "watch":
@@ -439,6 +538,8 @@ class DesktopPet:
             raise FileNotFoundError(f"缺少桌宠精灵：{sprite_path(height, 'front')}")
         self._height = height
         self._images = images
+        self._masks = load_masks(height)
+        self._region_key = None
         self._w = max(img.width() for img in images.values()) + PAD_X * 2
         self._h = max(img.height() for img in images.values()) + PAD_TOP
         self.canvas.configure(width=self._w, height=self._h)
@@ -479,11 +580,69 @@ class DesktopPet:
             name = self._sprite_name()
             image = self._images.get(name) or self._images["front"]
             sway = max(-PAD_X + 1, min(PAD_X - 1, int(sway)))
+            bob = max(0, int(bob))
             self.canvas.itemconfigure(self._image_item, image=image)
             self.canvas.coords(self._image_item, self._w // 2 + sway,
-                               self._h - max(0, int(bob)))
+                               self._h - bob)
+            self._last_render_args = (name, sway, bob)
+            self._apply_region(name, sway, bob)
         except (tk.TclError, KeyError):
             pass
+
+    def _apply_region(self, name: str, sway: int, bob: int) -> None:
+        """
+        把窗口裁成精灵轮廓 —— 这是“只保留桌宠本体”的最后一道保险。
+
+        颜色键透明在大多数机器上够用；但一旦 DWM/驱动没按预期键掉底色，
+        用户就会看到精灵背后一个矩形底。`SetWindowRgn` 直接从窗口形状里
+        去掉轮廓外的像素，连边框/阴影都没有地方可画。
+        """
+        if not self._region_ok or not self._masks:
+            return
+        base = name[:-6] if name.endswith("_blink") else name
+        rows = self._masks.get(base)
+        if not rows:
+            return
+        if not self._hwnd:
+            try:
+                self._hwnd = int(ctypes.windll.user32.GetAncestor(
+                    wintypes.HWND(self.top.winfo_id()), 2) or 0)
+            except Exception:
+                self._hwnd = 0
+        if not self._hwnd:
+            return
+        key = (base, int(sway), int(bob))
+        if key == self._region_key:
+            return
+        try:
+            image = self._images.get(name) or self._images["front"]
+            ox = self._w // 2 - image.width() // 2 + int(sway)
+            oy = self._h - image.height() - int(bob)
+            rects = []
+            for row in rows:
+                y = row[0] + oy
+                for index in range(1, len(row) - 1, 2):
+                    x0, x1 = row[index] + ox, row[index + 1] + ox
+                    if x1 > x0:
+                        rects.append((x0, y, x1, y + 1))
+            region = make_window_region(rects, self._w, self._h)
+            if not region:
+                self._region_ok = False
+                return
+            user32 = ctypes.windll.user32
+            user32.SetWindowRgn.argtypes = [wintypes.HWND, wintypes.HRGN,
+                                            wintypes.BOOL]
+            user32.SetWindowRgn.restype = ctypes.c_int
+            if not user32.SetWindowRgn(wintypes.HWND(self._hwnd), region, True):
+                try:
+                    ctypes.windll.gdi32.DeleteObject(region)
+                except Exception:
+                    pass
+                self._region_ok = False
+                return
+            self._region_key = key
+        except Exception:
+            self._region_ok = False
 
     def _move_window(self, x: int, y: int) -> None:
         left, top, right, bottom = work_area()
@@ -518,6 +677,8 @@ class DesktopPet:
                 wintypes.HWND(self.top.winfo_id()), 2)  # GA_ROOT
             if not hwnd:
                 return
+            self._hwnd = int(hwnd)
+            self._region_key = None
             user32.GetWindowLongPtrW.restype = ctypes.c_longlong
             user32.SetWindowLongPtrW.restype = ctypes.c_longlong
             style = int(user32.GetWindowLongPtrW(hwnd, -20) or 0)
@@ -525,6 +686,7 @@ class DesktopPet:
             if want != style:
                 user32.SetWindowLongPtrW(hwnd, -20, want)
             self._strip_window_frame(hwnd)
+            self._apply_region(*self._last_render_args)
         except Exception:
             pass
 
@@ -621,6 +783,13 @@ class DesktopPet:
 
     def _idle_tick(self, now: float) -> None:
         self._sprite = "front"
+        if now < self._spin_until:
+            if now >= self._spin_next:
+                self._spin_next = now + 0.08
+                self._spin_side = ("side_left" if self._spin_side == "side"
+                                   else "side")
+            self._sprite = self._spin_side
+            return
         if now < self._look_until:
             self._sprite = self._look_sprite
         if now >= self._next_blink:
@@ -651,8 +820,9 @@ class DesktopPet:
                 self._start_walk(now)
 
     def _play_once(self, now: float) -> None:
-        """发呆时的小动作：看看旁边、跳一下、伸个懒腰、眨眨眼。"""
-        choice = self._rng.choice(("look", "hop", "look", "blink", "stretch"))
+        """发呆时的小动作：看看旁边、跳一下、伸个懒腰、转个圈、眨眨眼。"""
+        choice = self._rng.choice(("look", "hop", "look", "blink",
+                                   "stretch", "spin", "greet"))
         if choice == "look":
             self._look_sprite = self._rng.choice(("side", "side_left"))
             self._look_until = now + self._rng.uniform(0.8, 1.8)
@@ -661,6 +831,12 @@ class DesktopPet:
         elif choice == "stretch":
             self._hop_until = now + 0.75
             self._spawn_particle("sparkle")
+        elif choice == "spin":
+            self._spin_until = now + 0.8
+            self._spin_next = 0.0
+        elif choice == "greet":
+            self._hop_until = now + 0.5
+            self._spawn_particle("heart")
         else:
             self._blink_until = now + BLINK_SECONDS
 
@@ -822,40 +998,40 @@ class DesktopPet:
             head_y = self._h - sprite_h * 0.80
             cx = self._w // 2
             if kind == "zzz":
-                x = cx + self._rng.randint(10, 34)
-                y = head_y - self._rng.randint(0, 12)
+                x = cx + self._rng.randint(10, 30)
+                y = head_y + self._rng.randint(2, 12)
                 item = self.canvas.create_text(
                     x, y, text=self._rng.choice(("z", "Z")),
                     font=self._particle_font(0.9), fill="#9fc5ff",
                     tags=("pet-particle",))
                 particle = {"item": item, "kind": "text", "x": x, "y": y,
-                            "vx": 0.35, "vy": -0.55, "life": 2.6}
+                            "vx": 0.2, "vy": -0.22, "life": 2.2}
             elif kind == "note":
                 x = cx + self._rng.randint(-22, 22)
-                y = head_y + 28
+                y = head_y + 48
                 item = self.canvas.create_text(
                     x, y, text="♪", font=self._particle_font(),
                     fill="#4f86ff", tags=("pet-particle",))
                 particle = {"item": item, "kind": "text", "x": x, "y": y,
-                            "vx": self._rng.uniform(-0.25, 0.25),
-                            "vy": -0.85, "life": 1.9}
+                            "vx": self._rng.uniform(-0.2, 0.2),
+                            "vy": -0.55, "life": 1.6}
             elif kind == "heart":
                 x = cx + self._rng.randint(-18, 18)
-                y = head_y + 18
+                y = head_y + 34
                 item = self.canvas.create_text(
                     x, y, text="♥", font=self._particle_font(0.9),
                     fill="#ff6b9d", tags=("pet-particle",))
                 particle = {"item": item, "kind": "text", "x": x, "y": y,
-                            "vx": self._rng.uniform(-0.35, 0.35),
-                            "vy": -0.95, "life": 1.8}
+                            "vx": self._rng.uniform(-0.3, 0.3),
+                            "vy": -0.55, "life": 1.5}
             elif kind == "!":
                 x = cx + self._rng.randint(-14, 14)
-                y = head_y - 4
+                y = head_y + 18
                 item = self.canvas.create_text(
                     x, y, text="!", font=self._particle_font(1.0),
                     fill="#ff7a59", tags=("pet-particle",))
                 particle = {"item": item, "kind": "text", "x": x, "y": y,
-                            "vx": 0.0, "vy": -0.45, "life": 0.8}
+                            "vx": 0.0, "vy": -0.35, "life": 0.8}
             elif kind == "sparkle":
                 x = cx + self._rng.randint(-30, 30)
                 y = head_y + self._rng.randint(0, 20)
@@ -883,14 +1059,14 @@ class DesktopPet:
                             "vy": -0.25, "life": 0.8}
             else:  # bubble
                 x = cx + self._rng.randint(-20, 20)
-                y = head_y + 30
+                y = head_y + 45
                 r = max(4, self._height // 30)
                 item = self.canvas.create_oval(
                     x - r, y - r, x + r, y + r, outline="#8ec5ff",
                     width=2, tags=("pet-particle",))
                 particle = {"item": item, "kind": "oval", "x": x, "y": y,
-                            "r": r, "vx": self._rng.uniform(-0.2, 0.2),
-                            "vy": -0.7, "life": 2.2}
+                            "r": r, "vx": self._rng.uniform(-0.15, 0.15),
+                            "vy": -0.4, "life": 1.6}
             particle["age"] = 0.0
             self._particles.append(particle)
         except tk.TclError:

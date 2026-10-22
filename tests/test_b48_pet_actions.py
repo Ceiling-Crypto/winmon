@@ -147,16 +147,55 @@ class TestPetBehavior(unittest.TestCase):
         pet = self._pet()
         self.assertEqual(pet.perform("hop"), "hop")
         self.assertGreater(pet._hop_until, time.monotonic())
+        self.assertEqual(pet.perform("greet"), "greet")
+        self.assertGreater(len(pet._particles), 0)
+        self.assertEqual(pet.perform("spin"), "spin")
+        self.assertGreater(pet._spin_until, time.monotonic())
+        self.assertEqual(pet.perform("stretch"), "stretch")
+        self.assertEqual(pet.perform("look"), "look")
+        self.assertGreater(pet._look_until, time.monotonic())
         self.assertEqual(pet.perform("sleep"), "sleep")
         self.assertEqual(pet._mode, "sleep")
         self.assertEqual(pet._sprite_name(), "front_blink")
-        self.assertEqual(pet.perform("idle"), "idle")
+        self.assertEqual(pet.perform("wake"), "wake")
         self.assertEqual(pet._mode, "idle")
         self.assertEqual(pet.perform("bubble"), "bubble")
         self.assertGreater(len(pet._particles), 0)
         self.assertEqual(pet.perform("watch", 3), "watch")
         self.assertGreater(pet._watch_until, time.monotonic())
         self.assertEqual(pet.perform("不存在的动作"), "idle")
+
+    def test_window_is_clipped_to_sprite(self):
+        pet = self._pet()
+        self.root.update()
+        self.assertTrue(pet._region_ok, "SetWindowRgn 应成功")
+        self.assertIsNotNone(pet._region_key)
+        import ctypes
+        from ctypes import wintypes
+        user32 = ctypes.windll.user32
+        hwnd = user32.GetAncestor(wintypes.HWND(pet.top.winfo_id()), 2)
+        gdi32 = ctypes.windll.gdi32
+        gdi32.CreateRectRgn.argtypes = [ctypes.c_int, ctypes.c_int,
+                                        ctypes.c_int, ctypes.c_int]
+        gdi32.CreateRectRgn.restype = wintypes.HRGN
+        region = gdi32.CreateRectRgn(0, 0, 0, 0)
+        self.assertTrue(region, "CreateRectRgn 失败")
+        user32.GetWindowRgn.argtypes = [wintypes.HWND, wintypes.HRGN]
+        user32.GetWindowRgn.restype = ctypes.c_int
+        try:
+            self.assertGreater(user32.GetWindowRgn(hwnd, region), 0,
+                               "窗口应带回精灵轮廓")
+            rect = wintypes.RECT()
+            gdi32.GetRgnBox.argtypes = [wintypes.HRGN, ctypes.POINTER(wintypes.RECT)]
+            gdi32.GetRgnBox.restype = ctypes.c_int
+            self.assertGreater(gdi32.GetRgnBox(region, ctypes.byref(rect)), 0)
+            self.assertLess(rect.right - rect.left, pet._w)
+            self.assertLess(rect.bottom - rect.top, pet._h)
+        finally:
+            try:
+                ctypes.windll.gdi32.DeleteObject(region)
+            except Exception:
+                pass
 
     def test_walk_uses_correct_facing(self):
         pet = self._pet()
@@ -207,6 +246,7 @@ class TestPetIndependentSettings(unittest.TestCase):
 
     def tearDown(self):
         try:
+            self.app._destroy_pet_action_drawer()
             self.app._destroy_pet_panel()
             self.app.apply_pet_settings_live(False, "中", "标准")
             self.root.deiconify()
@@ -239,6 +279,32 @@ class TestPetIndependentSettings(unittest.TestCase):
             self.assertTrue(panel.top.winfo_viewable())
         finally:
             self.app._destroy_pet_panel()
+            self.root.deiconify()
+            self.root.update()
+
+    def test_action_drawer_stays_visible_and_runs_action(self):
+        self.app.apply_pet_settings_live(True, "中", "标准")
+        self.root.update()
+        self.root.withdraw()
+        self.root.update()
+        try:
+            self.app.show_pet_action_drawer()
+            self.root.update()
+            drawer = self.app._pet_action_drawer
+            self.assertIsNotNone(drawer)
+            self.assertTrue(drawer.top.winfo_viewable(),
+                            "主窗口隐藏时动作抽屉仍必须可见")
+            self.assertFalse(drawer.top.transient())
+            pet = self.app._pet
+            self.assertIsNotNone(pet)
+            before = pet._hop_until
+            drawer._run("hop")
+            self.root.update()
+            self.assertGreater(pet._hop_until, before)
+            self.assertIsNone(self.app._pet_action_drawer,
+                              "执行动作后抽屉应收起")
+        finally:
+            self.app._destroy_pet_action_drawer()
             self.root.deiconify()
             self.root.update()
 
