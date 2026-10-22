@@ -3,7 +3,7 @@
 > 用途：在新的对话里快速恢复上下文。读这一份即可继续开发。
 > **正式发布名 `winmon1.0`**（`APP_VER = "1.0"`，查版本：`py winmon.py --version`）。
 > **先读 §一点五「WinMon 的定位与能力边界」** —— 输入注入已明确不再投入。
-> 代码状态：**1090 个测试用例全绿**（约 113–120 秒；`--fast` 1033 条约 57–62 秒；
+> 代码状态：**1091 个测试用例全绿**（约 113–120 秒；`--fast` 1033 条约 57–62 秒；
 > 跳过数按当前桌面/媒体环境在 3–7 之间变化）+
 > 代码复检 0 新增问题（基线为空）、
 > 自检 8/8、界面冒烟通过、
@@ -22,10 +22,10 @@
 
 | | |
 | --- | --- |
-| 测试 | **1090 用例全绿**（`py tests\run_tests.py`，约 113–120 秒；跳过数按环境 3–7）；`--fast` 1033 条约 57–62 秒 |
+| 测试 | **1091 用例全绿**（`py tests\run_tests.py`，约 113–120 秒；跳过数按环境 3–7）；`--fast` 1033 条约 57–62 秒 |
 | 代码复检 | `py tests\lint_check.py` → **新增问题 0**（基线已清空，见 §四） |
 | 自检 / 冒烟 | `py winmon.py --selftest` 8/8 通过；`--smoke` 通过 |
-| 规模 | `winmon_core.py` ~6950 行 / `winmon.py` ~18150 行 / `desktop pet/winmon_pet.py` ~1120 行 / 测试 62 个 .py（48 个测试模块） |
+| 规模 | `winmon_core.py` ~6950 行 / `winmon.py` ~18320 行 / `desktop pet/winmon_pet.py` ~1175 行 / 测试 62 个 .py（48 个测试模块） |
 | 运行方式 | `py winmon.py`（GUI）或双击「winmon1.0」快捷方式；**单实例**：第二个实例会把已有窗口带到前台后自己退出 |
 | 窗口尺寸 | 设计稿 **1160×730**，开窗时**按 DPI 缩放**（本机 150% → 1740×1095；见 §9.15 第 14 条） |
 | 数据文件 | `winmon_settings.json`（界面偏好/收藏）、`winmon_history.log`（操作留痕）、`winmon_catalog.json`（程序目录缓存）、`winmon_media.jsonl`（媒体快照缓存，可删） |
@@ -109,7 +109,7 @@
 | `winmon_ai_provider.py` | ~250 | **可选**直连模型 API（默认关；精确 usage；key 只从环境变量读） |
 | `desktop pet/` | ~1040 | **可选桌宠的全部运行文件**：`winmon_pet.py`、精灵（187/238/306 × 正/侧/左/背 + 闭眼）、头像、`LICENSE` / `NOTICE.md`、截图。`winmon_pet.py` 不 import `winmon.py` |
 | `media_session.ps1` | ~230 | 系统媒体会话（GSMTC）桥接脚本（PowerShell + Windows 自带 WinRT 投影；**必须纯 ASCII 无 BOM**） |
-| `tests/` | 62 个 .py | **可重复运行的测试**（1090 用例，纯 unittest） + `_marks.py` 慢用例标记 + 开发辅助工具 + `lint_check.py` / `lint_baseline.txt` |
+| `tests/` | 62 个 .py | **可重复运行的测试**（1091 用例，纯 unittest） + `_marks.py` 慢用例标记 + 开发辅助工具 + `lint_check.py` / `lint_baseline.txt` |
 | `启动WinMon.bat` | — | 菜单式启动器（纯 ASCII，避免批处理编码问题） |
 | `scan_windows.py` | — | 命令行窗口清单 |
 | `close_others.py` | — | 批量关闭除当前窗口外的窗口 |
@@ -162,7 +162,7 @@ python winmon.py --videos --open 3 --watch --close-window   :: 完整视频链�
 python winmon.py --version          :: 打印版本（winmon1.0）
 python winmon.py --idle             :: 列出"长期开着、没人用"的程序（只看，不关任何东西）
 python winmon.py --idle --idle-minutes 5   :: 换个闲置阈值（分钟）
-py tests\run_tests.py               :: 全部测试（1090 用例，约 113–120 秒）
+py tests\run_tests.py               :: 全部测试（1091 用例，约 113–120 秒）
 py tests\run_tests.py --fast        :: 快跑（1033 用例，约 58 秒；跳过真窗口/抓屏慢用例）
 ```
 
@@ -3282,6 +3282,39 @@ AI 深蓝卡可见；深色接入窗展开后目视无浅色卡残留。
   `--smoke` 退出 0，白底截图已目视确认。
 - 跳过数会随桌面是否有 Edge / 媒体会话变化。
 
+### 9.44 阶段 8.34：Win11 DWM 圆角白卡（2026-10-22）
+
+用户截图：桌宠外仍有一圈**半透明圆角白卡**，不是 8.32 那种整块不透明白底，
+也不是精灵素材/动作抽屉。
+
+实测定位（Windows 11，150% DPI）：
+1. `EnumChildWindows` 只有 `TkChild`；把它 `ShowWindow(SW_HIDE)` 后白卡仍在，
+   所以不是 Tk 子窗口重绘。
+2. `UpdateLayeredWindow` 的 DIB 角落 alpha=0；`GetWindowRgn` 返回 0，
+   所以不是颜色键/HRGN/ULW alpha。
+3. `DwmGetWindowAttribute(hwnd, 33)` 返回 **2（ROUND）**；运行时改成
+   **1（DONOTROUND）**，白卡立即消失；改回 2 又出现。卡就是 DWM 给
+   分层窗口套的圆角/边框在透明窗口上的合成。
+4. 根因是顺序：`_strip_window_frame()` 先设 `DONOTROUND`，最后又
+   `SetWindowPos(..., SWP_FRAMECHANGED)`；FRAMECHANGED 让 DWM 把圆角
+   重新套回来。8.31/8.33 以为已关，实际没生效。
+
+修法：
+- 新增 `_apply_dwm_frame()`，把 `DWMWA_NCRENDERING_POLICY` /
+  `DWMWA_WINDOW_CORNER_PREFERENCE=DONOTROUND` /
+  `DWMWA_BORDER_COLOR=NONE` 放到 `SetWindowPos(FRAMECHANGED)` **之后**；
+- `show()` 在 `deiconify()/update_idletasks()/lift()` 后再设一次，
+  防止 Tk 显示窗口时 DWM 重新套圆角；
+- `test_b48` 新增 `test_dwm_round_corner_is_disabled_after_show`，
+  显示后断言 corner=1，再手动 `_strip_window_frame()` 仍为 1。
+- 验收：全量 **1091 用例**，失败 0 / 错误 0，跳过 7，**116.943 秒**；
+  `lint_check` 新增 0；`--smoke` 退出 0；`--selftest` 8/8；
+  `--mcp-selftest` 13/13。
+- 截图：`desktop pet/docs/ui-8.34-pet-no-card.png`（深色底，无卡框）。
+
+> 8.32 留下的“白卡可能是另一个程序”判断就此作废：**8.33 的白卡是 DWM
+> 圆角**，与 dsh-pet 的 Electron 白底是两回事。
+
 ### 9.43 阶段 8.33：参考 dsh-pet 改逐像素透明 + 60 FPS（2026-10-22）
 
 用户这轮的原话：8.32 之后“**还是有透明边框而且动作延迟还有黑影**”，并给了
@@ -3364,6 +3397,8 @@ AI 深蓝卡可见；深色接入窗展开后目视无浅色卡残留。
    实测透明/轮廓裁剪后背景完全透出）。所以照片里那只**很可能不是 `D:\winmon`
    这版桌宠**，而是另一个桌宠程序/旧副本。本轮改动只针对本仓库；
    重开后若仍看到白卡 + 举手帧，应先确认运行的是哪个程序。
+   > 后续 8.34 已证实：8.33 自己也会因 Win11 DWM 圆角多出一圈半透明白卡，
+   > 与另一个程序的整块白底是两回事；见 §9.44。
 4. **测试**：`test_b48` 增至 17 条（窗口轮廓 `GetWindowRgn` 非空且小于窗口、
    动作抽屉在托盘状态可见/执行后收起、greet/spin/stretch/look/wake）。
    全量 **1089 用例**，失败 0 / 错误 0，跳过 7，**116.285 秒**；
@@ -4568,7 +4603,7 @@ README 的界面颜色一节也加了同样说明。
 ## 四、测试体系（**改代码后先跑这个**）
 
 ```bat
-py tests\run_tests.py            :: 1090 用例，约 113–120 秒（--fast 1033 条约 58 秒）
+py tests\run_tests.py            :: 1091 用例，约 113–120 秒（--fast 1033 条约 58 秒）
 py tests\run_tests.py -v         :: 逐个看
 py tests\run_tests.py -k capture :: 只跑关心的
 py tests\lint_check.py           :: 代码复检（退出码 1 = 有新增问题）
@@ -5252,7 +5287,7 @@ C 盘那份**保持原样、一字未改**（用户 2026-10-11 确认：暂不�
 
 > 继续开发 **winmon1.0** —— Windows 程序监控与终止工具，纯标准库，在 `项目根目录\`。
 > 请先读 `HANDOFF.md` 和 `README.md`，然后跑 `py tests\run_tests.py`
-> 确认基线是 **1090 用例全绿**（需要哔哩哔哩/UIA 页面的用例会按需 skip；
+> 确认基线是 **1091 用例全绿**（需要哔哩哔哩/UIA 页面的用例会按需 skip；
 > 日常改动用 `--fast` 跑 1033 条，提交前跑全量）、
 > `py tests\lint_check.py` 退出码 0（无新增问题）。
 > **版式要另眼验收**：测试进程没有开 DPI 感知，布局检查看不到"真实 DPI 下控件被挤没"，

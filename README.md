@@ -31,7 +31,7 @@
 | [`CHANGELOG.md`](CHANGELOG.md) | **改了什么**：按版本记功能与修复（含版本号怎么变的） | 想知道这版和上版的差别、某个改动是哪一版进的 |
 | [`HANDOFF.md`](HANDOFF.md) | **为什么是这样**：开发交接文档，2800 行，踩过的坑编号到 120+。**含内部设计讨论**（哪些方案试过、为什么放弃） | **改代码之前**（尤其别重复踩坑）；接手这个项目 |
 | [`MCP.md`](MCP.md) | 让 AI 客户端通过 **MCP** 接入 WinMon 的**方案**（**阶段 1.5–8 已实现**：只读工具 / 预算 / 直连 / 本地 HTTP / 跟随式助手 / 角色记忆）；§十 是 2026-10-19 的「AI 工作伴侣」修订 | 想用 AI 操作/观察这台机器上的窗口与进程 |
-| [`tests/`](tests) | 可重复运行的验证用例（1090 个，纯标准库） | 改完代码跑一遍；想知道某条规矩被谁钉住 |
+| [`tests/`](tests) | 可重复运行的验证用例（1091 个，纯标准库） | 改完代码跑一遍；想知道某条规矩被谁钉住 |
 | [`LICENSE`](LICENSE) | MIT 许可证 | 想用 / 改 / 分发这份代码 |
 
 一句话：**用**看 README，**对比**看 CHANGELOG，**改**看 HANDOFF，**接 AI** 看 MCP。
@@ -193,7 +193,7 @@ py winmon.py
 ### 跑测试（可选，纯标准库）
 
 ```bat
-py tests\run_tests.py            :: 全部用例（1090 个，约 113–120 秒）
+py tests\run_tests.py            :: 全部用例（1091 个，约 113–120 秒）
 py tests\run_tests.py --fast     :: 跳过真窗口/抓屏慢用例（1033 个，约 57–62 秒）
 py tests\run_tests.py -v         :: 详细输出
 py tests\run_tests.py -k capture :: 只跑名字里含 capture 的用例
@@ -728,7 +728,7 @@ python winmon.py --idle --idle-minutes 5   :: 换个阈值（调试用）
   [`desktop pet/`](<desktop pet/README.md>)；Agent/动作包/全屏漫游的设计稿在
   [`desktop pet/AGENT.md`](<desktop pet/AGENT.md>)（本地行为已实现，动作包/Agent 仍是设计）。
 
-![桌宠逐像素透明：只留下本体，没有卡片、边框或阴影](<desktop pet/docs/ui-8.33-pet-alpha.png>)
+![桌宠逐像素透明（深色底）：只留下本体，没有卡片、边框或阴影](<desktop pet/docs/ui-8.34-pet-no-card.png>)
 
 ![桌宠独立设置面板：主窗口在托盘里也能改大小/活泼度](<desktop pet/docs/ui-8.31-pet-panel.png>)
 
@@ -1322,7 +1322,7 @@ Windows 11 上主窗口和二级窗口的外框由 DWM 统一裁圆角（Win10 �
 
 ## 九、测试
 
-`tests/` 下是一套**可重复运行的验证用例**（1090 个），只用 Python 标准库
+`tests/` 下是一套**可重复运行的验证用例**（1091 个），只用 Python 标准库
 （`unittest`），与本体一样零依赖。它们把开发过程中一次性做过的验证固化了下来，
 以后改代码可以直接跑，不用重新手工试一遍。
 

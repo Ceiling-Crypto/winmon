@@ -28,7 +28,8 @@ desktop pet/
   视频时正面“认真看”，偶尔闪一下。
 - **没人理**：系统键鼠闲置超过 150 秒且没有媒体时，闭眼睡觉、冒 Zzz；
   动一下鼠标或点它就会醒。
-- **窗口**：去掉 DWM 边框/阴影/圆角；画面用 GDI+ 32 位预乘 alpha 画进
+- **窗口**：去掉 DWM 边框/阴影/圆角（Win11 圆角要在 `FRAMECHANGED` 之后再关，
+  否则会被 DWM 重新套上）；画面用 GDI+ 32 位预乘 alpha 画进
   `UpdateLayeredWindow` 的分层表面。没有颜色键、没有 `SetWindowRgn`、
   没有 DWM 阴影；透明像素点击穿透，只有身体能点。参考 dsh-pet 的
   `transparent + frame:false + hasShadow:false` 小窗设计。

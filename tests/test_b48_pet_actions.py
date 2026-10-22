@@ -148,6 +148,36 @@ class TestPetBehavior(unittest.TestCase):
         self.assertIsNotNone(pet._paint_guard)
         self.assertLessEqual(petmod.TICK_MS, 16, "动作链应至少 60 FPS")
 
+    def test_dwm_round_corner_is_disabled_after_show(self):
+        """Win11 圆角会给分层窗口套一层半透明白卡，显示后必须再关一次。"""
+        if sys.getwindowsversion().build < 22000:
+            self.skipTest("DWM 圆角只存在于 Windows 11")
+        pet = self._pet()
+        import ctypes
+        from ctypes import wintypes
+        user32 = ctypes.windll.user32
+        user32.GetAncestor.argtypes = [wintypes.HWND, wintypes.UINT]
+        user32.GetAncestor.restype = wintypes.HWND
+        hwnd = user32.GetAncestor(wintypes.HWND(pet.top.winfo_id()), 2)
+        dwm = ctypes.windll.dwmapi
+        get_attr = dwm.DwmGetWindowAttribute
+        get_attr.argtypes = [wintypes.HWND, wintypes.DWORD,
+                             ctypes.POINTER(wintypes.DWORD),
+                             wintypes.DWORD]
+        get_attr.restype = ctypes.c_long
+
+        def corner() -> int:
+            value = wintypes.DWORD()
+            hr = get_attr(wintypes.HWND(hwnd), 33, ctypes.byref(value),
+                          ctypes.sizeof(value))
+            self.assertEqual(hr, 0, "DwmGetWindowAttribute 失败")
+            return int(value.value)
+
+        self.assertEqual(corner(), 1, "窗口显示后必须保持 DONOTROUND")
+        # 再走一次 FRAMECHANGED，防止 DWM 属性又被系统重置。
+        pet._strip_window_frame(hwnd)
+        self.assertEqual(corner(), 1, "FRAMECHANGED 之后必须重新关圆角")
+
     def test_actions_are_real_and_safe(self):
         pet = self._pet()
         before = pet._frame_count

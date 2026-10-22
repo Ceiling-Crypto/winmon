@@ -19,6 +19,25 @@
 以及跟随当前 AI 的助手**；阶段 6 补上 **多 profile 跟随 + 对话交接留痕**；
 阶段 8 按用户纠正把**休息提醒改由接入的 AI 说**，并拆出独立接入窗口、加入中英双语。
 
+### 阶段 8.34（2026-10-22）—— 修掉 Win11 圆角白卡
+
+8.33 的验收图是浅色底，圆角白卡被背景吞掉了；深色桌面截图里仍能看到
+精灵外一圈**半透明圆角卡片**。实测不是精灵 alpha、不是 `TkChild` 重绘、
+不是 `SetWindowRgn`，而是 Win11 给顶层窗口的 DWM 圆角。
+8.31 起虽然调了 `DWMWA_WINDOW_CORNER_PREFERENCE=DONOTROUND`，但它被
+后面的 `SetWindowPos(SWP_FRAMECHANGED)` 重置了，所以一直没生效。
+
+- 新增 `DesktopPet._apply_dwm_frame()`：统一关 NC 渲染、圆角、边框颜色；
+- `_strip_window_frame()` 在 `FRAMECHANGED` **之后**再调用它；
+- `show()` 在 `deiconify/update_idletasks/lift` 后再设一次，Tk 显示窗口
+  时不会把圆角套回来；
+- `test_b48` 新增 `test_dwm_round_corner_is_disabled_after_show`，断言
+  显示后及手动 `FRAMECHANGED` 后 corner 都是 `DONOTROUND`；
+- 全量 **1091 用例**，失败 0 / 错误 0，跳过 7，**116.943 秒**；
+  `lint_check` 新增 0；`--smoke` 退出 0；`--selftest` 8/8；
+  `--mcp-selftest` 13/13。
+- **新截图**：`desktop pet/docs/ui-8.34-pet-no-card.png`（深色底，卡框完全消失）。
+
 ### 阶段 8.33（2026-10-22）—— 参考 dsh-pet：逐像素透明 + 60 FPS 动作
 
 用户反馈：8.32 之后**还是有透明边框、动作延迟和黑影**，并给了参考项目

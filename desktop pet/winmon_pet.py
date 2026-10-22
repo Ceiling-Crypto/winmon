@@ -334,9 +334,13 @@ class DesktopPet:
             return
         try:
             self.top.deiconify()
+            self.top.update_idletasks()
             self.top.lift()
         except tk.TclError:
             return
+        # 窗口真正显示后再设一次：Tk 的 deiconify/lift 会让 Win11 把
+        # 分层窗口重新套成圆角，早设的 DONOTROUND 会被覆盖。
+        self._apply_dwm_frame(self._hwnd)
         self._last_tick = time.monotonic()
         self._render(self._bob(self._last_tick), self._sway(self._last_tick))
         self._schedule_tick()
@@ -661,6 +665,39 @@ class DesktopPet:
         self._surface = LayeredSurface(self._hwnd, 1, 1)
 
     @staticmethod
+    def _apply_dwm_frame(hwnd) -> None:
+        """
+        关掉 Win11 的 DWM 圆角。
+
+        分层窗口本身没有底色，但 Win11 会给顶层窗口套一个圆角/边框；
+        在深色桌面上看，就是精灵背后一层半透明的圆角白卡。这个属性必须
+        在窗口已经显示、并且 `SetWindowPos(FRAMECHANGED)` 之后再设，
+        否则会被 DWM 重新套回默认圆角。
+        """
+        try:
+            dwm = ctypes.windll.dwmapi
+            set_attr = dwm.DwmSetWindowAttribute
+            set_attr.argtypes = [wintypes.HWND, wintypes.DWORD,
+                                 ctypes.POINTER(wintypes.DWORD),
+                                 wintypes.DWORD]
+            set_attr.restype = ctypes.c_long
+            value = wintypes.DWORD()
+            # DWMWA_NCRENDERING_POLICY = 2, DWMNCRP_DISABLED = 1
+            value.value = 1
+            set_attr(wintypes.HWND(hwnd), 2, ctypes.byref(value),
+                     ctypes.sizeof(value))
+            # DWMWA_WINDOW_CORNER_PREFERENCE = 33, DONOTROUND = 1
+            value.value = 1
+            set_attr(wintypes.HWND(hwnd), 33, ctypes.byref(value),
+                     ctypes.sizeof(value))
+            # DWMWA_BORDER_COLOR = 34, DWMWA_COLOR_NONE = 0xFFFFFFFE
+            value.value = 0xFFFFFFFE
+            set_attr(wintypes.HWND(hwnd), 34, ctypes.byref(value),
+                     ctypes.sizeof(value))
+        except Exception:
+            pass
+
+    @staticmethod
     def _strip_window_frame(hwnd) -> None:
         """去掉系统边框、DWM 阴影/圆角；全部失败也不影响桌宠。"""
         try:
@@ -687,23 +724,6 @@ class DesktopPet:
         except Exception:
             pass
         try:
-            dwm = ctypes.windll.dwmapi
-            value = wintypes.DWORD()
-            # DWMWA_NCRENDERING_POLICY = 2, DWMNCRP_DISABLED = 1
-            value.value = 1
-            dwm.DwmSetWindowAttribute(wintypes.HWND(hwnd), 2,
-                                      ctypes.byref(value), ctypes.sizeof(value))
-            # DWMWA_WINDOW_CORNER_PREFERENCE = 33, DONOTROUND = 1
-            value.value = 1
-            dwm.DwmSetWindowAttribute(wintypes.HWND(hwnd), 33,
-                                      ctypes.byref(value), ctypes.sizeof(value))
-            # DWMWA_BORDER_COLOR = 34, DWMWA_COLOR_NONE = 0xFFFFFFFE
-            value.value = 0xFFFFFFFE
-            dwm.DwmSetWindowAttribute(wintypes.HWND(hwnd), 34,
-                                      ctypes.byref(value), ctypes.sizeof(value))
-        except Exception:
-            pass
-        try:
             user32 = ctypes.windll.user32
             SWP_NOSIZE, SWP_NOMOVE, SWP_NOZORDER = 0x0001, 0x0002, 0x0004
             SWP_NOACTIVATE, SWP_FRAMECHANGED = 0x0010, 0x0020
@@ -712,6 +732,8 @@ class DesktopPet:
                                 | SWP_NOACTIVATE | SWP_FRAMECHANGED)
         except Exception:
             pass
+        # 必须在 FRAMECHANGED 之后设，否则圆角会被 DWM 重新套回来。
+        DesktopPet._apply_dwm_frame(hwnd)
 
     # ---- 动画 ----
 
