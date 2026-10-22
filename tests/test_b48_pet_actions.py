@@ -21,6 +21,7 @@ import sys
 import time
 import tkinter as tk
 import unittest
+from types import SimpleNamespace
 from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -142,11 +143,18 @@ class TestPetBehavior(unittest.TestCase):
                           (0x00020000, "STATICEDGE"),
                           (0x00040000, "DLGMODALFRAME")):
             self.assertFalse(style & bit, name)
+        self.assertTrue(style & 0x00080000, "WS_EX_LAYERED")
+        self.assertIsNotNone(pet._surface)
+        self.assertIsNotNone(pet._paint_guard)
+        self.assertLessEqual(petmod.TICK_MS, 16, "动作链应至少 60 FPS")
 
     def test_actions_are_real_and_safe(self):
         pet = self._pet()
+        before = pet._frame_count
         self.assertEqual(pet.perform("hop"), "hop")
         self.assertGreater(pet._hop_until, time.monotonic())
+        self.assertGreater(pet._frame_count, before,
+                           "perform 应立即提交一帧，不等下一个 tick")
         self.assertEqual(pet.perform("greet"), "greet")
         self.assertGreater(len(pet._particles), 0)
         self.assertEqual(pet.perform("spin"), "spin")
@@ -165,11 +173,34 @@ class TestPetBehavior(unittest.TestCase):
         self.assertGreater(pet._watch_until, time.monotonic())
         self.assertEqual(pet.perform("不存在的动作"), "idle")
 
-    def test_window_is_clipped_to_sprite(self):
+    def test_press_feedback_is_immediate(self):
+        """按下就 Q 弹+爱心；不能等 240ms 双击判定后才动。"""
+        pet = self._pet()
+        pet._hop_until = 0.0
+        before = pet._frame_count
+        pet._on_press(SimpleNamespace(
+            x_root=pet._x + pet._w // 2,
+            y_root=pet._y + pet._h // 2))
+        try:
+            self.assertGreater(pet._hop_until, time.monotonic())
+            self.assertGreater(pet._frame_count, before,
+                               "按下应立即重绘，不等 240ms")
+            self.assertGreater(len(pet._particles), 0)
+        finally:
+            pet._on_release(SimpleNamespace(x_root=0, y_root=0))
+
+    def test_window_is_per_pixel_alpha(self):
+        """不再用 SetWindowRgn：GDI+ 分层表面按 alpha 透明，角落无像素。"""
         pet = self._pet()
         self.root.update()
-        self.assertTrue(pet._region_ok, "SetWindowRgn 应成功")
-        self.assertIsNotNone(pet._region_key)
+        self.assertIsNotNone(pet._surface, "应创建 GDI+ 分层表面")
+        self.assertIsNotNone(pet._paint_guard, "Tk 子窗口重绘应被抑制")
+        self.assertEqual(pet._surface.size, (pet._w, pet._h))
+        self.assertEqual(pet._surface.sample_alpha(0, 0), 0)
+        self.assertEqual(pet._surface.sample_alpha(pet._w - 1, 0), 0)
+        self.assertGreater(pet._surface.sample_alpha(
+            pet._w // 2, pet._h // 2), 0, "身体中心应不透明")
+        self.assertEqual(pet._render_error, "")
         import ctypes
         from ctypes import wintypes
         user32 = ctypes.windll.user32
@@ -183,14 +214,8 @@ class TestPetBehavior(unittest.TestCase):
         user32.GetWindowRgn.argtypes = [wintypes.HWND, wintypes.HRGN]
         user32.GetWindowRgn.restype = ctypes.c_int
         try:
-            self.assertGreater(user32.GetWindowRgn(hwnd, region), 0,
-                               "窗口应带回精灵轮廓")
-            rect = wintypes.RECT()
-            gdi32.GetRgnBox.argtypes = [wintypes.HRGN, ctypes.POINTER(wintypes.RECT)]
-            gdi32.GetRgnBox.restype = ctypes.c_int
-            self.assertGreater(gdi32.GetRgnBox(region, ctypes.byref(rect)), 0)
-            self.assertLess(rect.right - rect.left, pet._w)
-            self.assertLess(rect.bottom - rect.top, pet._h)
+            self.assertEqual(user32.GetWindowRgn(hwnd, region), 0,
+                             "不应再设置窗口区域")
         finally:
             try:
                 ctypes.windll.gdi32.DeleteObject(region)

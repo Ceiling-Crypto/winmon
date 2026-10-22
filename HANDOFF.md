@@ -3,7 +3,7 @@
 > 用途：在新的对话里快速恢复上下文。读这一份即可继续开发。
 > **正式发布名 `winmon1.0`**（`APP_VER = "1.0"`，查版本：`py winmon.py --version`）。
 > **先读 §一点五「WinMon 的定位与能力边界」** —— 输入注入已明确不再投入。
-> 代码状态：**1089 个测试用例全绿**（约 115–120 秒；`--fast` 1032 条约 60–62 秒；
+> 代码状态：**1090 个测试用例全绿**（约 113–120 秒；`--fast` 1033 条约 57–62 秒；
 > 跳过数按当前桌面/媒体环境在 3–7 之间变化）+
 > 代码复检 0 新增问题（基线为空）、
 > 自检 8/8、界面冒烟通过、
@@ -22,10 +22,10 @@
 
 | | |
 | --- | --- |
-| 测试 | **1089 用例全绿**（`py tests\run_tests.py`，约 115–120 秒；跳过数按环境 3–7）；`--fast` 1032 条约 60–62 秒 |
+| 测试 | **1090 用例全绿**（`py tests\run_tests.py`，约 113–120 秒；跳过数按环境 3–7）；`--fast` 1033 条约 57–62 秒 |
 | 代码复检 | `py tests\lint_check.py` → **新增问题 0**（基线已清空，见 §四） |
 | 自检 / 冒烟 | `py winmon.py --selftest` 8/8 通过；`--smoke` 通过 |
-| 规模 | `winmon_core.py` ~6950 行 / `winmon.py` ~18150 行 / `desktop pet/winmon_pet.py` ~1040 行 / 测试 62 个 .py（48 个测试模块） |
+| 规模 | `winmon_core.py` ~6950 行 / `winmon.py` ~18150 行 / `desktop pet/winmon_pet.py` ~1120 行 / 测试 62 个 .py（48 个测试模块） |
 | 运行方式 | `py winmon.py`（GUI）或双击「winmon1.0」快捷方式；**单实例**：第二个实例会把已有窗口带到前台后自己退出 |
 | 窗口尺寸 | 设计稿 **1160×730**，开窗时**按 DPI 缩放**（本机 150% → 1740×1095；见 §9.15 第 14 条） |
 | 数据文件 | `winmon_settings.json`（界面偏好/收藏）、`winmon_history.log`（操作留痕）、`winmon_catalog.json`（程序目录缓存）、`winmon_media.jsonl`（媒体快照缓存，可删） |
@@ -109,7 +109,7 @@
 | `winmon_ai_provider.py` | ~250 | **可选**直连模型 API（默认关；精确 usage；key 只从环境变量读） |
 | `desktop pet/` | ~1040 | **可选桌宠的全部运行文件**：`winmon_pet.py`、精灵（187/238/306 × 正/侧/左/背 + 闭眼）、头像、`LICENSE` / `NOTICE.md`、截图。`winmon_pet.py` 不 import `winmon.py` |
 | `media_session.ps1` | ~230 | 系统媒体会话（GSMTC）桥接脚本（PowerShell + Windows 自带 WinRT 投影；**必须纯 ASCII 无 BOM**） |
-| `tests/` | 62 个 .py | **可重复运行的测试**（1089 用例，纯 unittest） + `_marks.py` 慢用例标记 + 开发辅助工具 + `lint_check.py` / `lint_baseline.txt` |
+| `tests/` | 62 个 .py | **可重复运行的测试**（1090 用例，纯 unittest） + `_marks.py` 慢用例标记 + 开发辅助工具 + `lint_check.py` / `lint_baseline.txt` |
 | `启动WinMon.bat` | — | 菜单式启动器（纯 ASCII，避免批处理编码问题） |
 | `scan_windows.py` | — | 命令行窗口清单 |
 | `close_others.py` | — | 批量关闭除当前窗口外的窗口 |
@@ -162,8 +162,8 @@ python winmon.py --videos --open 3 --watch --close-window   :: 完整视频链�
 python winmon.py --version          :: 打印版本（winmon1.0）
 python winmon.py --idle             :: 列出"长期开着、没人用"的程序（只看，不关任何东西）
 python winmon.py --idle --idle-minutes 5   :: 换个闲置阈值（分钟）
-py tests\run_tests.py               :: 全部测试（1089 用例，约 117 秒）
-py tests\run_tests.py --fast        :: 快跑（1032 用例，约 61 秒；跳过真窗口/抓屏慢用例）
+py tests\run_tests.py               :: 全部测试（1090 用例，约 113–120 秒）
+py tests\run_tests.py --fast        :: 快跑（1033 用例，约 58 秒；跳过真窗口/抓屏慢用例）
 ```
 
 ---
@@ -3282,6 +3282,66 @@ AI 深蓝卡可见；深色接入窗展开后目视无浅色卡残留。
   `--smoke` 退出 0，白底截图已目视确认。
 - 跳过数会随桌面是否有 Edge / 媒体会话变化。
 
+### 9.43 阶段 8.33：参考 dsh-pet 改逐像素透明 + 60 FPS（2026-10-22）
+
+用户这轮的原话：8.32 之后“**还是有透明边框而且动作延迟还有黑影**”，并给了
+参考项目 [PC2005-cloud/dsh-pet](https://github.com/PC2005-cloud/dsh-pet)。
+所以不再在 Tk 颜色键/HRGN 上打补丁，改按它验证过的透明窗思路重做合成层。
+
+#### 为什么 8.32 的 HRGN 还不够
+
+- 颜色键 + `SetWindowRgn` 仍是两层“矩形窗口”语义：DWM 可能给窗口边缘补
+  阴影/黑边；拖拽时尤其明显。
+- 每帧重建 HRGN 有成本；动作先改状态、等下一个 50ms tick 再重绘，主观上就是
+  “点了没反应”。
+- **实测更严重的问题**：Tk 的客户区子窗口（`TkChild`）在窗口移动/刷新时会
+  重画自己的背景。ULW 表面明明只有精灵，移动后却会整块变成品红矩形。
+  这不是 DWM 的锅，是 Tk 自己在 `WM_ERASEBKGND`/`WM_PAINT` 里画的。
+
+#### 改法
+
+1. 新增 `desktop pet/pet_layered.py`：
+   - GDI+ `PixelFormat32bppPARGB` + 32 位 DIB；
+   - 精灵/文字/多边形/椭圆都画进 DIB；
+   - `UpdateLayeredWindow(..., ULW_ALPHA)` 提交；
+   - `LayerImage` 缓存 GDI+ 图像句柄，`sample_alpha()` 给测试用。
+2. `DesktopPet` 不再建 Canvas：
+   - 不设 `-transparentcolor`，不设 `SetWindowRgn`；
+   - 鼠标事件绑到顶层窗口，Windows 按 alpha 命中测试，透明区点击穿透；
+   - `ChildPaintSuppressor` 用 `SetWindowSubclass` 吞掉 `TkChild` 的
+     `WM_PAINT` / `WM_ERASEBKGND` / `WM_NCPAINT`；
+   - 保留 `WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE` 和
+     `_strip_window_frame()` 的 DWM 清理。
+3. 动作链路：
+   - `TICK_MS 50 → 16`（约 60 FPS）；散步步长按小数累积，避免 60 FPS 下变 3 倍速；
+   - `perform()` 末尾立即 `_render()`；
+   - 鼠标按下立即 Q 弹 + 爱心，240ms 只负责区分单击/双击后开气泡；
+   - 实测抽屉打开 ~47ms，执行动作 ~15ms。
+4. 清理：删除 `load_masks/make_window_region/_apply_region`、
+   `build_assets.py` 的 masks 生成、三档 `masks.json`；`build_assets.py`
+   仍只负责镜像/闭眼帧。
+5. 测试：
+   - `test_b46` 从“颜色键 = #ff00fe”改为验证分层表面、alpha、无颜色键；
+     Canvas 事件改到 `pet.top`；
+   - `test_b48` 增至 18 条：`GetWindowRgn` 测试改为 `GetWindowRgn == 0` +
+     `sample_alpha` 角落 0/身体 255；新增 `perform` 立即出帧、按下立即 Q 弹、
+     `TICK_MS <= 16`；
+   - 全量 **1090 用例**，失败 0 / 错误 0，跳过 7，**113.124 秒**；
+     `--fast` **1033 条**，失败 0 / 错误 0，跳过 6，**58.126 秒**；
+     `lint_check` 新增 0；`--smoke` 退出 0；`--selftest` 8/8；`--mcp-selftest` 13/13。
+6. 截图：`desktop pet/docs/ui-8.33-pet-alpha.png`。
+
+#### 参考项目里**没有**照搬的部分
+
+- dsh-pet 用 Electron `BrowserWindow({transparent:true, frame:false,
+  hasShadow:false})`，每只宠物一个局部小窗，默认整窗点击穿透，只有身体
+  命中区翻成可交互；它明确不做全屏透明画布（会触发 Windows DWM 视频合成
+  黑屏）。WinMon 的窗口形态与它一致，但外壳仍是 Python/Tk + GDI+。
+- 它有 97 个 VP9-alpha WebM 动画；WinMon 仍是 7 张静态精灵 + 本地状态机，
+  不引入视频解码/Electron 依赖。
+- 它用 `app.disableHardwareAcceleration()` 规避 Windows 分层窗口的黑边/内容
+  丢失；WinMon 的 GDI+ ULW 本身走软件绘制，不需要这个开关。
+
 ### 9.42 阶段 8.32：只留桌宠本体 + 动作抽屉（2026-10-22）
 
 用户发来屏幕照片，画了一张蓝圈：桌宠背后还有一圈**白色圆角卡片**；同时提两件事：
@@ -4508,7 +4568,7 @@ README 的界面颜色一节也加了同样说明。
 ## 四、测试体系（**改代码后先跑这个**）
 
 ```bat
-py tests\run_tests.py            :: 1089 用例，约 116 秒（--fast 1032 条约 61 秒）
+py tests\run_tests.py            :: 1090 用例，约 113–120 秒（--fast 1033 条约 58 秒）
 py tests\run_tests.py -v         :: 逐个看
 py tests\run_tests.py -k capture :: 只跑关心的
 py tests\lint_check.py           :: 代码复检（退出码 1 = 有新增问题）
@@ -5192,8 +5252,8 @@ C 盘那份**保持原样、一字未改**（用户 2026-10-11 确认：暂不�
 
 > 继续开发 **winmon1.0** —— Windows 程序监控与终止工具，纯标准库，在 `项目根目录\`。
 > 请先读 `HANDOFF.md` 和 `README.md`，然后跑 `py tests\run_tests.py`
-> 确认基线是 **1089 用例全绿**（需要哔哩哔哩/UIA 页面的用例会按需 skip；
-> 日常改动用 `--fast` 跑 1032 条，提交前跑全量）、
+> 确认基线是 **1090 用例全绿**（需要哔哩哔哩/UIA 页面的用例会按需 skip；
+> 日常改动用 `--fast` 跑 1033 条，提交前跑全量）、
 > `py tests\lint_check.py` 退出码 0（无新增问题）。
 > **版式要另眼验收**：测试进程没有开 DPI 感知，布局检查看不到"真实 DPI 下控件被挤没"，
 > 所以改动界面后还要跑一次 `py winmon.py --smoke` 看截图（见 §9.15 第 14 条）。

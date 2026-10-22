@@ -13,13 +13,19 @@ WinMon 桌面宠物（可选）
 
 透明怎么做（**Windows 专有**）
 ---------------------------
-Tk 没有逐像素透明窗口，但有 `-transparentcolor`：把某一种颜色键掉。
-精灵图是**二值 alpha**（透明/不透明）的，窗口底色用 `KEY_COLOR`，
-因此不会出现“半透明边缘和底色混成绿边”的问题。半透明原图不直接使用，
-由构建时处理成二值 alpha，见同目录 `NOTICE.md`。
+Tk 本身没有逐像素透明窗口；`-transparentcolor` 只能把一种颜色键掉，窗口
+仍是矩形，DWM 在移动/合成时可能补一圈阴影或黑边。这里参考 dsh-pet 的
+「透明置顶小窗」做法，改用 **GDI+ 32 位预乘 alpha + UpdateLayeredWindow**：
+
+  · Tk 只负责窗口和事件，不再用 Canvas 画精灵；
+  · 每帧把精灵和粒子画进 BGRA DIB，再由 `UpdateLayeredWindow` 提交；
+  · 没有颜色键、没有 `SetWindowRgn`、没有 DWM 阴影；
+  · Windows 按 alpha 做命中测试，透明像素点击穿透，只有身体能点。
 
 窗口本身还会去掉边框、阴影和圆角（DWM），并把画布留白压到最小；
 如果系统仍给弹出窗加装饰，`_strip_window_frame()` 会再清一遍。
+Tk 的客户区子窗口会在移动时重画底色，`ChildPaintSuppressor` 会吞掉
+它的 `WM_PAINT`/`WM_ERASEBKGND`，否则精灵上会盖一层品红矩形。
 
 坐标约定
 --------
@@ -38,22 +44,27 @@ from __future__ import annotations
 
 import ctypes
 from ctypes import wintypes
-import json
 import math
 import os
 import random
 import time
 import tkinter as tk
 
-#: 透明键色：精灵图里没有这个颜色（构建时二值化后更不会出现）
-KEY_COLOR = "#ff00fe"
+from pet_layered import (
+    ChildPaintSuppressor,
+    LayerImage,
+    LayeredSurface,
+    LayeredSurfaceError,
+    rgb,
+)
+
 #: 尺寸档位：标签 → 精灵高度（物理像素）
 SIZE_PRESETS: tuple[tuple[str, int], ...] = (("小", 187), ("中", 238), ("大", 306))
 DEFAULT_SIZE = "中"
 #: 默认窗口相对屏幕右下角的留白
 EDGE_MARGIN = 28
-#: 动画节拍（毫秒）。50ms = 20 FPS；足够让呼吸/走路看起来连续。
-TICK_MS = 50
+#: 动画节拍（毫秒）。16ms ≈ 60 FPS；动作在下一个 vsync 就能看见。
+TICK_MS = 16
 #: 画布左右 / 上方留白：给摇摆和跳跃用。透明，不会画出来。
 PAD_X = 4
 PAD_TOP = 18
@@ -197,77 +208,6 @@ def avatar_image(master: tk.Misc, size: int = 52) -> tk.PhotoImage:
     return img
 
 
-def load_masks(height: int) -> dict[str, list[list[int]]]:
-    """
-    读 `assets/<高度>/masks.json`（`build_assets.py` 生成）。
-
-    没有文件就返回空字典，桌宠退回颜色键透明；生成失败不影响启动。
-    """
-    path = os.path.join(asset_dir(), str(int(height)), "masks.json")
-    if not os.path.isfile(path):
-        return {}
-    try:
-        with open(path, encoding="utf-8") as fh:
-            raw = json.load(fh)
-    except (OSError, ValueError):
-        return {}
-    if not isinstance(raw, dict):
-        return {}
-    out: dict[str, list[list[int]]] = {}
-    for name, rows in raw.items():
-        if not isinstance(rows, list):
-            continue
-        clean = []
-        for row in rows:
-            if (isinstance(row, list) and len(row) >= 3
-                    and all(isinstance(value, int) for value in row)):
-                clean.append(row)
-        if clean:
-            out[str(name)] = clean
-    return out
-
-
-class _RGNDATAHEADER(ctypes.Structure):
-    _fields_ = [("dwSize", wintypes.DWORD), ("iType", wintypes.DWORD),
-                ("nCount", wintypes.DWORD), ("nRgnSize", wintypes.DWORD),
-                ("rcBound", wintypes.RECT)]
-
-
-def make_window_region(rects: list[tuple[int, int, int, int]],
-                       width: int, height: int):
-    """
-    用一批窗口坐标矩形创建 HRGN。
-
-    只用于 Windows；失败返回 0，调用方会关闭裁剪并保留透明窗口。
-    """
-    if not rects:
-        return 0
-    try:
-        count = len(rects)
-        header_size = ctypes.sizeof(_RGNDATAHEADER)
-        rect_size = ctypes.sizeof(wintypes.RECT)
-        total = header_size + count * rect_size
-        buffer = ctypes.create_string_buffer(total)
-        header = ctypes.cast(buffer, ctypes.POINTER(_RGNDATAHEADER)).contents
-        header.dwSize = header_size
-        header.iType = 1                 # RDH_RECTANGLES
-        header.nCount = count
-        header.nRgnSize = count * rect_size
-        header.rcBound = wintypes.RECT(0, 0, int(width), int(height))
-        array = (wintypes.RECT * count)(
-            *[wintypes.RECT(int(x0), int(y0), int(x1), int(y1))
-              for x0, y0, x1, y1 in rects])
-        ctypes.memmove(ctypes.addressof(buffer) + header_size,
-                       array, count * rect_size)
-        gdi32 = ctypes.windll.gdi32
-        gdi32.ExtCreateRegion.restype = wintypes.HRGN
-        gdi32.ExtCreateRegion.argtypes = [ctypes.c_void_p, wintypes.DWORD,
-                                           ctypes.c_void_p]
-        return gdi32.ExtCreateRegion(None, total, buffer)
-    except Exception:
-        return 0
-
-
 class DesktopPet:
     """
     无边框、置顶、透明底的桌宠窗口。
@@ -326,50 +266,66 @@ class DesktopPet:
         self._walk_remaining = 0
         self._walk_target = (0, 0)
         self._walk_step = 4
+        # 60 FPS 下把“每 50ms 的步长”换成小数累积，避免速度变成原来的 3 倍。
+        self._walk_accum = 0.0
         self._last_save = 0.0
         self._rng = random.Random()
         self._particles: list[dict] = []
         self._sprite = "front"
-        self._masks: dict[str, list[list[int]]] = {}
         self._hwnd = 0
-        self._region_ok = True
-        self._region_key = None
+        self._surface: LayeredSurface | None = None
+        self._paint_guard: ChildPaintSuppressor | None = None
+        self._frame_count = 0
+        self._render_error = ""
         self._last_render_args = ("front", 0, 0)
 
         self.top = tk.Toplevel(parent)
         self.top.withdraw()
         self.top.overrideredirect(True)
-        self.top.configure(bg=KEY_COLOR)
+        # 这个底色永远不该被看见：画面由 UpdateLayeredWindow 提供，
+        # Tk 客户区的 WM_PAINT 由 ChildPaintSuppressor 吞掉。
+        self.top.configure(bg="#101010")
         try:
             self.top.attributes("-topmost", True)
         except tk.TclError:
             pass
-        try:
-            self.top.wm_attributes("-transparentcolor", KEY_COLOR)
-        except tk.TclError:
-            # 非 Windows/极简 Tk：保持窗口可用，只是底色调成中性色
-            self.top.configure(bg="#20242e")
         self.top.protocol("WM_DELETE_WINDOW", self.destroy)
 
-        self._images: dict[str, tk.PhotoImage] = {}
-        self.canvas = tk.Canvas(self.top, bg=KEY_COLOR, bd=0,
-                                highlightthickness=0)
-        self.canvas.pack(fill="both", expand=True)
-        self._image_item = self.canvas.create_image(0, 0, anchor="s")
+        self._images: dict[str, LayerImage] = {}
         self._w, self._h = 1, 1
         self._x = int(x or 0)
         self._y = int(y or 0)
-        self._load_height(self._height, keep_bottom=False, x=x, y=y)
+        try:
+            self._make_tool_window()
+            self._load_height(self._height, keep_bottom=False, x=x, y=y)
 
-        self.canvas.configure(cursor="hand2")
-        self.canvas.bind("<ButtonPress-1>", self._on_press, add="+")
-        self.canvas.bind("<B1-Motion>", self._on_drag, add="+")
-        self.canvas.bind("<ButtonRelease-1>", self._on_release, add="+")
-        self.canvas.bind("<Double-Button-1>", self._on_double_click, add="+")
-        self.canvas.bind("<Button-3>", self._on_right_click, add="+")
-        self.top.bind("<Escape>", lambda _e: self.destroy(), add="+")
-        self.show()
-        self._make_tool_window()
+            self.top.configure(cursor="hand2")
+            self.top.bind("<ButtonPress-1>", self._on_press, add="+")
+            self.top.bind("<B1-Motion>", self._on_drag, add="+")
+            self.top.bind("<ButtonRelease-1>", self._on_release, add="+")
+            self.top.bind("<Double-Button-1>", self._on_double_click, add="+")
+            self.top.bind("<Button-3>", self._on_right_click, add="+")
+            self.top.bind("<Escape>", lambda _e: self.destroy(), add="+")
+            self.show()
+        except Exception:
+            self._alive = False
+            if self._surface is not None:
+                try:
+                    self._surface.close()
+                except Exception:
+                    pass
+                self._surface = None
+            if self._paint_guard is not None:
+                try:
+                    self._paint_guard.close()
+                except Exception:
+                    pass
+                self._paint_guard = None
+            try:
+                self.top.destroy()
+            except Exception:
+                pass
+            raise
 
     # ---- 生命周期 ----
 
@@ -382,6 +338,7 @@ class DesktopPet:
         except tk.TclError:
             return
         self._last_tick = time.monotonic()
+        self._render(self._bob(self._last_tick), self._sway(self._last_tick))
         self._schedule_tick()
 
     def hide(self) -> None:
@@ -404,6 +361,19 @@ class DesktopPet:
                     pass
                 setattr(self, attr, None)
         self._clear_particles()
+        if self._surface is not None:
+            try:
+                self._surface.close()
+            except Exception:
+                pass
+            self._surface = None
+        if self._paint_guard is not None:
+            try:
+                self._paint_guard.close()
+            except Exception:
+                pass
+            self._paint_guard = None
+        self._images = {}
         try:
             self.top.destroy()
         except tk.TclError:
@@ -414,6 +384,7 @@ class DesktopPet:
         self._paused = bool(paused)
         if self._paused:
             self._walk_remaining = 0
+            self._walk_accum = 0.0
             if self._mode == "walk":
                 self._mode = "idle"
         self._last_interaction = time.monotonic()
@@ -453,6 +424,7 @@ class DesktopPet:
     def move_to(self, x: int, y: int) -> None:
         """把窗口移到指定坐标（自动夹在屏幕内），并通知保存。"""
         self._walk_remaining = 0
+        self._walk_accum = 0.0
         self._mode = "idle"
         self._move_window(int(x), int(y))
         self._notify_moved(force=True)
@@ -465,6 +437,7 @@ class DesktopPet:
         cx = self._x + self._w // 2
         bottom = self._y + self._h
         self._walk_remaining = 0
+        self._walk_accum = 0.0
         self._mode = "idle"
         self._load_height(height, keep_bottom=True, x=cx, y=bottom)
         self._notify_moved(force=True)
@@ -520,6 +493,8 @@ class DesktopPet:
             name = "idle"
             self._wake(now)
         self._last_interaction = now
+        # 不等下一个 16ms tick：点完动作立刻提交一帧。
+        self._render(self._bob(now), self._sway(now))
         return name
 
     # ---- 尺寸 / 精灵 ----
@@ -528,22 +503,21 @@ class DesktopPet:
                      x: int | None = None, y: int | None = None) -> None:
         if height not in available_heights():
             height = dict(SIZE_PRESETS)[DEFAULT_SIZE]
-        images: dict[str, tk.PhotoImage] = {}
+        if self._surface is None:
+            raise LayeredSurfaceError("桌宠窗口尚未初始化分层表面")
+        images: dict[str, LayerImage] = {}
         for name in ("front", "side", "side_left", "back",
                      "front_blink", "side_blink", "side_left_blink"):
             path = sprite_path(height, name)
             if os.path.isfile(path):
-                images[name] = tk.PhotoImage(master=self.top, file=path)
+                images[name] = self._surface.image(path)
         if "front" not in images:
             raise FileNotFoundError(f"缺少桌宠精灵：{sprite_path(height, 'front')}")
         self._height = height
         self._images = images
-        self._masks = load_masks(height)
-        self._region_key = None
         self._w = max(img.width() for img in images.values()) + PAD_X * 2
         self._h = max(img.height() for img in images.values()) + PAD_TOP
-        self.canvas.configure(width=self._w, height=self._h)
-        self.canvas.coords(self._image_item, self._w // 2, self._h)
+        self._surface.resize(self._w, self._h)
         self._clear_particles()
         if x is None or y is None:
             self._x, self._y = default_position(self._w, self._h)
@@ -575,74 +549,70 @@ class DesktopPet:
                 return blink
         return base
 
-    def _render(self, bob: int, sway: int = 0) -> None:
+    def _render(self, bob: float, sway: float = 0) -> None:
+        """
+        把当前帧画进分层表面并提交。
+
+        `bob`/`sway` 是浮点（呼吸、走路），这里只取整到物理像素；
+        每帧一次 `UpdateLayeredWindow`，没有 HRGN 重建。
+        """
+        if self._surface is None:
+            return
         try:
             name = self._sprite_name()
             image = self._images.get(name) or self._images["front"]
-            sway = max(-PAD_X + 1, min(PAD_X - 1, int(sway)))
-            bob = max(0, int(bob))
-            self.canvas.itemconfigure(self._image_item, image=image)
-            self.canvas.coords(self._image_item, self._w // 2 + sway,
-                               self._h - bob)
+            sway = max(-PAD_X + 1, min(PAD_X - 1, int(round(sway))))
+            bob = max(0, int(round(bob)))
+            x = self._w // 2 - image.width() // 2 + sway
+            y = self._h - image.height() - bob
+            self._surface.begin()
+            self._surface.draw_image(image, x, y)
+            self._draw_particles()
+            if not self._surface.present():
+                self._render_error = (self._surface.last_error
+                                      or "UpdateLayeredWindow 失败")
+                return
             self._last_render_args = (name, sway, bob)
-            self._apply_region(name, sway, bob)
-        except (tk.TclError, KeyError):
-            pass
+            self._frame_count += 1
+            self._render_error = ""
+        except (LayeredSurfaceError, OSError, ValueError) as exc:
+            self._render_error = f"{type(exc).__name__}: {exc}"
 
-    def _apply_region(self, name: str, sway: int, bob: int) -> None:
-        """
-        把窗口裁成精灵轮廓 —— 这是“只保留桌宠本体”的最后一道保险。
-
-        颜色键透明在大多数机器上够用；但一旦 DWM/驱动没按预期键掉底色，
-        用户就会看到精灵背后一个矩形底。`SetWindowRgn` 直接从窗口形状里
-        去掉轮廓外的像素，连边框/阴影都没有地方可画。
-        """
-        if not self._region_ok or not self._masks:
+    def _draw_particles(self) -> None:
+        """把粒子按剩余寿命淡出；坐标和 Tk 时代保持一致。"""
+        if self._surface is None:
             return
-        base = name[:-6] if name.endswith("_blink") else name
-        rows = self._masks.get(base)
-        if not rows:
-            return
-        if not self._hwnd:
-            try:
-                self._hwnd = int(ctypes.windll.user32.GetAncestor(
-                    wintypes.HWND(self.top.winfo_id()), 2) or 0)
-            except Exception:
-                self._hwnd = 0
-        if not self._hwnd:
-            return
-        key = (base, int(sway), int(bob))
-        if key == self._region_key:
-            return
-        try:
-            image = self._images.get(name) or self._images["front"]
-            ox = self._w // 2 - image.width() // 2 + int(sway)
-            oy = self._h - image.height() - int(bob)
-            rects = []
-            for row in rows:
-                y = row[0] + oy
-                for index in range(1, len(row) - 1, 2):
-                    x0, x1 = row[index] + ox, row[index + 1] + ox
-                    if x1 > x0:
-                        rects.append((x0, y, x1, y + 1))
-            region = make_window_region(rects, self._w, self._h)
-            if not region:
-                self._region_ok = False
-                return
-            user32 = ctypes.windll.user32
-            user32.SetWindowRgn.argtypes = [wintypes.HWND, wintypes.HRGN,
-                                            wintypes.BOOL]
-            user32.SetWindowRgn.restype = ctypes.c_int
-            if not user32.SetWindowRgn(wintypes.HWND(self._hwnd), region, True):
-                try:
-                    ctypes.windll.gdi32.DeleteObject(region)
-                except Exception:
-                    pass
-                self._region_ok = False
-                return
-            self._region_key = key
-        except Exception:
-            self._region_ok = False
+        for particle in self._particles:
+            left = max(0.0, 1.0 - particle["age"] / max(0.01, particle["life"]))
+            alpha = int(255 * left)
+            kind = particle["kind"]
+            if kind == "text":
+                self._surface.draw_text(
+                    particle["text"], particle["x"], particle["y"],
+                    particle["size"], rgb(particle["color"]), alpha)
+            elif kind == "sparkle":
+                r = particle["r"]
+                x, y = particle["x"], particle["y"]
+                points = []
+                for px, py in ((0, -r), (r * 0.35, -r * 0.35),
+                               (r, 0), (r * 0.35, r * 0.35),
+                               (0, r), (-r * 0.35, r * 0.35),
+                               (-r, 0), (-r * 0.35, -r * 0.35)):
+                    points.append((x + px, y + py))
+                self._surface.draw_polygon(
+                    points, rgb(particle["color"]), alpha)
+            elif kind == "oval":
+                r = particle["r"]
+                x, y = particle["x"], particle["y"]
+                if particle.get("fill"):
+                    self._surface.fill_ellipse(
+                        x - r, y - r, r * 2, r * 2,
+                        rgb(particle["color"]), alpha)
+                else:
+                    self._surface.draw_ellipse(
+                        x - r, y - r, r * 2, r * 2,
+                        rgb(particle["color"]),
+                        particle.get("width", 1), alpha)
 
     def _move_window(self, x: int, y: int) -> None:
         left, top, right, bottom = work_area()
@@ -658,37 +628,37 @@ class DesktopPet:
 
     def _make_tool_window(self) -> None:
         """
-        给窗口加 `WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE`：
+        给窗口加 `WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE`：
 
-        · 不出现在 Alt+Tab 里（它只是桌宠，不是第二个主窗口）；
-        · 点它/拖它**不抢当前程序焦点**，气泡看完还能接着打字。
-        另外清掉 DWM 给弹出窗的边框/阴影/圆角，避免精灵背后出现“透明框架”。
-        失败只影响这些“礼貌性”行为，不影响桌宠本身。
+        · WS_EX_LAYERED：`UpdateLayeredWindow` 的逐像素 alpha 画布；
+        · TOOLWINDOW：不出现在 Alt+Tab 里；
+        · NOACTIVATE：点它/拖它不抢当前程序焦点。
+
+        同时清掉 DWM 边框/阴影/圆角，并阻止 Tk 客户区重画底色。
+        这里不吞异常：分层表面建不起来时宁可让主程序报错，也不要
+        静默退回一个带矩形底色的窗口。
         """
-        try:
-            self.top.update_idletasks()
-            user32 = ctypes.windll.user32
-            user32.GetAncestor.argtypes = [wintypes.HWND, wintypes.UINT]
-            user32.GetAncestor.restype = wintypes.HWND
-            user32.GetWindowLongPtrW.argtypes = [wintypes.HWND, ctypes.c_int]
-            user32.SetWindowLongPtrW.argtypes = [wintypes.HWND, ctypes.c_int,
-                                                 ctypes.c_longlong]
-            hwnd = user32.GetAncestor(
-                wintypes.HWND(self.top.winfo_id()), 2)  # GA_ROOT
-            if not hwnd:
-                return
-            self._hwnd = int(hwnd)
-            self._region_key = None
-            user32.GetWindowLongPtrW.restype = ctypes.c_longlong
-            user32.SetWindowLongPtrW.restype = ctypes.c_longlong
-            style = int(user32.GetWindowLongPtrW(hwnd, -20) or 0)
-            want = style | 0x00000080 | 0x08000000
-            if want != style:
-                user32.SetWindowLongPtrW(hwnd, -20, want)
-            self._strip_window_frame(hwnd)
-            self._apply_region(*self._last_render_args)
-        except Exception:
-            pass
+        self.top.update_idletasks()
+        user32 = ctypes.windll.user32
+        user32.GetAncestor.argtypes = [wintypes.HWND, wintypes.UINT]
+        user32.GetAncestor.restype = wintypes.HWND
+        user32.GetWindowLongPtrW.argtypes = [wintypes.HWND, ctypes.c_int]
+        user32.GetWindowLongPtrW.restype = ctypes.c_longlong
+        user32.SetWindowLongPtrW.argtypes = [wintypes.HWND, ctypes.c_int,
+                                             ctypes.c_longlong]
+        user32.SetWindowLongPtrW.restype = ctypes.c_longlong
+        hwnd = user32.GetAncestor(
+            wintypes.HWND(self.top.winfo_id()), 2)  # GA_ROOT
+        if not hwnd:
+            raise LayeredSurfaceError("找不到桌宠顶层窗口")
+        self._hwnd = int(hwnd)
+        style = int(user32.GetWindowLongPtrW(hwnd, -20) or 0)
+        want = style | 0x00080000 | 0x00000080 | 0x08000000
+        if want != style:
+            user32.SetWindowLongPtrW(hwnd, -20, want)
+        self._strip_window_frame(hwnd)
+        self._paint_guard = ChildPaintSuppressor(self.top.winfo_id())
+        self._surface = LayeredSurface(self._hwnd, 1, 1)
 
     @staticmethod
     def _strip_window_frame(hwnd) -> None:
@@ -928,7 +898,11 @@ class DesktopPet:
         if abs(dx) <= 2 and abs(dy) <= 2:
             self._finish_walk(now)
             return 3.0
-        step = self._walk_step
+        # `_walk_step` 是“每 50ms 的步长”；按实际节拍累积成整数像素，
+        # 60 FPS 下不会把散步变成 3 倍速。
+        self._walk_accum += self._walk_step * (TICK_MS / 50.0)
+        step = max(1, int(round(self._walk_accum)))
+        self._walk_accum = max(0.0, self._walk_accum - step)
         sx = step if dx > 2 else (-step if dx < -2 else dx)
         sy = step if dy > 2 else (-step if dy < -2 else dy)
         before = (self._x, self._y)
@@ -952,6 +926,7 @@ class DesktopPet:
     def _finish_walk(self, now: float) -> None:
         self._walk_remaining = 0
         self._walk_target = (0, 0)
+        self._walk_accum = 0.0
         self._mode = "idle"
         self._sprite = "front"
         self._next_walk = now + self._rng.uniform(6.0, 12.0) / self._speed
@@ -978,99 +953,83 @@ class DesktopPet:
             return
         self._walk_target = (tx, ty)
         self._walk_step = max(2, min(7, round(4 * self._speed)))
+        self._walk_accum = 0.0
         distance = max(abs(tx - self._x), abs(ty - self._y))
-        self._walk_remaining = max(4, distance // self._walk_step + 3)
+        per_tick = max(0.5, self._walk_step * (TICK_MS / 50.0))
+        self._walk_remaining = max(4, int(distance / per_tick) + 3)
         self._mode = "walk"
         self._sprite = "side" if dx < 0 else "side_left"
         self._hop_until = 0.0
 
     # ---- 粒子 ----
 
-    def _particle_font(self, scale: float = 1.0) -> tuple:
-        size = max(10, int(round(self._height * 0.055 * scale)))
-        return ("Segoe UI Symbol", size, "bold")
+    def _particle_px(self, scale: float = 1.0) -> int:
+        return max(10, int(round(self._height * 0.055 * scale)))
 
     def _spawn_particle(self, kind: str) -> None:
-        if not self._alive:
+        if not self._alive or not self._images:
             return
-        try:
-            sprite_h = max(img.height() for img in self._images.values())
-            head_y = self._h - sprite_h * 0.80
-            cx = self._w // 2
-            if kind == "zzz":
-                x = cx + self._rng.randint(10, 30)
-                y = head_y + self._rng.randint(2, 12)
-                item = self.canvas.create_text(
-                    x, y, text=self._rng.choice(("z", "Z")),
-                    font=self._particle_font(0.9), fill="#9fc5ff",
-                    tags=("pet-particle",))
-                particle = {"item": item, "kind": "text", "x": x, "y": y,
-                            "vx": 0.2, "vy": -0.22, "life": 2.2}
-            elif kind == "note":
-                x = cx + self._rng.randint(-22, 22)
-                y = head_y + 48
-                item = self.canvas.create_text(
-                    x, y, text="♪", font=self._particle_font(),
-                    fill="#4f86ff", tags=("pet-particle",))
-                particle = {"item": item, "kind": "text", "x": x, "y": y,
-                            "vx": self._rng.uniform(-0.2, 0.2),
-                            "vy": -0.55, "life": 1.6}
-            elif kind == "heart":
-                x = cx + self._rng.randint(-18, 18)
-                y = head_y + 34
-                item = self.canvas.create_text(
-                    x, y, text="♥", font=self._particle_font(0.9),
-                    fill="#ff6b9d", tags=("pet-particle",))
-                particle = {"item": item, "kind": "text", "x": x, "y": y,
-                            "vx": self._rng.uniform(-0.3, 0.3),
-                            "vy": -0.55, "life": 1.5}
-            elif kind == "!":
-                x = cx + self._rng.randint(-14, 14)
-                y = head_y + 18
-                item = self.canvas.create_text(
-                    x, y, text="!", font=self._particle_font(1.0),
-                    fill="#ff7a59", tags=("pet-particle",))
-                particle = {"item": item, "kind": "text", "x": x, "y": y,
-                            "vx": 0.0, "vy": -0.35, "life": 0.8}
-            elif kind == "sparkle":
-                x = cx + self._rng.randint(-30, 30)
-                y = head_y + self._rng.randint(0, 20)
-                r = max(4, self._height // 34)
-                points = []
-                for px, py in ((0, -r), (r * 0.35, -r * 0.35),
-                               (r, 0), (r * 0.35, r * 0.35),
-                               (0, r), (-r * 0.35, r * 0.35),
-                               (-r, 0), (-r * 0.35, -r * 0.35)):
-                    points.extend((x + px, y + py))
-                item = self.canvas.create_polygon(
-                    *points, fill="#ffd166", outline="",
-                    tags=("pet-particle",))
-                particle = {"item": item, "kind": "sparkle", "x": x, "y": y,
-                            "r": r, "vx": 0.0, "vy": -0.25, "life": 0.9}
-            elif kind == "dust":
-                x = cx + self._rng.randint(-26, 26)
-                y = self._h - 4
-                r = max(2, self._height // 55)
-                item = self.canvas.create_oval(
-                    x - r, y - r, x + r, y + r, fill="#cfd6e6",
-                    outline="", stipple="gray50", tags=("pet-particle",))
-                particle = {"item": item, "kind": "oval", "x": x, "y": y,
-                            "r": r, "vx": self._rng.uniform(-0.3, 0.3),
-                            "vy": -0.25, "life": 0.8}
-            else:  # bubble
-                x = cx + self._rng.randint(-20, 20)
-                y = head_y + 45
-                r = max(4, self._height // 30)
-                item = self.canvas.create_oval(
-                    x - r, y - r, x + r, y + r, outline="#8ec5ff",
-                    width=2, tags=("pet-particle",))
-                particle = {"item": item, "kind": "oval", "x": x, "y": y,
-                            "r": r, "vx": self._rng.uniform(-0.15, 0.15),
-                            "vy": -0.4, "life": 1.6}
-            particle["age"] = 0.0
-            self._particles.append(particle)
-        except tk.TclError:
-            pass
+        sprite_h = max(img.height() for img in self._images.values())
+        head_y = self._h - sprite_h * 0.80
+        cx = self._w // 2
+        if kind == "zzz":
+            particle = {
+                "kind": "text", "text": self._rng.choice(("z", "Z")),
+                "x": cx + self._rng.randint(10, 30),
+                "y": head_y + self._rng.randint(2, 12),
+                "vx": 0.2, "vy": -0.22, "life": 2.2,
+                "size": self._particle_px(0.9), "color": "#9fc5ff",
+            }
+        elif kind == "note":
+            particle = {
+                "kind": "text", "text": "♪",
+                "x": cx + self._rng.randint(-22, 22), "y": head_y + 48,
+                "vx": self._rng.uniform(-0.2, 0.2), "vy": -0.55,
+                "life": 1.6, "size": self._particle_px(),
+                "color": "#4f86ff",
+            }
+        elif kind == "heart":
+            particle = {
+                "kind": "text", "text": "♥",
+                "x": cx + self._rng.randint(-18, 18), "y": head_y + 34,
+                "vx": self._rng.uniform(-0.3, 0.3), "vy": -0.55,
+                "life": 1.5, "size": self._particle_px(0.9),
+                "color": "#ff6b9d",
+            }
+        elif kind == "!":
+            particle = {
+                "kind": "text", "text": "!",
+                "x": cx + self._rng.randint(-14, 14), "y": head_y + 18,
+                "vx": 0.0, "vy": -0.35, "life": 0.8,
+                "size": self._particle_px(1.0), "color": "#ff7a59",
+            }
+        elif kind == "sparkle":
+            particle = {
+                "kind": "sparkle",
+                "x": cx + self._rng.randint(-30, 30),
+                "y": head_y + self._rng.randint(0, 20),
+                "r": max(4, self._height // 34),
+                "vx": 0.0, "vy": -0.25, "life": 0.9,
+                "color": "#ffd166",
+            }
+        elif kind == "dust":
+            particle = {
+                "kind": "oval", "fill": True,
+                "x": cx + self._rng.randint(-26, 26), "y": self._h - 4,
+                "r": max(2, self._height // 55),
+                "vx": self._rng.uniform(-0.3, 0.3), "vy": -0.25,
+                "life": 0.8, "color": "#cfd6e6",
+            }
+        else:  # bubble
+            particle = {
+                "kind": "oval", "fill": False,
+                "x": cx + self._rng.randint(-20, 20), "y": head_y + 45,
+                "r": max(4, self._height // 30),
+                "vx": self._rng.uniform(-0.15, 0.15), "vy": -0.4,
+                "life": 1.6, "color": "#8ec5ff", "width": 2,
+            }
+        particle["age"] = 0.0
+        self._particles.append(particle)
 
     def _step_particles(self, now: float, dt: float) -> None:
         if not self._particles:
@@ -1079,43 +1038,13 @@ class DesktopPet:
         for particle in self._particles:
             particle["age"] += dt
             if particle["age"] >= particle["life"]:
-                try:
-                    self.canvas.delete(particle["item"])
-                except tk.TclError:
-                    pass
                 continue
             particle["x"] += particle["vx"] * dt * 60.0
             particle["y"] += particle["vy"] * dt * 60.0
-            try:
-                if particle["kind"] == "sparkle":
-                    r = particle["r"]
-                    x, y = particle["x"], particle["y"]
-                    points = []
-                    for px, py in ((0, -r), (r * 0.35, -r * 0.35),
-                                   (r, 0), (r * 0.35, r * 0.35),
-                                   (0, r), (-r * 0.35, r * 0.35),
-                                   (-r, 0), (-r * 0.35, -r * 0.35)):
-                        points.extend((x + px, y + py))
-                    self.canvas.coords(particle["item"], *points)
-                elif particle["kind"] == "oval":
-                    r = particle["r"]
-                    x, y = particle["x"], particle["y"]
-                    self.canvas.coords(particle["item"], x - r, y - r,
-                                       x + r, y + r)
-                else:
-                    self.canvas.coords(particle["item"], particle["x"],
-                                       particle["y"])
-            except tk.TclError:
-                continue
             alive.append(particle)
         self._particles = alive
 
     def _clear_particles(self) -> None:
-        for particle in self._particles:
-            try:
-                self.canvas.delete(particle["item"])
-            except tk.TclError:
-                pass
         self._particles = []
 
     # ---- 鼠标 ----
@@ -1131,6 +1060,10 @@ class DesktopPet:
         self._walk_remaining = 0
         self._mode = "idle"
         self.set_paused(True)
+        # 按下就给反馈：参考 dsh-pet 的 Q 弹，不等 240ms 双击判定。
+        self._hop_until = now + 0.35
+        self._spawn_particle("heart")
+        self._render(self._bob(now), self._sway(now))
         if self._click_after:
             try:
                 self.top.after_cancel(self._click_after)
@@ -1170,9 +1103,6 @@ class DesktopPet:
         if not self._alive:
             return
         self._wake()
-        self._hop_until = time.monotonic() + 0.5
-        for _ in range(2):
-            self._spawn_particle("heart")
         if self._on_click is not None:
             try:
                 self._on_click(self)
@@ -1186,10 +1116,12 @@ class DesktopPet:
             except tk.TclError:
                 pass
             self._click_after = None
-        self._wake()
-        self._hop_until = time.monotonic() + 0.7
+        now = time.monotonic()
+        self._wake(now)
+        self._hop_until = now + 0.7
         for _ in range(3):
             self._spawn_particle("heart")
+        self._render(self._bob(now), self._sway(now))
         if self._on_double is not None:
             try:
                 self._on_double(self)

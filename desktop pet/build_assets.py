@@ -19,7 +19,6 @@
 """
 from __future__ import annotations
 
-import json
 import os
 import sys
 
@@ -31,8 +30,6 @@ except ImportError:                                             # pragma: no cov
 HERE = os.path.dirname(os.path.abspath(__file__))
 ASSETS = os.path.join(HERE, "assets")
 HEIGHTS = (187, 238, 306)
-#: 窗口裁剪用的基础视图（闭眼帧沿用同一副轮廓）
-MASK_VIEWS = ("front", "side", "side_left", "back")
 #: 306px 原图上的眼睛外框：(x0, y0, x1, y1)
 FRONT_EYES_306 = ((60, 112, 108, 166), (120, 112, 164, 166))
 SIDE_EYE_306 = (22, 110, 65, 152)
@@ -46,7 +43,12 @@ def _load(path: str) -> Image.Image:
 
 
 def _binary_alpha(image: Image.Image) -> Image.Image:
-    """Tk 的透明色是颜色键，不是逐像素 alpha；边缘必须二值化。"""
+    """
+    保持二值 alpha。
+
+    这套精灵图本身就是硬边像素画；二值化让闭眼帧/镜像帧与基础帧的
+    轮廓完全一致，GDI+ 分层窗口和旧版颜色键都能直接渲染。
+    """
     alpha = image.getchannel("A").point(lambda value: 255 if value >= 128 else 0)
     image.putalpha(alpha)
     return image
@@ -82,46 +84,6 @@ def _scale_box(box, sx: float, sy: float):
     return (round(x0 * sx), round(y0 * sy), round(x1 * sx), round(y1 * sy))
 
 
-def _alpha_runs(path: str) -> list[list[int]]:
-    """
-    把一张精灵的 alpha 轮廓压成“每行若干段不透明区间”。
-
-    运行时用这份数据调用 `SetWindowRgn`，窗口只保留精灵本体；
-    即使颜色键透明失败，也不会出现任何矩形底/边框。
-    """
-    image = Image.open(path).convert("RGBA")
-    alpha = image.getchannel("A")
-    rows: list[list[int]] = []
-    for y in range(image.height):
-        row = [y]
-        x = 0
-        while x < image.width:
-            if alpha.getpixel((x, y)) >= 128:
-                start = x
-                while x < image.width and alpha.getpixel((x, y)) >= 128:
-                    x += 1
-                row.extend((start, x))
-            else:
-                x += 1
-        if len(row) > 1:
-            rows.append(row)
-    return rows
-
-
-def _write_masks(height: int, folder: str) -> None:
-    masks = {}
-    for view in MASK_VIEWS:
-        path = os.path.join(folder, f"{view}.png")
-        if os.path.isfile(path):
-            masks[view] = _alpha_runs(path)
-    if not masks:
-        return
-    target = os.path.join(folder, "masks.json")
-    with open(target, "w", encoding="utf-8", newline="\n") as fh:
-        json.dump(masks, fh, ensure_ascii=False, separators=(",", ":"))
-    print(f"  masks.json: {len(masks)} 视图")
-
-
 def build_height(height: int) -> None:
     folder = os.path.join(ASSETS, str(height))
     front_path = os.path.join(folder, "front.png")
@@ -147,7 +109,6 @@ def build_height(height: int) -> None:
     side_blink.save(os.path.join(folder, "side_blink.png"), optimize=True)
     side_left_blink.save(os.path.join(folder, "side_left_blink.png"),
                          optimize=True)
-    _write_masks(height, folder)
     print(f"{height}: front_blink / side_blink / side_left_blink / side_left")
 
 

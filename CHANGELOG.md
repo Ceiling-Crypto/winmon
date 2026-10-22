@@ -19,7 +19,51 @@
 以及跟随当前 AI 的助手**；阶段 6 补上 **多 profile 跟随 + 对话交接留痕**；
 阶段 8 按用户纠正把**休息提醒改由接入的 AI 说**，并拆出独立接入窗口、加入中英双语。
 
+### 阶段 8.33（2026-10-22）—— 参考 dsh-pet：逐像素透明 + 60 FPS 动作
+
+用户反馈：8.32 之后**还是有透明边框、动作延迟和黑影**，并给了参考项目
+[PC2005-cloud/dsh-pet](https://github.com/PC2005-cloud/dsh-pet)。这轮只改
+桌宠的合成/动画链路，不增加系统控制，也不引入 Electron/Pillow 运行时。
+
+- **窗口改成真正的逐像素 alpha**：
+  - 新增 `desktop pet/pet_layered.py`：GDI+ 把精灵/粒子画进 32 位预乘 alpha
+    的 DIB，再用 `UpdateLayeredWindow(..., ULW_ALPHA)` 一次性提交；
+  - 不再设置 `-transparentcolor`，不再调用 `SetWindowRgn`，不再依赖
+    `masks.json`；窗口没有颜色键、没有区域、没有 DWM 阴影；
+  - Windows 按 alpha 做命中测试：透明像素点击穿透，只有身体能点；
+  - `TkChild` 在移动/刷新时会重画品红底色，`ChildPaintSuppressor` 吞掉它的
+    `WM_PAINT` / `WM_ERASEBKGND` / `WM_NCPAINT`，否则精灵上会盖一层矩形；
+  - 保留 `WS_EX_LAYERED | WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE`，仍然不抢焦点、
+    不进 Alt+Tab。
+- **动作延迟**：
+  - 动画节拍 `50ms → 16ms`（约 60 FPS）；
+  - `perform()` 结束立即渲染一帧，不等下一个 tick；
+  - 鼠标按下就做 Q 弹 + 爱心反馈，240ms 只用于区分单击/双击后打开气泡；
+  - 实测动作抽屉打开约 47ms、执行动作约 15ms；点击到画面更新不再受
+    HRGN 重建拖累。
+- **清理旧方案**：
+  - 删除 `winmon_pet.load_masks / make_window_region / _apply_region`；
+  - `build_assets.py` 不再生成 `masks.json`，三档 `masks.json` 删除；
+  - 文档中的“颜色键 / 轮廓裁剪”改为“GDI+ 预乘 alpha / 分层窗口”。
+- **测试**：
+  - `test_b46` 改为验证 `WS_EX_LAYERED`、分层表面、角落 alpha=0、身体 alpha>0、
+    不再有颜色键；点击事件从 Canvas 改到顶层窗口；
+  - `test_b48` 增至 18 条：轮廓裁剪测试改为逐像素 alpha 测试
+    （`GetWindowRgn == 0`），新增“`perform()` 立即提交一帧”
+    “按下立即 Q 弹”“`TICK_MS <= 16`”断言。
+- **验收**：全量 **1090 用例**，失败 0 / 错误 0，跳过 7，**113.124 秒**；
+  `--fast` **1033 条**，失败 0 / 错误 0，跳过 6，**58.126 秒**；
+  `lint_check` 新增 0；`--smoke` 退出 0。
+- **新截图**：`desktop pet/docs/ui-8.33-pet-alpha.png`（浅色底上只有本体，
+  没有卡片/边框/阴影）。
+
+> 没有照搬 dsh-pet 的 97 个 WebM 动画和 Electron 外壳；只采用它验证过的
+> “局部透明置顶窗 + 逐像素 alpha + 无阴影 + 高帧率/即时动作”设计。
+
 ### 阶段 8.32（2026-10-22）—— 只留桌宠本体 + 动作抽屉
+
+> 8.33 起改用 GDI+ 逐像素 alpha；本节的“颜色键 + `SetWindowRgn` + masks.json”
+> 已被移除，保留作历史记录。
 
 - **窗口按精灵轮廓裁剪**：
   - `build_assets.py` 生成 `assets/<高度>/masks.json`（四视图每行不透明区间）；

@@ -88,15 +88,20 @@ class TestDesktopPetWindow(unittest.TestCase):
             self.assertTrue(style & 0x08000000, "桌宠不应抢焦点")
             self.assertTrue(style & 0x00000080, "桌宠不应出现在 Alt+Tab")
             self.assertTrue(style & 0x00080000, "桌宠应是分层窗口（透明生效）")
-            key, flags = wintypes.DWORD(), wintypes.DWORD()
-            user32.GetLayeredWindowAttributes.argtypes = [
-                wintypes.HWND, ctypes.POINTER(wintypes.DWORD),
-                ctypes.POINTER(wintypes.DWORD), ctypes.POINTER(wintypes.DWORD)]
-            self.assertTrue(user32.GetLayeredWindowAttributes(
-                hwnd, ctypes.byref(key), ctypes.byref(flags),
-                ctypes.byref(wintypes.DWORD())))
-            self.assertEqual(key.value & 0xFFFFFF, 0xFE00FF,
-                             "颜色键应为精灵透明底色")
+            self.assertIsNotNone(pet._surface, "应使用 GDI+ 分层表面")
+            self.assertIsNotNone(pet._paint_guard,
+                                 "Tk 客户区重绘必须被抑制")
+            self.assertEqual(pet._surface.size, (pet._w, pet._h))
+            self.assertEqual(pet._surface.sample_alpha(0, 0), 0,
+                             "窗口角落必须完全透明")
+            self.assertGreater(
+                pet._surface.sample_alpha(pet._w // 2, 170), 0,
+                "精灵身体应不透明")
+            try:
+                key_color = pet.top.wm_attributes("-transparentcolor")
+            except Exception:
+                key_color = ""
+            self.assertEqual(key_color, "", "不再使用颜色键透明")
             pet.move_to(40, 40)
             self.root.update()
             self.assertEqual(pet.bounds()[:2], (40, 40))
@@ -111,9 +116,9 @@ class TestDesktopPetWindow(unittest.TestCase):
             pet.set_height(306)
             self.root.update()
             self.assertEqual(pet.bounds()[2:], (237, 324))
-            self.root.after(80, lambda: pet.canvas.event_generate(
+            self.root.after(80, lambda: pet.top.event_generate(
                 "<ButtonPress-1>", x=30, y=30))
-            self.root.after(100, lambda: pet.canvas.event_generate(
+            self.root.after(100, lambda: pet.top.event_generate(
                 "<ButtonRelease-1>", x=30, y=30))
             self.root.after(420, self.root.quit)
             self.root.mainloop()
@@ -130,8 +135,8 @@ class TestDesktopPetWindow(unittest.TestCase):
             on_double=lambda _p: doubles.append("double"))
         self.root.update()
         try:
-            pet.canvas.event_generate("<ButtonPress-1>", x=20, y=20)
-            pet.canvas.event_generate("<ButtonRelease-1>", x=20, y=20)
+            pet.top.event_generate("<ButtonPress-1>", x=20, y=20)
+            pet.top.event_generate("<ButtonRelease-1>", x=20, y=20)
             pet._on_double_click(SimpleNamespace(x=20, y=20))
             self.root.after(350, self.root.quit)
             self.root.mainloop()
