@@ -74,8 +74,8 @@ _STRINGS = {
         "connect.key_target_follow": "跟随当前 AI",
         "connect.key_warning": "不要写进仓库、文档或对话；WinMon 不保存 key 内容。",
         "connect.show_key_help": "为什么需要 key？",
-        "connect.key_envs": "智谱 WINMON_AI_API_KEY · OpenAI WINMON_OPENAI_API_KEY · "
-                            "Claude WINMON_ANTHROPIC_API_KEY · DeepSeek WINMON_DEEPSEEK_API_KEY",
+        "connect.key_envs": "每个直连对象各用一个环境变量；选中后下面会显示它对应的名字。"
+                            "换厂商不会覆盖别家的 key。",
         "connect.key_temp": "只用于本次运行（不写盘）：",
         "connect.key_use": "用于本次运行",
         "connect.key_saved": "已在本进程设置 {env}（不写盘；重启后需重设或改用环境变量）。",
@@ -210,8 +210,9 @@ _STRINGS = {
         "connect.key_warning": "Never put it in a repo, document, or chat. WinMon does not "
                                "save the key contents.",
         "connect.show_key_help": "Why do I need a key?",
-        "connect.key_envs": "Zhipu WINMON_AI_API_KEY · OpenAI WINMON_OPENAI_API_KEY · "
-                            "Claude WINMON_ANTHROPIC_API_KEY · DeepSeek WINMON_DEEPSEEK_API_KEY",
+        "connect.key_envs": "Each direct target uses its own environment variable; "
+                            "its name appears below after you pick one. Switching "
+                            "providers won't overwrite another provider's key.",
         "connect.key_temp": "This run only (not saved):",
         "connect.key_use": "Use this run",
         "connect.key_saved": "{env} is set for this process (not saved to disk).",

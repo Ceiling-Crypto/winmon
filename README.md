@@ -16,8 +16,8 @@
 纯 Python 标准库实现（`ctypes` + `tkinter`），**不需要安装任何第三方包**。
 
 > **关于配图**：界面截图都在本地运行时抓取，涉及真实窗口标题的图会尽量用测试窗口
-> 或合成数据；透明桌宠无法直接把桌面截进同一张图，`ui-8.29-pet.png` 是桌宠与气泡
-> 合成到浅色桌面底上的示意图，图注已说明。
+> 或合成数据；透明桌宠无法直接把桌面截进同一张图，`desktop pet/docs/ui-8.29-pet.png`
+> 是桌宠与气泡合成到浅色桌面底上的示意图，图注已说明。
 
 ---
 
@@ -31,7 +31,7 @@
 | [`CHANGELOG.md`](CHANGELOG.md) | **改了什么**：按版本记功能与修复（含版本号怎么变的） | 想知道这版和上版的差别、某个改动是哪一版进的 |
 | [`HANDOFF.md`](HANDOFF.md) | **为什么是这样**：开发交接文档，2800 行，踩过的坑编号到 120+。**含内部设计讨论**（哪些方案试过、为什么放弃） | **改代码之前**（尤其别重复踩坑）；接手这个项目 |
 | [`MCP.md`](MCP.md) | 让 AI 客户端通过 **MCP** 接入 WinMon 的**方案**（**阶段 1.5–8 已实现**：只读工具 / 预算 / 直连 / 本地 HTTP / 跟随式助手 / 角色记忆）；§十 是 2026-10-19 的「AI 工作伴侣」修订 | 想用 AI 操作/观察这台机器上的窗口与进程 |
-| [`tests/`](tests) | 可重复运行的验证用例（1065 个，纯标准库） | 改完代码跑一遍；想知道某条规矩被谁钉住 |
+| [`tests/`](tests) | 可重复运行的验证用例（1072 个，纯标准库） | 改完代码跑一遍；想知道某条规矩被谁钉住 |
 | [`LICENSE`](LICENSE) | MIT 许可证 | 想用 / 改 / 分发这份代码 |
 
 一句话：**用**看 README，**对比**看 CHANGELOG，**改**看 HANDOFF，**接 AI** 看 MCP。
@@ -193,8 +193,8 @@ py winmon.py
 ### 跑测试（可选，纯标准库）
 
 ```bat
-py tests\run_tests.py            :: 全部用例（1065 个，约 110–120 秒）
-py tests\run_tests.py --fast     :: 跳过真窗口/抓屏慢用例（1008 个，约 56–60 秒）
+py tests\run_tests.py            :: 全部用例（1072 个，约 110–120 秒）
+py tests\run_tests.py --fast     :: 跳过真窗口/抓屏慢用例（1015 个，约 56–60 秒）
 py tests\run_tests.py -v         :: 详细输出
 py tests\run_tests.py -k capture :: 只跑名字里含 capture 的用例
 py tests\run_tests.py --list     :: 只列出会跑哪些用例（慢用例会标 [slow]）
@@ -693,6 +693,8 @@ python winmon.py --idle --idle-minutes 5   :: 换个阈值（调试用）
 
 - **大小**：小 / 中 / 大三档（精灵高度 187 / 238 / 306 物理像素）；换档时保持底边中心不动，
   不会突然跳到屏幕外。
+- **不只在右下角**：默认落在右下角，但会在**工作区内短距离二维走动**（横/纵都可能，
+  向上走用背面、向下用正面），也能直接拖到任意位置；不会走进任务栏。
 - **不会抢焦点**：窗口带 `WS_EX_NOACTIVATE | WS_EX_TOOLWINDOW`，点它、拖它都不会把你
   正在打字的窗口切走；也不出现在 Alt+Tab 里。
 - **透明但不糊边**：Tk 的透明是颜色键，所以随附精灵做了二值 alpha，避免半透明边缘
@@ -701,12 +703,15 @@ python winmon.py --idle --idle-minutes 5   :: 换个阈值（调试用）
 - **形象出处**：社区二创「鲸鱼娘 · 大肥鱼」，来自
   [RYANFFY/deepseek-dafeiyu-pet](https://github.com/RYANFFY/deepseek-dafeiyu-pet)（MIT），
   本仓库只做了尺寸整理、alpha 二值化和左向镜像；授权与改动说明见
-  [`assets/pet/NOTICE.md`](assets/pet/NOTICE.md)。这是社区形象，**不是 DeepSeek 官方品牌**，
+  [`desktop pet/NOTICE.md`](<desktop pet/NOTICE.md>)。这是社区形象，**不是 DeepSeek 官方品牌**，
   WinMon 与 DeepSeek 官方没有隶属或背书关系。
+- **目录约定**：桌宠的代码、素材、截图、说明全部在
+  [`desktop pet/`](<desktop pet/README.md>)；Agent/动作包/全屏漫游的设计稿在
+  [`desktop pet/AGENT.md`](<desktop pet/AGENT.md>)（**设计，尚未实现**）。
 
-![桌宠与信息气泡；桌宠为实际渲染，气泡为实际窗口合成到桌面底色](docs/ui-8.29-pet.png)
+![桌宠与信息气泡；桌宠为实际渲染，气泡为实际窗口合成到桌面底色](<desktop pet/docs/ui-8.29-pet.png>)
 
-![设置 → 主界面内容：桌面宠物开关、大小与回到右下角](docs/ui-8.29-pet-settings.png)
+![设置 → 主界面内容：桌面宠物开关、大小与回到右下角](<desktop pet/docs/ui-8.29-pet-settings.png>)
 
 ### 4. 终止程序
 
@@ -1103,12 +1108,38 @@ HTTP 模式必须带 `Authorization: Bearer <token>`
 识别到智谱就找 `zhipu`，识别到 Claude 就找 `anthropic`，找不到就只用剪贴板交接。
 **不会再出现"用户用 DeepSeek、WinMon 却调 GLM"的情况。**
 
+**直连对象不再只列四家**。接入窗口的下拉框现在列出所有有公开 API 的服务，
+用户自己选；选中后会带出**可改的默认模型名和接口地址**，保存时只写地址/模型/
+环境变量名，不写 key：
+
+| 服务 | 默认模型示例 | 环境变量 |
+| --- | --- | --- |
+| DeepSeek | `deepseek-chat` | `WINMON_DEEPSEEK_API_KEY` |
+| 智谱 GLM | `glm-5.3` | `WINMON_AI_API_KEY` |
+| OpenAI | `gpt-4o-mini` | `WINMON_OPENAI_API_KEY` |
+| Claude | `claude-3-5-haiku-latest` | `WINMON_ANTHROPIC_API_KEY` |
+| Gemini | `gemini-2.5-flash` | `WINMON_GEMINI_API_KEY` |
+| Grok (xAI) | `grok-4` | `WINMON_XAI_API_KEY` |
+| Kimi | `kimi-k2-0905-preview` | `WINMON_MOONSHOT_API_KEY` |
+| 通义千问 | `qwen-plus` | `WINMON_DASHSCOPE_API_KEY` |
+| 文心一言 | `ernie-4.5-turbo-128k` | `WINMON_QIANFAN_API_KEY` |
+| 豆包 | `doubao-seed-1-6-250615` | `WINMON_DOUBAO_API_KEY` |
+| 腾讯元宝 | `hunyuan-turbos-latest` | `WINMON_HUNYUAN_API_KEY` |
+| Mistral / Groq / OpenRouter | 各家默认 | `WINMON_*_API_KEY` |
+| 硅基流动 / Perplexity | 各家默认 | `WINMON_*_API_KEY` |
+| Ollama / LM Studio（本机） | `llama3.1` / `local-model` | `WINMON_OLLAMA_API_KEY` / `WINMON_LMSTUDIO_API_KEY` |
+| 自定义 / 中转 | 自己填 | 自己填 |
+
+> Copilot 这类**没有公开 API** 的客户端不放在直连列表里（选了也连不上）；
+> 它们走上面的 MCP 接入。模型名只是默认值，服务商改名时在界面上直接改。
+
+![直连对象：选中 Kimi 后自动带出模型与接口地址，所有有公开 API 的服务都在下拉里](docs/ui-8.30-provider-list.png)
+
 ```bat
 set WINMON_AI_DIRECT=1
-set WINMON_AI_API_KEY=...              :: 智谱 profile 用这个（只从环境变量读）
-set WINMON_OPENAI_API_KEY=...          :: ChatGPT profile
-set WINMON_ANTHROPIC_API_KEY=...       :: Claude profile
+set WINMON_AI_API_KEY=...              :: 智谱 / 自定义 profile（只从环境变量读）
 set WINMON_DEEPSEEK_API_KEY=...        :: DeepSeek profile
+set WINMON_MOONSHOT_API_KEY=...        :: Kimi profile
 py winmon.py --ai-ask "帮我看看刚刚为什么卡"   :: 用 active profile 直接问
 py winmon.py --ai-explain                      :: 解释最近一条本地事件
 py winmon.py --ai-assist                       :: 跟随当前 AI（见下）
@@ -1118,6 +1149,9 @@ py winmon.py --ai-assist                       :: 跟随当前 AI（见下）
 或“复制 key”按钮。右侧的剪贴板图标只做一件事：把剪贴板里的 key 读进掩码框，
 点“保存”后写入**当前进程**的环境变量并立即清空输入；关闭 WinMon 即失效。
 界面上永远不会回显已保存的 key，也不会把 key 复制回剪贴板。
+手动选中的厂商在保存 key 时会同时写入 `winmon_ai_provider.json` 的 profile
+（地址、模型、环境变量名、`enabled=true`），重启后不用再选一遍；
+**key 本身仍只在环境变量里**，不会写进配置文件。
 
 配置文件 `winmon_ai_provider.json`（**不要放 key**）：
 
@@ -1265,7 +1299,7 @@ Windows 11 上主窗口和二级窗口的外框由 DWM 统一裁圆角（Win10 �
 
 ## 九、测试
 
-`tests/` 下是一套**可重复运行的验证用例**（1065 个），只用 Python 标准库
+`tests/` 下是一套**可重复运行的验证用例**（1072 个），只用 Python 标准库
 （`unittest`），与本体一样零依赖。它们把开发过程中一次性做过的验证固化了下来，
 以后改代码可以直接跑，不用重新手工试一遍。
 
@@ -1315,6 +1349,7 @@ py tests\lint_check.py             :: 代码复检（新增问题才退出码 1�
 | `test_b44_usability_and_startup.py` | **交互收口与启动提速**（7 用例，2026-10-22）：`media_app_path` 可复用同一份进程快照（不重新枚举）；一次媒体清单重建只取一份快照；AI 接入窗口的滚轮方向/步长、内容装得下时不空转；建界面时不预扫媒体清单；首帧前点开播放器下拉会按需补扫 |
 | `test_b45_drawers_and_idle_live.py` | **闲置即时生效与类别抽屉**（8 用例，2026-10-22）：空清单仍打开闲置窗口（正在计时 / 未开启两种状态）；设置里的闲置开关即时同步运行态、取消还原；「打开清单」真的到达主界面；类别抽屉列出「全部 + 9 类 + 多选…」、单选立即生效、点抽屉外收起 |
 | `test_b46_desktop_pet.py` | **可选桌宠**（9 用例，2026-10-22）：187/238/306 三档精灵与正/侧/左/背四视图齐全；尺寸档位往返；位置夹取与默认右下角；透明置顶窗口创建/换档/拖动/单击/双击取消单击/销毁；不抢焦点、不进 Alt+Tab；设置开关即时出现、取消收回；气泡打开并显示媒体；摘要只取有窗口的程序、不把 System 算进后台占用 |
+| `test_b47_provider_catalog.py` | **直连厂商全列出**（7 用例，2026-10-22）：19 个有公开 API 的对象齐全、每家默认字段完整；常见 AI 名映射；保存单个 profile 保留其它项且不写 key；自定义必填地址/模型；本机 http 放行、远程 http 拒绝；界面下拉真的列出全部；保存 key 后 profile 落盘且 key 只进环境变量 |
 
 几点说明：
 
@@ -1412,8 +1447,7 @@ py tests\lint_check.py             :: 代码复检（新增问题才退出码 1�
 | `winmon_mcp.py` | MCP 服务器（stdio + 本地 HTTP；四个只读工具，供 AI 客户端挂载） |
 | `winmon_ai_provider.py` | **可选**直连模型 API（默认关闭；key 只从环境变量读，精确计量 token） |
 | `winmon_i18n.py` | 界面语言（中文 / English）：静态文案表、反向表、控件树重译 |
-| `winmon_pet.py` | 可选桌面宠物：透明置顶窗口 / 呼吸与散步 / 拖动 / 单击双击 / 尺寸切换 |
-| `assets/pet/` | 桌宠精灵（187/238/306 三档、正/侧/左/背）、头像、MIT 授权与来源说明 |
+| `desktop pet/` | 桌宠的全部运行文件：`winmon_pet.py`、精灵（187/238/306 三档、正/侧/左/背）、头像、`LICENSE` / `NOTICE.md`、截图 |
 | `media_session.ps1` | 系统媒体会话（GSMTC）桥接脚本。PowerShell + Windows 自带的 WinRT 投影，**必须纯 ASCII 无 BOM**（否则 PowerShell 5.1 会按 ANSI 解码、把语法搞坏） |
 | `启动WinMon.bat` | 启动器（菜单式，可自检） |
 | `winmon.ico` | 程序图标（`py tests\make_icon.py` 可重新生成） |

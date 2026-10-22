@@ -33,13 +33,19 @@ TESTS_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_DIR = os.path.dirname(TESTS_DIR)
 if PROJECT_DIR not in sys.path:
     sys.path.insert(0, PROJECT_DIR)
+#: 桌宠是独立目录（`desktop pet/`），模块名仍叫 winmon_pet；
+#: 把它加进 sys.path，测试里的 `import winmon_pet` 与主程序保持一致。
+PET_HOME = os.path.join(PROJECT_DIR, "desktop pet")
+if PET_HOME not in sys.path:
+    sys.path.insert(0, PET_HOME)
 
 import winmon_core as core                                    # noqa: E402
 
 #: 项目里的顶层 Python 源文件（测试会逐个做语法/编码检查）。
 #: 新增顶层模块时记得加进来 —— 否则它的编码损坏不会被 test_a1 拦住。
 SOURCE_FILES = ["winmon_core.py", "winmon.py", "winmon_ai.py", "winmon_mcp.py",
-                "winmon_ai_provider.py", "winmon_i18n.py", "winmon_pet.py",
+                "winmon_ai_provider.py", "winmon_i18n.py",
+                os.path.join("desktop pet", "winmon_pet.py"),
                 "scan_windows.py", "close_others.py"]
 
 #: 测试期间不要弹系统通知（AI 事件检测是新的常驻逻辑，别打扰跑测试的人）

@@ -55,6 +55,14 @@ import tkinter as tk
 import zlib
 from tkinter import filedialog, font as tkfont, messagebox, simpledialog, ttk
 
+#: 桌宠的代码/素材/说明/截图全部收在 `desktop pet/`（目录名带空格是用户定的）。
+#: 不把它做成包：加进 sys.path 后 `import winmon_pet` 仍然是最直接的写法，
+#: 测试和 `winmon_pet.py` 自己都不用改 import 语句。
+_PET_HOME = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                         "desktop pet")
+if _PET_HOME not in sys.path:
+    sys.path.insert(0, _PET_HOME)
+
 import winmon_ai as ai
 import winmon_ai_provider as provider
 import winmon_core as core
@@ -9074,11 +9082,12 @@ class _AiConnectWindow:
         self._key_provider_by_label = {
             self._key_target_placeholder: "__none__",
             i18n.t("connect.key_target_follow"): "",
-            "智谱 GLM": "zhipu",
-            "OpenAI": "openai",
-            "Claude": "anthropic",
-            "DeepSeek": "deepseek",
         }
+        # 全部有公开 API 的直连对象都由用户自己选；顺序固定（见 PROFILE_ORDER），
+        # 不把某个厂商写成默认，也不再只列四家。
+        for _profile in provider.PROFILE_ORDER:
+            self._key_provider_by_label[
+                provider.profile_label(_profile)] = _profile
         manual = str((getattr(self.app, "_ai_assist", {}) or {}).get(
             "direct_provider") or "").strip()
         selected = (next((label for label, key in self._key_provider_by_label.items()
@@ -9091,11 +9100,35 @@ class _AiConnectWindow:
                  bg=colors["bg"], fg=colors["fg"]).pack(side="left")
         self.key_provider_combo = ttk.Combobox(
             target_row, textvariable=self.key_provider_var, state="readonly",
-            width=18, font=UI_FONT, values=list(self._key_provider_by_label.keys()))
+            width=22, font=UI_FONT, values=list(self._key_provider_by_label.keys()))
         self.key_provider_combo.pack(side="left", padx=(4, 0))
         self.key_provider_combo.bind("<<ComboboxSelected>>",
                                      lambda _e: self.change_key_provider())
+        tk.Label(body, text=i18n.pick(
+            "只列有公开 API 的服务；Copilot 这类客户端请用上面的 MCP 接入。",
+            "Only services with a public API are listed; use MCP for clients "
+            "such as Copilot."),
+            font=SMALL_FONT, bg=colors["bg"], fg=colors["muted"],
+            anchor="w", justify="left", wraplength=720).pack(fill="x", pady=(0, 4))
+
+        # 模型名与接口地址可改：服务商换模型/换兼容地址时，用户不用等程序更新。
+        # 选了具体对象才会启用；「跟随当前 AI」时显示为空并置灰。
+        self.key_model_var = tk.StringVar(value="")
+        self.key_base_var = tk.StringVar(value="")
+        fields = (
+            (i18n.pick("模型", "Model"), self.key_model_var, "key_model_entry"),
+            (i18n.pick("接口地址", "Base URL"), self.key_base_var, "key_base_entry"),
+        )
+        for label_text, var, attr in fields:
+            frow = tk.Frame(body, bg=colors["bg"])
+            frow.pack(fill="x", pady=(0, 3))
+            tk.Label(frow, text=label_text, font=UI_FONT, bg=colors["bg"],
+                     fg=colors["fg"], width=8, anchor="w").pack(side="left")
+            ent = ttk.Entry(frow, textvariable=var)
+            ent.pack(side="left", fill="x", expand=True)
+            setattr(self, attr, ent)
         self.key_env = self._key_env()
+        self._fill_key_fields(manual)
         # 环境变量名可能很长（WINMON_ANTHROPIC_API_KEY 等），单独一行，
         # 输入框和按钮放下一行；否则 10 号字下按钮会被卡片边缘切掉。
         self.key_env_text = tk.StringVar(
@@ -9352,6 +9385,26 @@ class _AiConnectWindow:
         except Exception:
             return "WINMON_AI_API_KEY"
 
+    def _fill_key_fields(self, manual: str) -> None:
+        """把某个直连对象的默认/已保存的模型名与接口地址填进输入框。"""
+        if not hasattr(self, "key_model_var"):
+            return
+        self._key_fields_enabled = bool(manual)
+        if not manual:
+            self.key_model_var.set("")
+            self.key_base_var.set("")
+        else:
+            defaults = provider.provider_defaults(manual)
+            try:
+                cfg = provider.resolve_profile(manual)
+            except Exception:
+                cfg = None
+            self.key_model_var.set(
+                str(getattr(cfg, "model", "") or defaults.get("model") or ""))
+            self.key_base_var.set(
+                str(getattr(cfg, "base_url", "") or defaults.get("base_url") or ""))
+        self._sync_key_controls()
+
     def _sync_key_controls(self) -> None:
         state = "normal" if getattr(self, "key_env", "") else "disabled"
         for widget in (getattr(self, "key_entry", None),
@@ -9360,6 +9413,15 @@ class _AiConnectWindow:
             if widget is not None:
                 try:
                     widget.configure(state=state)
+                except Exception:
+                    pass
+        fields_state = ("normal" if getattr(self, "_key_fields_enabled", False)
+                        else "disabled")
+        for widget in (getattr(self, "key_model_entry", None),
+                       getattr(self, "key_base_entry", None)):
+            if widget is not None:
+                try:
+                    widget.configure(state=fields_state)
                 except Exception:
                     pass
 
@@ -9376,7 +9438,7 @@ class _AiConnectWindow:
                                                "Choose a target first"))
         except Exception:
             pass
-        self._sync_key_controls()
+        self._fill_key_fields(manual)
         self._refresh()
         try:
             self.app._update_ai_bar()
@@ -9505,8 +9567,21 @@ class _AiConnectWindow:
         if not key:
             self.status_text.set(i18n.t("connect.key_empty"))
             return
+        selected = self._selected_key_provider()
+        manual = "" if selected in ("__none__", "") else selected
+        if manual:
+            ok, msg = provider.save_profile(
+                manual,
+                base_url=self.key_base_var.get(),
+                model=self.key_model_var.get(),
+                api_key_env=self.key_env,
+                enabled=True)
+            if not ok:
+                self.status_text.set(msg)
+                return
         os.environ[self.key_env or "WINMON_AI_API_KEY"] = key
         self.key_var.set("")
+        self._fill_key_fields(manual)
         self._refresh()
         self.status_text.set(i18n.t("connect.key_saved", env=self.key_env))
         try:
@@ -16918,6 +16993,13 @@ def smoke_test(seconds: float = 6.0) -> int:
         控制台上会出现一串 `invalid command name "..._pump_frames"`。
         """
         core.stop_media_snapshot_helper()
+        # --smoke 不经过 quit_app，但用户设置里可能已经打开桌宠；
+        # 先显式收掉它的 Toplevel/图片命令，否则 root.destroy() 在
+        # “删除已经删过的 Tcl command”处报错，窗口反而关不干净。
+        try:
+            app._destroy_pet()
+        except Exception:
+            pass
         app._cancel_pending_after()
         root.destroy()
 

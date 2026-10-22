@@ -19,11 +19,41 @@
 以及跟随当前 AI 的助手**；阶段 6 补上 **多 profile 跟随 + 对话交接留痕**；
 阶段 8 按用户纠正把**休息提醒改由接入的 AI 说**，并拆出独立接入窗口、加入中英双语。
 
+### 阶段 8.30（2026-10-22）—— 桌宠归拢到 `desktop pet/`、直连厂商全列出
+
+- **桌宠文件全部收进 `D:\winmon\desktop pet\`**：
+  - `winmon_pet.py`、三档精灵、头像、`LICENSE` / `NOTICE.md`、截图、设计稿都在这一个目录；
+    后续新增桌宠文件也放这里。主程序把该目录加进 `sys.path` 后 `import winmon_pet`，
+    功能和导入语句不变；测试通过 `tests/_helpers.py` 的 `PET_HOME` 找到它。
+  - 目录说明见 `desktop pet/README.md`；Agent/动作包/全屏漫游设计见 `desktop pet/AGENT.md`
+    （**设计，尚未实现**，避免把 API、动画、人格和系统控制混在一起）。
+- **桌宠开始“全屏”走动**：在工作区内短距离二维漫游，横/纵都可能；
+  向上走用背面、向下用正面，碰到任务栏/屏幕边就停；拖拽仍是最高优先级。
+- **直连 API 不再只列四家**：
+  - 下拉框列出 19 个有公开 API 的对象：DeepSeek、智谱、OpenAI、Claude、Gemini、Grok、
+    Kimi、通义千问、文心一言、豆包、腾讯元宝、Mistral、Groq、OpenRouter、硅基流动、
+    Perplexity、Ollama、LM Studio、自定义/中转。Copilot 这类没有公开 API 的客户端
+    改走 MCP，不混进直连列表。
+  - 选中后自动带出**可改的模型名和接口地址**；保存时写
+    `winmon_ai_provider.json`（地址/模型/环境变量名/`enabled`），**不写 key**。
+  - 每家一个环境变量（如 `WINMON_MOONSHOT_API_KEY`），换厂商不会覆盖别家的 key。
+  - 本地 Ollama / LM Studio 允许 `http://127.0.0.1`，远程仍要求 https。
+- 测试：新增 `test_b47_provider_catalog.py` 7 条（目录完整、别名映射、保存 profile
+  保留旧项且不写 key、自定义必填校验、本地 http、下拉框全列、保存 key 落盘）；
+  `test_b46` 跟随桌宠目录迁移，仍然 9 条，并补了二维漫游的 x/y 双轴断言。
+- 顺手修 `--smoke`：如果用户设置里已打开桌宠，原来的收尾直接 `root.destroy()`
+  会在桌宠 Toplevel 的 Tcl command 上报错、窗口关不干净；现在先 `_destroy_pet()`
+  再取消定时器。
+- 验收：全量 **1072 用例**，失败 0 / 错误 0，跳过 7，**113.985 秒**；
+  `--fast` **1015 条**，失败 0 / 错误 0，跳过 6，**57.188 秒**；
+  `lint_check` 新增 0。
+- 新截图：`docs/ui-8.30-provider-list.png`。
+
 ### 阶段 8.29（2026-10-22）—— 可选桌宠「大肥鱼」
 
 - **不做自研形象、不接陪伴 AI**：直接采用 GitHub 上 MIT 的社区桌宠形象
   「鲸鱼娘 · 大肥鱼」，避免 API 成本与国内可用性问题；素材出处与授权写在
-  `assets/pet/NOTICE.md`（不是 DeepSeek 官方品牌，WinMon 与其无隶属关系）。
+  `desktop pet/NOTICE.md`（不是 DeepSeek 官方品牌，WinMon 与其无隶属关系）。
 - **设置里可开**：**设置 → 主界面内容 → 桌面宠物（大肥鱼）**，
   开关默认关；大小「小 / 中 / 大」和位置都即时生效，点「取消」会收回去。
   托盘右键也有「显示 / 隐藏桌宠」。
@@ -38,7 +68,7 @@
 - 验收：全量 **1065 用例**，失败 0 / 错误 0，跳过 7，**111.847 秒**；
   `--fast` **1008 条**，失败 0 / 错误 0，跳过 6，**56.536 秒**；
   `lint_check` 新增 0。
-- 新截图：`docs/ui-8.29-{pet,pet-settings}.png`。
+- 新截图：`desktop pet/docs/ui-8.29-{pet,pet-settings}.png`。
 
 ### 阶段 8.28（2026-10-22）—— 闲置即时生效、右键菜单归位、类别抽屉
 

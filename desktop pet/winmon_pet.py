@@ -50,7 +50,9 @@ def project_dir() -> str:
 
 
 def asset_dir() -> str:
-    return os.path.join(project_dir(), "assets", "pet")
+    # 桌宠的代码、素材、说明、截图都在 `desktop pet/` 下；
+    # `project_dir()` 就是这一层，所以素材是 `desktop pet/assets/`。
+    return os.path.join(project_dir(), "assets")
 
 
 def sprite_path(height: int, name: str) -> str:
@@ -172,7 +174,7 @@ class DesktopPet:
         self._hop_until = 0.0
         self._next_walk = time.monotonic() + random.uniform(8.0, 15.0)
         self._walk_remaining = 0
-        self._walk_dir = 1
+        self._walk_target = (0, 0)
         self._last_save = 0.0
         self._rng = random.Random()
 
@@ -285,6 +287,7 @@ class DesktopPet:
 
     def move_to(self, x: int, y: int) -> None:
         """把窗口移到指定坐标（自动夹在屏幕内），并通知保存。"""
+        self._walk_remaining = 0
         self._move_window(int(x), int(y))
         self._notify_moved(force=True)
 
@@ -295,6 +298,7 @@ class DesktopPet:
             return
         cx = self._x + self._w // 2
         bottom = self._y + self._h
+        self._walk_remaining = 0
         self._load_height(height, keep_bottom=True, x=cx, y=bottom)
         self._notify_moved(force=True)
 
@@ -375,15 +379,27 @@ class DesktopPet:
         now = time.monotonic()
         try:
             if self._walk_remaining > 0 and not self._paused and not self._dragging:
-                step = 2 * self._walk_dir
-                before = self._x
-                self._move_window(self._x + step, self._y)
-                if self._x == before:
+                tx, ty = self._walk_target
+                dx, dy = tx - self._x, ty - self._y
+                if abs(dx) <= 2 and abs(dy) <= 2:
                     self._walk_remaining = 0
                 else:
-                    self._walk_remaining -= 1
-                    self._sprite = "side_left" if self._walk_dir < 0 else "side"
-                    self._notify_moved()
+                    sx = 2 if dx > 0 else (-2 if dx < 0 else 0)
+                    sy = 2 if dy > 0 else (-2 if dy < 0 else 0)
+                    before = (self._x, self._y)
+                    self._move_window(self._x + sx, self._y + sy)
+                    if (self._x, self._y) == before:
+                        self._walk_remaining = 0
+                    else:
+                        self._walk_remaining -= 1
+                        # 横向优先用侧面；向上走用背面，向下走用正面。
+                        if abs(dx) >= abs(dy):
+                            self._sprite = ("side_left" if dx < 0 else "side")
+                        elif dy < 0:
+                            self._sprite = "back"
+                        else:
+                            self._sprite = "front"
+                        self._notify_moved()
             else:
                 self._sprite = "front"
                 if (not self._paused and not self._dragging
@@ -402,12 +418,24 @@ class DesktopPet:
             self._schedule_tick()
 
     def _maybe_walk(self, now: float) -> None:
+        """
+        短距离二维散步：不再只沿任务栏横着走，而是在工作区内随机挑一个
+        附近目标（默认半径 ~140px），横/纵都可能。走远或走到屏幕边会停。
+        """
         self._next_walk = now + self._rng.uniform(9.0, 18.0)
         if self._rng.random() > 0.45:
             return
-        distance = self._rng.randint(12, 44)
-        self._walk_dir = self._rng.choice((-1, 1))
-        self._walk_remaining = distance // 2
+        left, top, right, bottom = work_area()
+        room_x = max(0, right - left - self._w)
+        room_y = max(0, bottom - top - self._h)
+        dx = self._rng.randint(-min(140, room_x), min(140, room_x))
+        dy = self._rng.randint(-min(100, room_y), min(100, room_y))
+        if abs(dx) < 16 and abs(dy) < 16:
+            dx = 24 if self._rng.random() < 0.5 else -24
+        tx, ty = clamp_position(self._x + dx, self._y + dy,
+                                self._w, self._h, left, top, right, bottom)
+        self._walk_target = (tx, ty)
+        self._walk_remaining = max(abs(tx - self._x), abs(ty - self._y)) // 2
 
     # ---- 鼠标 ----
 

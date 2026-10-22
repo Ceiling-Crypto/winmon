@@ -100,6 +100,14 @@ class TestDesktopPetWindow(unittest.TestCase):
             pet.move_to(40, 40)
             self.root.update()
             self.assertEqual(pet.bounds()[:2], (40, 40))
+            # 二维漫游：目标同时改 x/y 时，两个轴都要动（不是只沿任务栏横走）。
+            pet._walk_target = (70, 65)
+            pet._walk_remaining = 40
+            self.root.after(500, self.root.quit)
+            self.root.mainloop()
+            wx, wy, _ww, _hh = pet.bounds()
+            self.assertGreater(wx, 40)
+            self.assertGreater(wy, 40)
             pet.set_height(306)
             self.root.update()
             self.assertEqual(pet.bounds()[2:], (241, 322))

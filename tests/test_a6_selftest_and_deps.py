@@ -248,6 +248,10 @@ class TestNoThirdPartyDependencies(unittest.TestCase):
         #: 就会让这条测试误报 —— 实测踩过。这里改为"是不是本项目的文件"。
         own = {m[:-3] for m in os.listdir(tests_dir) if m.endswith(".py")}
         own |= {m[:-3] for m in os.listdir(PROJECT_DIR) if m.endswith(".py")}
+        # 桌宠模块在带空格的 `desktop pet/` 子目录里，也要算项目内部模块。
+        pet_dir = os.path.join(PROJECT_DIR, "desktop pet")
+        if os.path.isdir(pet_dir):
+            own |= {m[:-3] for m in os.listdir(pet_dir) if m.endswith(".py")}
         own |= self.EXTRA_ALLOWED
         files = [os.path.join(PROJECT_DIR, n) for n in SOURCE_FILES]
         files += [os.path.join(tests_dir, n)

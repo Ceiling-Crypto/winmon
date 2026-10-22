@@ -3,7 +3,7 @@
 > 用途：在新的对话里快速恢复上下文。读这一份即可继续开发。
 > **正式发布名 `winmon1.0`**（`APP_VER = "1.0"`，查版本：`py winmon.py --version`）。
 > **先读 §一点五「WinMon 的定位与能力边界」** —— 输入注入已明确不再投入。
-> 代码状态：**1065 个测试用例全绿**（约 110–120 秒；`--fast` 1008 条约 56–60 秒；
+> 代码状态：**1072 个测试用例全绿**（约 110–120 秒；`--fast` 1015 条约 56–60 秒；
 > 跳过数按当前桌面/媒体环境在 3–7 之间变化）+
 > 代码复检 0 新增问题（基线为空）、
 > 自检 8/8、界面冒烟通过、
@@ -22,10 +22,10 @@
 
 | | |
 | --- | --- |
-| 测试 | **1065 用例全绿**（`py tests\run_tests.py`，约 110–120 秒；跳过数按环境 3–7）；`--fast` 1008 条约 56–60 秒 |
+| 测试 | **1072 用例全绿**（`py tests\run_tests.py`，约 110–120 秒；跳过数按环境 3–7）；`--fast` 1015 条约 56–60 秒 |
 | 代码复检 | `py tests\lint_check.py` → **新增问题 0**（基线已清空，见 §四） |
 | 自检 / 冒烟 | `py winmon.py --selftest` 8/8 通过；`--smoke` 通过 |
-| 规模 | `winmon_core.py` ~6910 行 / `winmon.py` ~17700 行 / `winmon_pet.py` ~500 行 / 测试 60 个 .py（46 个测试模块） |
+| 规模 | `winmon_core.py` ~6910 行 / `winmon.py` ~17870 行 / `desktop pet/winmon_pet.py` ~520 行 / 测试 61 个 .py（47 个测试模块） |
 | 运行方式 | `py winmon.py`（GUI）或双击「winmon1.0」快捷方式；**单实例**：第二个实例会把已有窗口带到前台后自己退出 |
 | 窗口尺寸 | 设计稿 **1160×730**，开窗时**按 DPI 缩放**（本机 150% → 1740×1095；见 §9.15 第 14 条） |
 | 数据文件 | `winmon_settings.json`（界面偏好/收藏）、`winmon_history.log`（操作留痕）、`winmon_catalog.json`（程序目录缓存）、`winmon_media.jsonl`（媒体快照缓存，可删） |
@@ -107,10 +107,9 @@
 | `winmon_ai.py` | ~2800 | **AI 工作伴侣**：识别 / 本地事件 / 剧本 / 用量账本与预算 / token 估算 / 人设库。不依赖 tkinter |
 | `winmon_mcp.py` | ~800 | **MCP 服务器**：双时代 stdio + 本地 HTTP + 四个只读工具 |
 | `winmon_ai_provider.py` | ~250 | **可选**直连模型 API（默认关；精确 usage；key 只从环境变量读） |
-| `winmon_pet.py` | ~500 | **可选桌宠**：透明置顶窗口 / 呼吸与散步 / 拖动 / 单击双击 / 尺寸切换。不 import `winmon.py` |
-| `assets/pet/` | — | 桌宠精灵（187/238/306 × 正/侧/左/背）、头像；`LICENSE` / `NOTICE.md` 保留 MIT 出处 |
+| `desktop pet/` | ~500 | **可选桌宠的全部运行文件**：`winmon_pet.py`、精灵（187/238/306 × 正/侧/左/背）、头像、`LICENSE` / `NOTICE.md`、截图。`winmon_pet.py` 不 import `winmon.py` |
 | `media_session.ps1` | ~230 | 系统媒体会话（GSMTC）桥接脚本（PowerShell + Windows 自带 WinRT 投影；**必须纯 ASCII 无 BOM**） |
-| `tests/` | 60 个 .py | **可重复运行的测试**（1065 用例，纯 unittest） + `_marks.py` 慢用例标记 + 开发辅助工具 + `lint_check.py` / `lint_baseline.txt` |
+| `tests/` | 61 个 .py | **可重复运行的测试**（1072 用例，纯 unittest） + `_marks.py` 慢用例标记 + 开发辅助工具 + `lint_check.py` / `lint_baseline.txt` |
 | `启动WinMon.bat` | — | 菜单式启动器（纯 ASCII，避免批处理编码问题） |
 | `scan_windows.py` | — | 命令行窗口清单 |
 | `close_others.py` | — | 批量关闭除当前窗口外的窗口 |
@@ -163,8 +162,8 @@ python winmon.py --videos --open 3 --watch --close-window   :: 完整视频链�
 python winmon.py --version          :: 打印版本（winmon1.0）
 python winmon.py --idle             :: 列出"长期开着、没人用"的程序（只看，不关任何东西）
 python winmon.py --idle --idle-minutes 5   :: 换个闲置阈值（分钟）
-py tests\run_tests.py               :: 全部测试（1065 用例，约 111 秒）
-py tests\run_tests.py --fast        :: 快跑（1008 用例，约 58 秒；跳过真窗口/抓屏慢用例）
+py tests\run_tests.py               :: 全部测试（1072 用例，约 112 秒）
+py tests\run_tests.py --fast        :: 快跑（1015 用例，约 57 秒；跳过真窗口/抓屏慢用例）
 ```
 
 ---
@@ -3283,6 +3282,54 @@ AI 深蓝卡可见；深色接入窗展开后目视无浅色卡残留。
   `--smoke` 退出 0，白底截图已目视确认。
 - 跳过数会随桌面是否有 Edge / 媒体会话变化。
 
+### 9.40 阶段 8.30：桌宠归拢与直连厂商全列出（2026-10-22）
+
+用户这一轮先纠正了两件事：
+1. 桌宠相关文件全部放进 `D:\winmon\desktop pet\`，后续也照此办理；
+2. 直连 API key 的「直连对象」只列了四家，要求把有公开 API 的 AI 都列出来让用户自己选。
+
+另外给了桌宠的产品方向（全屏、像活的、读 API 接 Agent、借 GitHub 开源动作、
+音乐吐泡泡、看视频认真看/睡觉、人设由 Agent 理解）。这轮先做前两件和二维漫游；
+Agent/动作包写成设计稿，**没有**在没定预算/动作词表之前直接接模型。
+
+1. **`desktop pet/` 收口**：
+   - `winmon_pet.py`、`assets/{187,238,306}`、`avatar.png`、`LICENSE`、`NOTICE.md`、
+     `docs/ui-8.29-*`、`README.md`、`AGENT.md` 全部移入。
+   - `winmon.py` 把 `desktop pet` 加进 `sys.path` 后仍 `import winmon_pet`；
+     `winmon_pet.project_dir()` 变成该目录，素材改到 `assets/`。
+   - `tests/_helpers.py` 增加 `PET_HOME`；`SOURCE_FILES` 指向
+     `desktop pet/winmon_pet.py`；`test_a6` 的“项目内部模块”白名单也扫描该目录
+     （否则 `winmon.py` 里的 `import winmon_pet` 会被误判成第三方依赖）。
+2. **二维漫游**：
+   - 原来 `_walk_dir` 只改 x；现在 `_walk_target=(x,y)`，每拍最多 2px 向目标走，
+     横向优先侧面、向上背面、向下正面，走到工作区边/任务栏就停。
+   - 仍然 9–18 秒才考虑一次，单次目标约 ±140/±100px，不突然横穿整个屏幕。
+3. **直连对象目录**：
+   - 新增 `PROVIDER_PRESETS` / `PROFILE_ORDER`（19 个）和 `save_profile()`：
+     地址/模型/环境变量名写进 `winmon_ai_provider.json`，**绝不写 key**；
+     保留其它 profile、`follow_detected`、旧 flat 配置（迁成 `default`）。
+   - 界面下拉改为遍历 `PROFILE_ORDER`；选中后填「模型」「接口地址」，
+     可改；保存 key 时创建/更新该 profile；`enabled=true`。
+   - 新增每家独立环境变量（`WINMON_MOONSHOT_API_KEY` 等）；未选对象时仍然
+     不显示、不绑定任何 key（8.30 之前的边界保留）。
+   - `validate()` 允许 `http://127.0.0.1` / localhost（Ollama/LM Studio），
+     远程仍要求 https。
+   - Copilot 等无公开 API 的客户端只走 MCP，并在界面写明，避免“选了连不上”。
+4. **没做的事（明确）**：
+   - 没有把 Agent 直接接到桌宠；`desktop pet/AGENT.md` 写了三层结构
+     （本地状态 / 动作包 / Agent）、严格动作 JSON、预算和“只控制桌宠”边界。
+   - 没有自动下载 GitHub 动作包；设计是用户放本地目录、`manifest.json` 带
+     `license`/`source`，程序只读本地文件、不执行包内代码。
+   - 音乐泡泡/看视频睡觉还没有接；先在设计稿里定义触发条件。
+5. **测试**：新增 `test_b47_provider_catalog.py` 7 条；`test_b46` 跟随目录迁移仍 9 条，
+   并补了二维漫游 x/y 双轴断言。顺手修了 `--smoke`：用户设置里开着桌宠时，
+   原收尾直接 `root.destroy()` 会在桌宠 Toplevel 的 Tcl command 上报错，
+   现在先 `app._destroy_pet()` 再取消定时器。
+   全量 **1072 用例**，失败 0 / 错误 0，跳过 7，**113.985 秒**；
+   `--fast` **1015 条**，失败 0 / 错误 0，跳过 6，**57.188 秒**；lint 新增 0。
+6. **截图**：`docs/ui-8.30-provider-list.png`；桌宠截图在
+   `desktop pet/docs/`。
+
 ### 9.39 阶段 8.29：可选桌宠「大肥鱼」（2026-10-22）
 
 用户这一轮的决定：**不自己设计桌宠，也不接陪伴 AI**（API 成本/国内可用性都不划算），
@@ -3290,13 +3337,13 @@ AI 深蓝卡可见；深色接入窗展开后目视无浅色卡残留。
 只想用工具的人。
 
 1. **素材只取现成的**：
-   - 来源 `RYANFFY/deepseek-dafeiyu-pet`（MIT，见 `assets/pet/LICENSE` /
-     `NOTICE.md`）；取正/侧/背三视图和头像，保留 187 / 238 / 306 三档。
+   - 来源 `RYANFFY/deepseek-dafeiyu-pet`（MIT，见 `desktop pet/LICENSE` /
+     `desktop pet/NOTICE.md`）；取正/侧/背三视图和头像，保留 187 / 238 / 306 三档。
    - Tk 的透明是**颜色键**不是逐像素 alpha：随附 PNG 做了二值 alpha
      （>=128 不透明），否则半透明边缘会和键色混出一圈绿边/白边。
    - 侧面额外镜像一张 `side_left.png`，向左走不用运行时翻转。
    - **不冒充官方**：README/NOTICE 写明是社区二创、与 DeepSeek 官方无隶属关系。
-2. **新模块 `winmon_pet.py`**（不 import `winmon.py`，可单测）：
+2. **新目录 `desktop pet/`**（`winmon_pet.py` 不 import `winmon.py`，可单测）：
    - 无边框、置顶、`-transparentcolor` 的 Toplevel；14 FPS 呼吸/短距离散步；
    - 左键单击延后 240ms（给双击让路），拖动实时移动、松手回报位置；
    - `WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE`：不进 Alt+Tab、点它不抢当前程序焦点；
@@ -3321,8 +3368,8 @@ AI 深蓝卡可见；深色接入窗展开后目视无浅色卡残留。
    销毁、Win32 不抢焦点标志、设置即时生效+取消收回、气泡读媒体、摘要只用
    有窗口进程。全量 **1065 用例**，失败 0 / 错误 0，跳过 7，**111.847 秒**；
    `--fast` **1008 条**，失败 0 / 错误 0，跳过 6，**56.536 秒**；lint 新增 0。
-7. **截图**：`docs/ui-8.29-pet.png`（桌宠+气泡合成到桌面底色）、
-   `docs/ui-8.29-pet-settings.png`。
+7. **截图**：`desktop pet/docs/ui-8.29-pet.png`（桌宠+气泡合成到桌面底色）、
+   `desktop pet/docs/ui-8.29-pet-settings.png`。
 
 ### 9.38 阶段 8.28：闲置即时生效、右键菜单归位、类别抽屉（2026-10-22）
 
@@ -4386,7 +4433,7 @@ README 的界面颜色一节也加了同样说明。
 ## 四、测试体系（**改代码后先跑这个**）
 
 ```bat
-py tests\run_tests.py            :: 1065 用例，约 111 秒（--fast 1008 条约 58 秒）
+py tests\run_tests.py            :: 1072 用例，约 112 秒（--fast 1015 条约 57 秒）
 py tests\run_tests.py -v         :: 逐个看
 py tests\run_tests.py -k capture :: 只跑关心的
 py tests\lint_check.py           :: 代码复检（退出码 1 = 有新增问题）
@@ -5070,8 +5117,8 @@ C 盘那份**保持原样、一字未改**（用户 2026-10-11 确认：暂不�
 
 > 继续开发 **winmon1.0** —— Windows 程序监控与终止工具，纯标准库，在 `项目根目录\`。
 > 请先读 `HANDOFF.md` 和 `README.md`，然后跑 `py tests\run_tests.py`
-> 确认基线是 **1065 用例全绿**（需要哔哩哔哩/UIA 页面的用例会按需 skip；
-> 日常改动用 `--fast` 跑 1008 条，提交前跑全量）、
+> 确认基线是 **1072 用例全绿**（需要哔哩哔哩/UIA 页面的用例会按需 skip；
+> 日常改动用 `--fast` 跑 1015 条，提交前跑全量）、
 > `py tests\lint_check.py` 退出码 0（无新增问题）。
 > **版式要另眼验收**：测试进程没有开 DPI 感知，布局检查看不到"真实 DPI 下控件被挤没"，
 > 所以改动界面后还要跑一次 `py winmon.py --smoke` 看截图（见 §9.15 第 14 条）。

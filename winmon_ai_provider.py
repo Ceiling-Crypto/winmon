@@ -39,31 +39,202 @@ DEFAULT_ANTHROPIC_MODEL = "claude-3-5-haiku-latest"
 DEFAULT_ZHIPU_MODEL = "glm-5.3"
 PROVIDER_KINDS = ("openai", "anthropic", "zhipu")
 
-#: 识别到的 AI 名字 → 配置里的 profile 名。**不再默认 GLM**：
-#: 用户用哪个 AI，就找哪个 profile；找不到就只做剪贴板交接，绝不偷偷换模型。
-#: 给界面用的短标签；不是每个 profile 都内置，找不到就显示原 key。
-PROFILE_LABELS = {
-    "zhipu": "智谱 GLM",
-    "openai": "OpenAI",
-    "anthropic": "Claude",
-    "deepseek": "DeepSeek",
-    "moonshot": "Kimi",
-    "dashscope": "通义千问",
-    "qianfan": "文心一言",
-    "doubao": "豆包",
-    "hunyuan": "腾讯元宝",
-    "google": "Gemini",
-    "xai": "Grok",
+#: 直连对象目录。界面**全部列出来让用户自己选**，不再只写四家。
+#:
+#: 这里只放“真有公开 HTTP API、能在用户自己的 key 下直连”的服务；
+#: Copilot 这类没有公开 API 的客户端不列，避免选了却根本连不上。
+#: `model` 只是**可改的默认值**，服务商改模型名时在界面上直接改。
+#: 全部走 OpenAI 兼容形状（`/chat/completions`），只有 `anthropic` / `zhipu`
+#: 有各自的请求细节；本地服务允许 http://127.0.0.1。
+PROVIDER_PRESETS: dict[str, dict] = {
+    "openai": {
+        "label": "OpenAI", "kind": "openai",
+        "base_url": DEFAULT_OPENAI_BASE, "model": DEFAULT_OPENAI_MODEL,
+        "api_key_env": "WINMON_OPENAI_API_KEY",
+    },
+    "anthropic": {
+        "label": "Claude", "kind": "anthropic",
+        "base_url": DEFAULT_ANTHROPIC_BASE, "model": DEFAULT_ANTHROPIC_MODEL,
+        "api_key_env": "WINMON_ANTHROPIC_API_KEY",
+    },
+    "google": {
+        "label": "Gemini", "kind": "openai",
+        "base_url": "https://generativelanguage.googleapis.com/v1beta/openai",
+        "model": "gemini-2.5-flash",
+        "api_key_env": "WINMON_GEMINI_API_KEY",
+    },
+    "xai": {
+        "label": "Grok", "kind": "openai",
+        "base_url": "https://api.x.ai/v1", "model": "grok-4",
+        "api_key_env": "WINMON_XAI_API_KEY",
+    },
+    "deepseek": {
+        "label": "DeepSeek", "kind": "openai",
+        "base_url": "https://api.deepseek.com/v1", "model": "deepseek-chat",
+        "api_key_env": "WINMON_DEEPSEEK_API_KEY",
+    },
+    "zhipu": {
+        "label": "智谱 GLM", "kind": "zhipu",
+        "base_url": DEFAULT_ZHIPU_BASE, "model": DEFAULT_ZHIPU_MODEL,
+        "api_key_env": "WINMON_AI_API_KEY",
+    },
+    "moonshot": {
+        "label": "Kimi", "kind": "openai",
+        "base_url": "https://api.moonshot.cn/v1",
+        "model": "kimi-k2-0905-preview",
+        "api_key_env": "WINMON_MOONSHOT_API_KEY",
+    },
+    "dashscope": {
+        "label": "通义千问", "kind": "openai",
+        "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+        "model": "qwen-plus",
+        "api_key_env": "WINMON_DASHSCOPE_API_KEY",
+    },
+    "qianfan": {
+        "label": "文心一言", "kind": "openai",
+        "base_url": "https://qianfan.baidubce.com/v2",
+        "model": "ernie-4.5-turbo-128k",
+        "api_key_env": "WINMON_QIANFAN_API_KEY",
+    },
+    "doubao": {
+        "label": "豆包", "kind": "openai",
+        "base_url": "https://ark.cn-beijing.volces.com/api/v3",
+        "model": "doubao-seed-1-6-250615",
+        "api_key_env": "WINMON_DOUBAO_API_KEY",
+    },
+    "hunyuan": {
+        "label": "腾讯元宝", "kind": "openai",
+        "base_url": "https://api.hunyuan.cloud.tencent.com/v1",
+        "model": "hunyuan-turbos-latest",
+        "api_key_env": "WINMON_HUNYUAN_API_KEY",
+    },
+    "mistral": {
+        "label": "Mistral", "kind": "openai",
+        "base_url": "https://api.mistral.ai/v1",
+        "model": "mistral-large-latest",
+        "api_key_env": "WINMON_MISTRAL_API_KEY",
+    },
+    "groq": {
+        "label": "Groq", "kind": "openai",
+        "base_url": "https://api.groq.com/openai/v1",
+        "model": "llama-3.3-70b-versatile",
+        "api_key_env": "WINMON_GROQ_API_KEY",
+    },
+    "openrouter": {
+        "label": "OpenRouter", "kind": "openai",
+        "base_url": "https://openrouter.ai/api/v1",
+        "model": "openai/gpt-4o-mini",
+        "api_key_env": "WINMON_OPENROUTER_API_KEY",
+    },
+    "siliconflow": {
+        "label": "硅基流动", "kind": "openai",
+        "base_url": "https://api.siliconflow.cn/v1",
+        "model": "Qwen/Qwen3-8B",
+        "api_key_env": "WINMON_SILICONFLOW_API_KEY",
+    },
+    "perplexity": {
+        "label": "Perplexity", "kind": "openai",
+        "base_url": "https://api.perplexity.ai", "model": "sonar",
+        "api_key_env": "WINMON_PERPLEXITY_API_KEY",
+    },
+    "ollama": {
+        "label": "Ollama（本机）", "kind": "openai",
+        "base_url": "http://127.0.0.1:11434/v1", "model": "llama3.1",
+        "api_key_env": "WINMON_OLLAMA_API_KEY",
+    },
+    "lmstudio": {
+        "label": "LM Studio（本机）", "kind": "openai",
+        "base_url": "http://127.0.0.1:1234/v1", "model": "local-model",
+        "api_key_env": "WINMON_LMSTUDIO_API_KEY",
+    },
+    "custom": {
+        "label": "自定义 / 中转", "kind": "openai",
+        "base_url": "", "model": "",
+        "api_key_env": "WINMON_AI_API_KEY",
+    },
 }
-#: profile 没在配置文件里时的环境变量兜底（只用于“给这个 AI 配 key”的提示）。
-PROFILE_KEY_ENVS = {
-    "zhipu": "WINMON_AI_API_KEY",
-    "openai": "WINMON_OPENAI_API_KEY",
-    "anthropic": "WINMON_ANTHROPIC_API_KEY",
-    "deepseek": "WINMON_DEEPSEEK_API_KEY",
-    "moonshot": "WINMON_MOONSHOT_API_KEY",
-    "dashscope": "WINMON_DASHSCOPE_API_KEY",
-}
+#: 界面的固定顺序：从最常用到本地/自定义。
+PROFILE_ORDER: tuple[str, ...] = (
+    "deepseek", "zhipu", "openai", "anthropic", "google", "xai",
+    "moonshot", "dashscope", "qianfan", "doubao", "hunyuan",
+    "mistral", "groq", "openrouter", "siliconflow", "perplexity",
+    "ollama", "lmstudio", "custom",
+)
+PROFILE_LABELS = {key: spec["label"]
+                  for key, spec in PROVIDER_PRESETS.items()}
+PROFILE_KEY_ENVS = {key: spec["api_key_env"]
+                    for key, spec in PROVIDER_PRESETS.items()}
+
+
+def provider_defaults(name: str) -> dict:
+    """某个直连对象的默认字段（供设置页填 base_url / model / env）。"""
+    spec = PROVIDER_PRESETS.get(str(name or "").strip())
+    return dict(spec) if spec else {}
+
+
+def save_profile(name: str, *, base_url: str = "", model: str = "",
+                 api_key_env: str = "", enabled: bool = True,
+                 path: str = "") -> tuple[bool, str]:
+    """
+    把用户在界面上选的直连对象写入 `winmon_ai_provider.json`。
+
+    **只写地址/模型/环境变量名，绝不写 key 本身**；key 仍由用户设进环境变量。
+    保留文件里其它 profile、`follow_detected`、`active`。
+    """
+    profile = str(name or "").strip()
+    spec = provider_defaults(profile)
+    if not profile or not spec:
+        return False, f"不认识的直连对象：{profile or '（空）'}"
+    kind = str(spec.get("kind") or "openai")
+    base = str(base_url or spec.get("base_url") or "").strip().rstrip("/")
+    model_name = str(model or spec.get("model") or "").strip()
+    env = str(api_key_env or spec.get("api_key_env") or "").strip()
+    if not base:
+        return False, "接口地址不能为空"
+    if not model_name:
+        return False, "模型名不能为空"
+    if not env:
+        return False, "API key 环境变量名不能为空"
+    target = path or provider_path()
+    data: dict = {}
+    try:
+        with open(target, encoding="utf-8") as fh:
+            loaded = json.load(fh)
+        if isinstance(loaded, dict):
+            data = loaded
+    except Exception:
+        data = {}
+    items = data.get("profiles")
+    if not isinstance(items, dict):
+        items = {}
+        # 旧格式（顶层 kind/model）先保成 default，别在用户换厂商时弄丢旧配置。
+        if data.get("kind") or data.get("base_url") or data.get("model"):
+            items["default"] = {
+                "kind": data.get("kind") or "openai",
+                "base_url": data.get("base_url") or "",
+                "model": data.get("model") or "",
+                "api_key_env": data.get("api_key_env") or "WINMON_AI_API_KEY",
+                "enabled": bool(data.get("enabled", False)),
+            }
+    items[profile] = {
+        "kind": kind,
+        "base_url": base,
+        "model": model_name,
+        "api_key_env": env,
+        "enabled": bool(enabled),
+    }
+    data["profiles"] = items
+    data["active"] = profile
+    data.setdefault("follow_detected", True)
+    try:
+        os.makedirs(os.path.dirname(os.path.abspath(target)), exist_ok=True)
+        tmp = target + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(data, fh, ensure_ascii=False, indent=1)
+        os.replace(tmp, target)
+        return True, f"已保存 {spec.get('label') or profile} 的直连配置"
+    except OSError as exc:
+        return False, f"写直连配置失败：{type(exc).__name__}: {exc}"
 
 AI_PROFILE_KEYS = (
     ("chatgpt", "openai"),
@@ -77,15 +248,27 @@ AI_PROFILE_KEYS = (
     ("kimi", "moonshot"),
     ("moonshot", "moonshot"),
     ("通义", "dashscope"),
+    ("qwen", "dashscope"),
     ("文心", "qianfan"),
     ("yiyan", "qianfan"),
+    ("ernie", "qianfan"),
     ("豆包", "doubao"),
+    ("doubao", "doubao"),
     ("元宝", "hunyuan"),
     ("hunyuan", "hunyuan"),
     ("gemini", "google"),
     ("copilot", "copilot"),
     ("perplexity", "perplexity"),
     ("grok", "xai"),
+    ("xai", "xai"),
+    ("mistral", "mistral"),
+    ("groq", "groq"),
+    ("openrouter", "openrouter"),
+    ("硅基", "siliconflow"),
+    ("siliconflow", "siliconflow"),
+    ("ollama", "ollama"),
+    ("lm studio", "lmstudio"),
+    ("lmstudio", "lmstudio"),
 )
 
 
@@ -203,8 +386,12 @@ class ProviderConfig:
         if not self.api_key():
             return f"没有找到 API key（环境变量 {self.api_key_env}）"
         url = self.base_url.lower()
-        if not url.startswith("https://") and os.environ.get("WINMON_AI_ALLOW_HTTP") != "1":
-            return "base_url 必须是 https（测试时才允许 WINMON_AI_ALLOW_HTTP=1）"
+        local = (url.startswith("http://127.0.0.1")
+                 or url.startswith("http://localhost")
+                 or url.startswith("http://[::1]"))
+        if (not url.startswith("https://") and not local
+                and os.environ.get("WINMON_AI_ALLOW_HTTP") != "1"):
+            return "base_url 必须是 https（本机服务与测试除外）"
         return ""
 
 
