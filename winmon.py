@@ -16,8 +16,9 @@ WinMon —— Windows 桌面工具（图形界面 + 命令行）
 9. 前台窗口实时高亮、置顶窗口标记、程序图标、隐藏窗口过滤
 10. 界面颜色有 6 套设计主题（钴蓝 / 霓虹 / 石墨 / 青柠 / 山雪 / 深色）；
     字号 9–12
-11. 可选桌面宠物「大肥鱼」：点一下看正在播放与后台占用（默认关，见
-    `winmon_pet.py`；素材 MIT 出处见 `assets/pet/NOTICE.md`）
+11. 可选桌面宠物「大肥鱼」：会呼吸/眨眼/散步/跟着音乐吐泡泡，点一下看正在播放
+    与后台占用（默认关，见 `desktop pet/winmon_pet.py`；素材 MIT 出处见
+    `desktop pet/NOTICE.md`）
 
 命令行
 ------
@@ -6111,7 +6112,7 @@ class _PetBubble:
     def _open_settings(self) -> None:
         self.close()
         try:
-            self.app.action_settings("general")
+            self.app.show_pet_panel()
         except Exception:
             pass
 
@@ -6129,6 +6130,196 @@ class _PetBubble:
                 self._on_close()
             except Exception:
                 pass
+
+
+class _PetPanel:
+    """
+    桌宠的**独立设置面板**（不依赖主界面）。
+
+    用户 2026-10-22 的原话：桌宠不能“没法脱离主界面去响应设置”。
+    所以这个面板：
+      · 不是 `transient(root)` —— 主窗口收进托盘时它仍然可见；
+      · 只放桌宠自己的开关 / 大小 / 活泼度 / 归位，改完立即生效并写盘；
+      · 想改全局设置时再点「完整设置…」，那个入口也会在托盘状态下独立显示。
+    """
+
+    WIDTH = 380
+
+    def __init__(self, parent: tk.Misc, app) -> None:
+        self.app = app
+        self._closed = False
+        self.enabled = tk.BooleanVar(value=bool(app.pet_enabled.get()))
+        self.size = tk.StringVar(value=str(app.pet_size_choice.get()))
+        self.motion = tk.StringVar(value=str(app.pet_motion_choice.get()))
+
+        self.top = tk.Toplevel(parent)
+        self.top.withdraw()
+        self.top.title("桌宠设置")
+        self.top.configure(bg=UI_BG)
+        self.top.resizable(False, False)
+        self.top.protocol("WM_DELETE_WINDOW", self.close)
+        try:
+            self.top.attributes("-topmost", True)
+        except tk.TclError:
+            pass
+        panel = SoftPanel(self.top, UI_SURFACE, radius=14, shadow=6,
+                          pad=12, border=UI_LINE)
+        panel.pack(fill="both", expand=True, padx=8, pady=8)
+        body = tk.Frame(panel.content, bg=UI_SURFACE, width=self.WIDTH)
+        body.pack(fill="both", expand=True)
+
+        head = tk.Frame(body, bg=UI_SURFACE)
+        head.pack(fill="x")
+        try:
+            self._avatar = petmod.avatar_image(self.top, 46)
+            tk.Label(head, image=self._avatar, bg=UI_SURFACE,
+                     bd=0).pack(side="left", padx=(0, 10))
+        except Exception:
+            self._avatar = None
+        titles = tk.Frame(head, bg=UI_SURFACE)
+        titles.pack(side="left", fill="x", expand=True)
+        tk.Label(titles, text="大肥鱼 · 桌宠设置", font=BOLD_FONT,
+                 bg=UI_SURFACE, fg=UI_INK, anchor="w").pack(fill="x")
+        tk.Label(titles, text="改完立即生效，不需要打开主窗口",
+                 font=SMALL_FONT, bg=UI_SURFACE, fg=UI_MUTED,
+                 anchor="w").pack(fill="x", pady=(2, 0))
+
+        tk.Frame(body, bg=UI_LINE, height=1).pack(fill="x", pady=10)
+        self._row(body, "显示桌宠",
+                  lambda row: ToggleSwitch(row, self.enabled, bg=UI_SURFACE,
+                                           command=self._apply))
+        self._row(body, "大小",
+                  lambda row: self._combo(row, self.size,
+                                          [label for label, _h
+                                           in petmod.SIZE_PRESETS],
+                                          command=self._apply))
+        self._row(body, "活泼度",
+                  lambda row: self._combo(row, self.motion,
+                                          [label for label, _f
+                                           in petmod.MOTION_PRESETS],
+                                          command=self._apply))
+
+        hint = tk.Label(body, text="安静：少走动；活泼：多眨眼、多散步。",
+                        font=SMALL_FONT, bg=UI_SURFACE, fg=UI_MUTED,
+                        anchor="w", justify="left",
+                        wraplength=self.WIDTH - 8)
+        hint.pack(fill="x", pady=(6, 0))
+        self.status = tk.StringVar(value="")
+        tk.Label(body, textvariable=self.status, font=SMALL_FONT,
+                 bg=UI_SURFACE, fg=UI_OK, anchor="w").pack(
+            fill="x", pady=(6, 0))
+
+        actions = tk.Frame(body, bg=UI_SURFACE)
+        actions.pack(fill="x", pady=(12, 0))
+        RoundedButton(actions, text="回到右下角", kind="ghost", bg=UI_SURFACE,
+                      height=30, radius=15, padx=12,
+                      command=self._reset_position).pack(side="left")
+        RoundedButton(actions, text="完整设置…", kind="ghost", bg=UI_SURFACE,
+                      height=30, radius=15, padx=12,
+                      command=self._open_full_settings).pack(side="left",
+                                                             padx=(6, 0))
+        RoundedButton(actions, text="完成", kind="accent",
+                      height=30, radius=15, padx=16,
+                      command=self.close).pack(side="right")
+
+        self.top.bind("<Escape>", lambda _e: self.close(), add="+")
+        pet = getattr(app, "_pet", None)
+        if pet is not None:
+            try:
+                pet.set_paused(True)
+            except Exception:
+                pass
+        self._place_near_pet()
+        self.top.deiconify()
+        self.top.lift()
+        try:
+            self.top.focus_force()
+        except tk.TclError:
+            pass
+
+    @staticmethod
+    def _row(parent, title: str, control) -> None:
+        row = tk.Frame(parent, bg=UI_SURFACE)
+        row.pack(fill="x", pady=5)
+        tk.Label(row, text=title, font=UI_FONT, bg=UI_SURFACE,
+                 fg=UI_INK, anchor="w").pack(side="left")
+        control(row).pack(side="right")
+
+    @staticmethod
+    def _combo(parent, variable, values, *, command=None):
+        return CapsuleCombo(
+            parent, variable, list(values), width=8, font=UI_FONT,
+            state="readonly", bg=UI_SURFACE, height=30, command=command)
+
+    def _place_near_pet(self) -> None:
+        try:
+            self.top.update_idletasks()
+            width = max(self.WIDTH + 40, self.top.winfo_reqwidth())
+            height = max(240, self.top.winfo_reqheight())
+            pet = getattr(self.app, "_pet", None)
+            if pet is not None:
+                px, py, pw, ph = pet.bounds()
+                x = px + pw // 2 - width // 2
+                y = py - height - 10
+                if y < 40:
+                    y = py + ph + 10
+            else:
+                x = (self.top.winfo_screenwidth() - width) // 2
+                y = (self.top.winfo_screenheight() - height) // 3
+            x, y = petmod.clamp_position(x, y, width, height,
+                                         *petmod.work_area())
+            self.top.geometry(f"{width}x{height}+{x}+{y}")
+        except Exception:
+            pass
+
+    def _apply(self) -> None:
+        apply_live = getattr(self.app, "apply_pet_settings_live", None)
+        if not callable(apply_live):
+            return
+        try:
+            apply_live(bool(self.enabled.get()), self.size.get(),
+                       self.motion.get())
+            self.status.set("已生效")
+        except Exception as exc:
+            self.status.set(f"没生效：{type(exc).__name__}: {exc}")
+            return
+        try:
+            self.app.save_settings_now()
+        except Exception:
+            pass
+
+    def _reset_position(self) -> None:
+        reset = getattr(self.app, "reset_pet_position_live", None)
+        if callable(reset):
+            try:
+                reset()
+                self.status.set("已回到右下角")
+            except Exception as exc:
+                self.status.set(f"没移动：{type(exc).__name__}: {exc}")
+
+    def _open_full_settings(self) -> None:
+        self.close()
+        try:
+            self.app.action_settings("general")
+        except Exception:
+            pass
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        if getattr(self.app, "_pet_panel", None) is self:
+            self.app._pet_panel = None
+        pet = getattr(self.app, "_pet", None)
+        if pet is not None:
+            try:
+                pet.set_paused(False)
+            except Exception:
+                pass
+        try:
+            self.top.destroy()
+        except tk.TclError:
+            pass
 
 
 class _SettingsWindow:
@@ -6153,7 +6344,8 @@ class _SettingsWindow:
                  font_size: int = UI_FONT_SIZE,
                  theme: str = THEME_DEFAULT,
                  opacity: int = UI_OPACITY_DEFAULT,
-                 prefs: dict | None = None) -> None:
+                 prefs: dict | None = None, *,
+                 attach: bool = True) -> None:
         self.app = app
         self.result: dict | None = None
         #: 主界面偏好（窗口过滤 / 跟随选择 / 视频联动 / 闲置提醒）。
@@ -6163,11 +6355,15 @@ class _SettingsWindow:
         #: 不一定有 `root`，所以退回构造参数 parent。
         self._root = getattr(app, "root", parent)
         self._opacity_before = normalize_opacity(opacity)
+        #: 主窗口收进托盘时，设置窗不能再 `transient(root)` —— 否则它会被
+        #: 一起隐藏，用户从桌宠右键点「设置」会“什么都没发生”。
+        self.attached = bool(attach)
         self.top = tk.Toplevel(parent)
         top = self.top
         top.title(i18n.t("settings.title"))
         top.configure(bg=UI_BG)
-        top.transient(parent)
+        if self.attached:
+            top.transient(parent)
         scale = float(getattr(app, "dpi_scale", 1.0) or 1.0)
         self._scale = scale
         sw, sh = parent.winfo_screenwidth(), parent.winfo_screenheight()
@@ -6289,6 +6485,11 @@ class _SettingsWindow:
         top.update_idletasks()
         w, h = top.winfo_width(), top.winfo_height()
         top.geometry(f"+{max(0, (sw - w) // 2)}+{max(0, (sh - h) // 3)}")
+        if not self.attached:
+            try:
+                top.attributes("-topmost", True)
+            except tk.TclError:
+                pass
         set_dark_title_bar(top)
         apply_window_opacity(top, self._opacity_before)
         try:
@@ -6769,8 +6970,12 @@ class _SettingsWindow:
             value=bool(prefs.get("pet_enabled", False)))
         self.pet_size_choice = tk.StringVar(
             value=str(prefs.get("pet_size", petmod.DEFAULT_SIZE)))
+        self.pet_motion_choice = tk.StringVar(
+            value=petmod.normalize_motion(str(
+                prefs.get("pet_motion", petmod.DEFAULT_MOTION))))
         self._pet_before = (bool(self.pet_enabled.get()),
-                            str(self.pet_size_choice.get()))
+                            str(self.pet_size_choice.get()),
+                            str(self.pet_motion_choice.get()))
         #: 取消设置时也要把「回到右下角」还回去，否则点取消位置却留在新地方。
         self._pet_pos_before = getattr(self.app, "_pet_position", None)
         self._pet_dirty = False
@@ -6786,18 +6991,25 @@ class _SettingsWindow:
                 [label for label, _height in petmod.SIZE_PRESETS],
                 width=8, command=self._on_pet_settings_changed))
         self._row(
+            card, "桌宠活泼度",
+            control=lambda row: self._combo(
+                row, self.pet_motion_choice,
+                [label for label, _factor in petmod.MOTION_PRESETS],
+                width=8, command=self._on_pet_settings_changed))
+        self._row(
             card, "桌宠位置",
             control=lambda row: ttk.Button(
                 row, text="回到右下角", width=11,
                 command=self._reset_pet_position))
 
     def _on_pet_settings_changed(self, *_args) -> None:
-        """桌宠开关/尺寸即时生效；不写盘，取消设置时还原。"""
+        """桌宠开关/尺寸/活泼度即时生效；不写盘，取消设置时还原。"""
         apply_live = getattr(self.app, "apply_pet_settings_live", None)
         if not callable(apply_live):
             return
         self._pet_dirty = True
-        apply_live(bool(self.pet_enabled.get()), self.pet_size_choice.get())
+        apply_live(bool(self.pet_enabled.get()), self.pet_size_choice.get(),
+                   self.pet_motion_choice.get())
 
     def _reset_pet_position(self) -> None:
         reset = getattr(self.app, "reset_pet_position_live", None)
@@ -7051,7 +7263,8 @@ class _SettingsWindow:
                        "idle_choice": self.idle_choice.get(),
                        "idle_snooze": self.idle_snooze_choice.get(),
                        "pet_enabled": bool(self.pet_enabled.get()),
-                       "pet_size": self.pet_size_choice.get()}
+                       "pet_size": self.pet_size_choice.get(),
+                       "pet_motion": self.pet_motion_choice.get()}
         self._close_panels()
         try:
             self.top.destroy()
@@ -10514,11 +10727,16 @@ class WinMonApp:
             _pet_dpi = 1.0
         _pet_default = "大" if _pet_dpi >= 1.4 else petmod.DEFAULT_SIZE
         self.pet_size_choice = tk.StringVar(value=_pet_default)
+        #: 活泼度：安静 / 标准 / 活泼（控制呼吸、眨眼、散步的频率）
+        self.pet_motion_choice = tk.StringVar(value=petmod.DEFAULT_MOTION)
         self._pet_position: tuple[int, int] | None = None
-        #: 桌宠窗口 / 信息气泡 / 右键菜单（都只由主线程创建）
+        #: 桌宠窗口 / 信息气泡 / 右键菜单 / 独立设置面板（都只由主线程创建）
         self._pet = None
         self._pet_bubble = None
         self._pet_menu = None
+        self._pet_panel = None
+        #: 最近一次媒体类型（music / video / 空），供新建桌宠时恢复
+        self._pet_ambient = ""
         #: 创建失败的原因（设置页/状态栏如实说明，不静默）
         self._pet_error = ""
         #: 闲置计时器（纯逻辑对象，创建它不碰 Tk 也不碰 Win32）
@@ -11812,6 +12030,7 @@ class WinMonApp:
             self._media_found = False
             self._media_last_pick = {}
             self._sync_media_play_button()
+            self._sync_pet_ambient("")
             return
         info = core.media_session_summary(data.get("sessions") or [],
                                          self._app_key_for_media())
@@ -11821,6 +12040,12 @@ class WinMonApp:
         self._media_playing = bool(
             info.get("found") and int((info.get("picked") or {}).get("status") or 0) == 4)
         self._sync_media_play_button()
+        if self._media_playing:
+            picked = info.get("picked") or {}
+            self._sync_pet_ambient(core.media_kind(picked.get("app"),
+                                                   picked.get("title")))
+        else:
+            self._sync_pet_ambient("")
         if not info.get("found"):
             # 用户第 3 条：原来那句"现在没有程序在放东西"看不懂，而且没说是谁。
             # 先试**标题兜底**（网易云这类客户端不发布会话，标题里却有歌名），
@@ -12259,6 +12484,8 @@ class WinMonApp:
                                  or petmod.DEFAULT_SIZE)
             self.pet_size_choice.set(petmod.choice_for_height(
                 petmod.height_for_choice(saved_pet_size)))
+            self.pet_motion_choice.set(petmod.normalize_motion(
+                str(data.get("pet_motion") or self.pet_motion_choice.get())))
             raw_pet_pos = data.get("pet_position")
             if (isinstance(raw_pet_pos, (list, tuple))
                     and len(raw_pet_pos) == 2):
@@ -12340,6 +12567,7 @@ class WinMonApp:
                 # 桌面宠物：开关 / 尺寸 / 上一次位置（物理像素）
                 "pet_enabled": bool(self.pet_enabled.get()),
                 "pet_size": self.pet_size_choice.get(),
+                "pet_motion": self.pet_motion_choice.get(),
                 "pet_position": list(self._pet_position)
                 if self._pet_position else None,
                 # 媒体会话：指定的播放器/浏览器（不再保存自动唤醒开关）。
@@ -16068,6 +16296,7 @@ class WinMonApp:
         """真正退出：收托盘图标 → 停常驻助手 → 存设置 → 收线程与句柄 → 销毁窗口。"""
         self._close_pet_bubble()
         self._destroy_pet()
+        self._destroy_pet_panel()
         try:
             if self._pet_menu is not None:
                 self._pet_menu.destroy()
@@ -16314,10 +16543,11 @@ class WinMonApp:
                 core.idle_snooze_seconds_of(self.idle_snooze_choice.get()))
         except Exception:
             pass
-        if "pet_enabled" in got or "pet_size" in got:
+        if "pet_enabled" in got or "pet_size" in got or "pet_motion" in got:
             self.apply_pet_settings_live(
                 bool(got.get("pet_enabled", self.pet_enabled.get())),
-                str(got.get("pet_size", self.pet_size_choice.get())))
+                str(got.get("pet_size", self.pet_size_choice.get())),
+                str(got.get("pet_motion", self.pet_motion_choice.get())))
 
     # ------------------------------------------------------------------
     # 桌面宠物
@@ -16334,9 +16564,10 @@ class WinMonApp:
         if bool(self.pet_enabled.get()):
             self._ensure_pet()
 
-    def apply_pet_settings_live(self, enabled, size_label: str) -> None:
+    def apply_pet_settings_live(self, enabled, size_label: str,
+                                motion: str | None = None) -> None:
         """
-        设置页里改开关/尺寸时**立刻生效**（不要求先点保存）。
+        设置页/独立桌宠面板里改开关/尺寸/活泼度时**立刻生效**。
 
         与闲置提醒同一套约定：只同步运行态，不写盘；点「取消」时由设置窗口
         调回旧值。创建失败会把原因写进状态栏，不会假装成功。
@@ -16344,10 +16575,17 @@ class WinMonApp:
         self.pet_enabled.set(bool(enabled))
         height = petmod.height_for_choice(str(size_label))
         self.pet_size_choice.set(petmod.choice_for_height(height))
+        if motion is not None:
+            self.pet_motion_choice.set(petmod.normalize_motion(str(motion)))
         if not enabled:
             self._destroy_pet()
             return
         pet = self._ensure_pet()
+        if pet is not None:
+            try:
+                pet.set_motion(self.pet_motion_choice.get())
+            except Exception:
+                pass
         if pet is not None and getattr(pet, "_height", height) != height:
             try:
                 pet.set_height(height)
@@ -16370,16 +16608,18 @@ class WinMonApp:
         try:
             height = petmod.height_for_choice(self.pet_size_choice.get())
             if not petmod.available_heights():
-                raise FileNotFoundError("assets/pet 下没有可用的精灵图")
+                raise FileNotFoundError("desktop pet/assets 下没有可用的精灵图")
             x = y = None
             if self._pet_position:
                 x, y = self._pet_position
             pet = petmod.DesktopPet(
                 self.root, height=height, x=x, y=y,
+                motion=self.pet_motion_choice.get(),
                 on_click=lambda _p: self.show_pet_bubble(),
                 on_menu=lambda _p, px, py: self.show_pet_menu(px, py),
                 on_double=lambda _p: self.restore_from_tray(),
                 on_moved=self._on_pet_moved)
+            pet.set_ambient(getattr(self, "_pet_ambient", ""))
         except Exception as exc:
             self._pet_error = f"{type(exc).__name__}: {exc}"
             self._pet = None
@@ -16417,6 +16657,17 @@ class WinMonApp:
             self._schedule_save_settings()
         except Exception:
             pass
+
+    def _sync_pet_ambient(self, kind: str) -> None:
+        """把“音乐 / 视频 / 无”同步给桌宠；气泡和设置面板不参与。"""
+        kind = kind if kind in ("music", "video") else ""
+        self._pet_ambient = kind
+        pet = getattr(self, "_pet", None)
+        if pet is not None:
+            try:
+                pet.set_ambient(kind)
+            except Exception:
+                pass
 
     def reset_pet_position_live(self) -> None:
         """把桌宠放回工作区右下角（设置里的「回到右下角」）。"""
@@ -16554,6 +16805,32 @@ class WinMonApp:
             except Exception:
                 pass
 
+    def show_pet_panel(self) -> None:
+        """打开独立的桌宠设置面板（主窗口在托盘里也能用）。"""
+        panel = getattr(self, "_pet_panel", None)
+        if panel is not None:
+            try:
+                if panel.top.winfo_exists():
+                    panel.top.deiconify()
+                    panel.top.lift()
+                    return
+            except Exception:
+                self._pet_panel = None
+        try:
+            self._pet_panel = _PetPanel(self.root, self)
+        except Exception as exc:
+            self._pet_panel = None
+            self._set_status(f"桌宠设置打不开：{type(exc).__name__}: {exc}")
+
+    def _destroy_pet_panel(self) -> None:
+        panel = getattr(self, "_pet_panel", None)
+        self._pet_panel = None
+        if panel is not None:
+            try:
+                panel.close()
+            except Exception:
+                pass
+
     def show_pet_menu(self, x: int, y: int) -> None:
         """桌宠右键菜单（复用主界面的自绘 PopupMenu，主题一致）。"""
         menu = getattr(self, "_pet_menu", None)
@@ -16562,7 +16839,8 @@ class WinMonApp:
             menu.add_command(label="打开 winmon1.0", command=self.restore_from_tray)
             menu.add_command(label="看看在放什么", command=self.show_pet_bubble)
             menu.add_separator()
-            menu.add_command(label="桌面宠物设置…",
+            menu.add_command(label="桌宠设置…", command=self.show_pet_panel)
+            menu.add_command(label="完整设置…",
                              command=lambda: self.action_settings("general"))
             menu.add_separator()
             menu.add_command(label="隐藏桌宠", command=self.hide_pet_from_menu)
@@ -16613,11 +16891,19 @@ class WinMonApp:
                 "idle_snooze": self.idle_snooze_choice.get(),
                 "pet_enabled": bool(self.pet_enabled.get()),
                 "pet_size": self.pet_size_choice.get(),
+                "pet_motion": self.pet_motion_choice.get(),
             }
+            try:
+                # 主窗口在托盘里/最小化时，设置窗不能做它的 transient，否则一起被藏掉。
+                attached = bool(self.root.winfo_viewable()
+                                and self.root.state() == "normal")
+            except Exception:
+                attached = True
             dlg = _SettingsWindow(
                 self.root, self, self.close_mode.get(), self._tray_available(),
                 bool(self.start_minimized.get()), int(self.history_days.get()),
-                old_lang, old_font, old_theme, old_opacity, prefs)
+                old_lang, old_font, old_theme, old_opacity, prefs,
+                attach=attached)
         except Exception as exc:
             self._set_status(f"打不开设置：{type(exc).__name__}: {exc}")
             return

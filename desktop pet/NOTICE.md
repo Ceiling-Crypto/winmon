@@ -13,10 +13,16 @@
 2. 把半透明 alpha **二值化**（>=128 不透明，其余透明），因为 Tk 的
    `-transparentcolor` 是颜色键而不是逐像素 alpha；不做这一步会在边缘出现
    底色描边；
-3. 额外生成 `side_left.png`（侧面水平镜像），用于向左走；
-4. `avatar.png` 由 `small-whale.png` 裁切/缩放到 160px 并做同样的 alpha 二值化。
+3. 额外生成 `side_left.png`（侧面水平镜像），用于向右走；
+   `build_assets.py` 会从 `side.png` 重新生成它，避免两张图被误改成同一张；
+4. 2026-10-22 用 `build_assets.py` 从同一套 MIT 原图生成闭眼帧
+   `front_blink.png` / `side_blink.png` / `side_left_blink.png`：在眼睛位置
+   覆一层与眼周肤色一致的椭圆，再画下垂睫毛线；没有重新绘制角色。
+   `build_assets.py` 只是开发工具（需要 Pillow），**运行时不依赖 Pillow**；
+5. `avatar.png` 由 `small-whale.png` 裁切/缩放到 160px 并做同样的 alpha 二值化。
 
 原始 PNG 没有提交，避免仓库里同时放两套图；需要原图或其它尺寸请回来源仓库。
+闭眼帧/镜像帧都可以用 `python "desktop pet/build_assets.py"` 重新生成。
 
 ## 重要说明
 

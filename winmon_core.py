@@ -4468,6 +4468,44 @@ MEDIA_APP_CANDIDATES: tuple[tuple[str, str, bool], ...] = (
     ("Firefox", "firefox.exe", True),
 )
 
+#: 桌宠只关心“这是音乐还是视频”，不需要精确到哪个播放器；这里用进程/标题
+#: 里的稳定关键词做粗分类。分类失败返回空串（桌宠保持普通发呆）。
+_MUSIC_APP_HINTS = (
+    "cloudmusic", "qqmusic", "kugou", "kwmusic", "spotify", "foobar",
+    "aimp", "itunes", "musicbee", "网易云", "qq音乐", "酷狗", "酷我",
+)
+_VIDEO_APP_HINTS = (
+    "potplayer", "vlc", "mpc-hc", "mpc-be", "mpv", "bilibili", "哔哩哔哩",
+    "iqiyi", "爱奇艺", "qqlive", "腾讯视频", "youku", "优酷", "netflix",
+    "youtube", "disney", "hulu", "twitch", "prime video",
+)
+_VIDEO_TITLE_HINTS = (
+    "youtube", "bilibili", "哔哩哔哩", "netflix", "爱奇艺", "腾讯视频",
+    "优酷", "twitch", "prime video", "disney+",
+)
+
+
+def media_kind(app, title: str = "") -> str:
+    """
+    把媒体会话粗分成 `music` / `video` / 空串（给桌宠表现层用）。
+
+    只看进程名和标题，不读画面、不新增系统调用：
+      · 音乐客户端 → music；
+      · 视频客户端 / 浏览器视频页 → video；
+      · 认不出来 → 空串，桌宠退回普通发呆（不猜）。
+    """
+    app_text = str(app or "").lower()
+    title_text = str(title or "").lower()
+    if any(hint in app_text for hint in _MUSIC_APP_HINTS):
+        return "music"
+    if "youtube music" in title_text or "music.youtube" in title_text:
+        return "music"
+    if any(hint in app_text for hint in _VIDEO_APP_HINTS):
+        return "video"
+    if any(hint in title_text for hint in _VIDEO_TITLE_HINTS):
+        return "video"
+    return ""
+
 
 class MediaApp:
     """一个"可以被 WinMon 识别/控制"的媒体应用。"""

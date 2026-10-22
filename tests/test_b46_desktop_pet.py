@@ -74,7 +74,7 @@ class TestDesktopPetWindow(unittest.TestCase):
             on_click=lambda _p: clicks.append("click"))
         self.root.update()
         try:
-            self.assertEqual(pet.bounds()[2:], (190, 254))
+            self.assertEqual(pet.bounds()[2:], (186, 256))
             self.assertEqual(pet.bounds()[:2], (100, 100))
             import ctypes
             from ctypes import wintypes
@@ -110,7 +110,7 @@ class TestDesktopPetWindow(unittest.TestCase):
             self.assertGreater(wy, 40)
             pet.set_height(306)
             self.root.update()
-            self.assertEqual(pet.bounds()[2:], (241, 322))
+            self.assertEqual(pet.bounds()[2:], (237, 324))
             self.root.after(80, lambda: pet.canvas.event_generate(
                 "<ButtonPress-1>", x=30, y=30))
             self.root.after(100, lambda: pet.canvas.event_generate(
