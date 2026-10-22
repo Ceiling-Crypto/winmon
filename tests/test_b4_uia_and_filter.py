@@ -2524,6 +2524,43 @@ class TestMediaAppPicker(unittest.TestCase):
                          f"应当只有多选面板，实际有 {len(mapped_tops)} 个弹窗")
         pop.destroy()
 
+    def test_clicking_outside_closes_the_picker_without_saving(self):
+        """多选面板同样是“点外面就收起”，不能要求先按确定/取消。"""
+        import tkinter as tk
+        root = tk.Tk()
+        root.geometry("560x260+50+50")
+        root.update()
+        self.addCleanup(root.destroy)
+        app = winmon.WinMonApp.__new__(winmon.WinMonApp)
+        app.root = root
+        app._init_video_vars()
+        app._set_status = lambda _text: None
+        app._save_settings_soon = lambda: None
+        app.log_action = lambda *a, **k: None
+        app.media_text = tk.StringVar()
+        with mock.patch.object(winmon.WinMonApp, "_reload_media_app_list",
+                               lambda _self: None):
+            app._build_video_bars()
+        app.media_app_combo.configure(
+            values=[winmon.MEDIA_APP_ANY, "Microsoft Edge（浏览器）（运行中）"])
+        app._media_apps = {
+            "Microsoft Edge（浏览器）（运行中）":
+                core.MediaApp("Microsoft Edge", "msedge.exe", True)}
+        root.update()
+        app._edit_media_app_multi()
+        root.update()
+        pop = getattr(app, "_media_picker_pop", None)
+        self.assertIsNotNone(pop)
+        before = app.media_app_pin.get()
+        #: 模拟点在面板右下角之外；grab 生效时系统会把事件送到 pop 本身。
+        pop.event_generate("<Button-1>", x=pop.winfo_width() + 60,
+                           y=pop.winfo_height() + 60)
+        root.update()
+        self.assertIsNone(getattr(app, "_media_picker_pop", None),
+                          "点面板外应直接收起")
+        self.assertEqual(app.media_app_pin.get(), before,
+                         "收起不等于替用户保存")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

@@ -18,6 +18,7 @@ import os
 import sys
 import time
 import unittest
+from types import SimpleNamespace
 from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -162,11 +163,33 @@ class TestEdgeSettings(unittest.TestCase):
         self.root.update()
         self.assertIsNotNone(theme._popup, "点击后应出现胶囊选项浮层")
         self.assertTrue(theme._popup.winfo_exists())
+        drawn = [str(theme._pop_canvas.itemcget(i, "text"))
+                 for i in theme._pop_canvas.find_all()
+                 if "combo-option" in theme._pop_canvas.gettags(i)]
+        self.assertIn("钴蓝", drawn, "选项文字不能全被裁成省略号")
+        self.assertNotIn("…", drawn)
         names = list(theme.cget("values"))
         theme._choose_row(names.index("山雪"))
         self.root.update()
         self.assertEqual(dlg.theme.get(), "山雪")
         self.assertIsNone(theme._popup, "选完后浮层应销毁")
+
+    def test_capsule_combo_closes_on_outside_click_without_choosing(self):
+        """下拉不是霸王条款：点外面就收起，并且保留原值。"""
+        dlg = self._open()
+        combos = [w for w in walk(dlg.top)
+                  if isinstance(w, self.winmon.CapsuleCombo)]
+        combo = next(c for c in combos if "钴蓝" in list(c.cget("values")))
+        before = combo._var.get()
+        combo._open_popup()
+        self.root.update()
+        self.assertTrue(combo._open)
+        self.winmon.CapsuleCombo._dismiss_open_click(
+            SimpleNamespace(widget=dlg.top, x_root=1, y_root=1))
+        self.root.update()
+        self.assertFalse(combo._open, "点下拉外应能关闭")
+        self.assertIsNone(combo._popup)
+        self.assertEqual(combo._var.get(), before, "关闭不等于替用户选一项")
 
     def test_selected_nav_is_a_rounded_canvas_pill(self):
         dlg = self._open()

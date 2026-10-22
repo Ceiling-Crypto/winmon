@@ -4598,12 +4598,16 @@ def resolve_media_pin(pin: str, labels, any_label: str) -> tuple[str, list[str]]
     return "、".join(kept), dropped
 
 
-def media_app_path(exe: str) -> str:
+def media_app_path(exe: str, processes: dict | None = None) -> str:
     """
     找可执行文件的完整路径（用于进程名校验/会话匹配）。
 
     顺序：正在运行的进程 → Program Files 常见位置 → 开始菜单快捷方式。
     找不到就返回空串。
+
+    `processes` 可以传入一份已经取好的 `snapshot_processes()`。启动时一次
+    组装媒体清单会问十来个 exe，每次都重新枚举整张进程表会白花上百毫秒；
+    调用方共用同一份快照即可。不传则保持原行为（自己取一份）。
     """
     exe = str(exe or "")
     if not exe:
@@ -4611,7 +4615,8 @@ def media_app_path(exe: str) -> str:
     low = exe.lower()
     # 1) 已经在跑：直接问系统
     try:
-        for pid, info in snapshot_processes().items():
+        procs = processes if processes is not None else snapshot_processes()
+        for pid, info in procs.items():
             if (info.get("name") or "").lower() == low:
                 path, _mem = query_process_detail(pid)
                 if path and os.path.exists(path):

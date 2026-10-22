@@ -2959,6 +2959,8 @@ class CapsuleCombo(tk.Canvas):
         self._pop_canvas: tk.Canvas | None = None
         self._hover_row = -1
         self._selected_row = -1
+        self._blur_after = None
+        self._click_away_root = None
         self._row_h = max(28, self._font_obj.metrics("linespace") + 10)
         self._w = max(
             max(90, int(width) * max(7, self._font_obj.measure("0")) + 44),
@@ -3106,10 +3108,114 @@ class CapsuleCombo(tk.Canvas):
         except ValueError:
             return -1
 
+    def _event_inside_popup(self, event) -> bool:
+        """鼠标位置（屏幕坐标）是否落在选项浮层内。"""
+        pop = self._popup
+        if pop is None:
+            return False
+        try:
+            x = int(getattr(event, "x_root", -1))
+            y = int(getattr(event, "y_root", -1))
+            px, py = int(pop.winfo_rootx()), int(pop.winfo_rooty())
+            return (px <= x < px + int(pop.winfo_width())
+                    and py <= y < py + int(pop.winfo_height()))
+        except Exception:
+            return False
+
+    @staticmethod
+    def _dismiss_open_click(event) -> None:
+        """
+        全应用兜底：点在下拉浮层外就收起，不要求用户先选一项。
+
+        为什么不能只靠 grab：设置窗口本身可能已经抓着鼠标；部分 Tk 版本
+        会拒绝嵌套 grab，此时点击直接落到设置页上的控件，浮层永远收不起来。
+        这个 `bind_all` 只在有活动下拉时做事，常驻开销可以忽略。
+        """
+        widget = getattr(event, "widget", None)
+        if widget is None:
+            return
+        try:
+            root = widget._root()
+        except Exception:
+            return
+        combo = getattr(root, "_active_capsule_combo", None)
+        if combo is None or not getattr(combo, "_open", False):
+            return
+        #: 点下拉条本身交给它的 `_on_click` 做开/关切换，不能被这里抢先关掉。
+        if widget is combo:
+            return
+        if combo._event_inside_popup(event):
+            return
+        combo._close_popup(restore_focus=False)
+
+    def _install_click_away(self, root) -> None:
+        self._click_away_root = root
+        if getattr(root, "_capsule_click_away_bound", False):
+            return
+        try:
+            root.bind_all("<Button-1>", CapsuleCombo._dismiss_open_click, add="+")
+            root._capsule_click_away_bound = True
+        except Exception:
+            pass
+
+    def _on_popup_window_click(self, event) -> None:
+        """grab 生效时，浮层外的点击会被重定向到这里 —— 直接收起。"""
+        if not self._open:
+            return
+        if self._event_inside_popup(event):
+            return
+        #: 点外面只是“收起”，不要再把焦点抢回下拉条 —— 否则用户点进
+        #: 旁边的搜索框/输入框后没法直接打字。
+        self._close_popup(restore_focus=False)
+
+    def _on_popup_focus_out(self, _event=None) -> None:
+        if not self._open:
+            return
+        self._cancel_blur_after()
+        try:
+            self._blur_after = self.after(120, self._close_if_focus_left)
+        except Exception:
+            self._blur_after = None
+
+    def _cancel_blur_after(self) -> None:
+        after_id = getattr(self, "_blur_after", None)
+        self._blur_after = None
+        if after_id:
+            try:
+                self.after_cancel(after_id)
+            except Exception:
+                pass
+
+    def _close_if_focus_left(self) -> None:
+        self._blur_after = None
+        if not self._open:
+            return
+        try:
+            focus = self.focus_get()
+        except Exception:
+            focus = None
+        if focus is self._pop_canvas:
+            return
+        try:
+            if focus is not None and str(focus).startswith(str(self._popup)):
+                return
+        except Exception:
+            pass
+        self._close_popup(restore_focus=False)
+
     def _open_popup(self) -> None:
         if self._state == "disabled" or self._open:
             return
         try:
+            #: 同时只允许一个下拉展开；否则旧浮层会失去“活动”标记而关不掉。
+            app_root = self._root()
+            previous = getattr(app_root, "_active_capsule_combo", None)
+            if previous is not None and previous is not self:
+                try:
+                    previous._close_popup()
+                except Exception:
+                    pass
+            self._install_click_away(app_root)
             self.update_idletasks()
             width = max(int(self.winfo_width()), max(
                 (self._font_obj.measure(v) for v in self._values),
@@ -3135,6 +3241,10 @@ class CapsuleCombo(tk.Canvas):
             y = max(4, min(int(y), sh - height - 4))
             pop.geometry(f"{int(width)}x{int(height)}+{x}+{y}")
             canvas.bind("<Button-1>", self._on_popup_click, add="+")
+            #: 浮层外的点击在 grab 生效时会被重定向到 pop 本身（不是 canvas）。
+            #: 不接这一层，用户就只能先选一项或者按 Esc 才能关掉。
+            pop.bind("<Button-1>", self._on_popup_window_click, add="+")
+            canvas.bind("<FocusOut>", self._on_popup_focus_out, add="+")
             canvas.bind("<Motion>", self._on_popup_motion, add="+")
             canvas.bind("<Leave>", lambda _e: self._set_popup_hover(-1), add="+")
             canvas.bind("<Escape>", lambda _e: self._close_popup(), add="+")
@@ -3145,9 +3255,11 @@ class CapsuleCombo(tk.Canvas):
             #: 不在 FocusOut 上立刻关闭：`focus_force`/`canvas.focus_set` 期间
             #: 会产生一次焦点迁移，过早关闭会让浮层刚建好就消失。关闭交给
             #: 选择、Esc、点击浮层外（grab 生效时）或父窗口关闭。
-            self._draw_popup()
             pop.deiconify()
             pop.update_idletasks()
+            #: 必须在映射后画：未映射的 Canvas `winfo_width()` 还是 1，
+            #: 用它算可用文字宽度会把每个选项都裁成「…」（截图实测）。
+            self._draw_popup()
             pop.lift()
             try:
                 pop.grab_set()
@@ -3161,9 +3273,15 @@ class CapsuleCombo(tk.Canvas):
                 pass
             canvas.focus_set()
             self._open = True
+            app_root._active_capsule_combo = self
             self._draw()
         except Exception:
             self._open = False
+            try:
+                if getattr(self._root(), "_active_capsule_combo", None) is self:
+                    self._root()._active_capsule_combo = None
+            except Exception:
+                pass
             self._destroy_popup()
 
     def _draw_popup(self) -> None:
@@ -3171,8 +3289,12 @@ class CapsuleCombo(tk.Canvas):
         if canvas is None:
             return
         try:
-            width = int(canvas.winfo_width() or canvas.winfo_reqwidth())
-            height = int(canvas.winfo_height() or canvas.winfo_reqheight())
+            width = int(canvas.winfo_width() or 0)
+            height = int(canvas.winfo_height() or 0)
+            if width <= 1:
+                width = int(canvas.winfo_reqwidth())
+            if height <= 1:
+                height = int(canvas.winfo_reqheight())
             canvas.delete("all")
             canvas.create_polygon(
                 RoundedButton._rounded_points(self, 1, 1, width - 1,
@@ -3258,13 +3380,22 @@ class CapsuleCombo(tk.Canvas):
             except Exception:
                 pass
 
-    def _close_popup(self) -> None:
+    def _close_popup(self, *, restore_focus: bool = True) -> None:
         self._open = False
-        self._destroy_popup()
+        self._cancel_blur_after()
+        root = getattr(self, "_click_away_root", None) or self._root()
         try:
-            self.focus_set()
+            if getattr(root, "_active_capsule_combo", None) is self:
+                root._active_capsule_combo = None
         except Exception:
             pass
+        self._click_away_root = None
+        self._destroy_popup()
+        if restore_focus:
+            try:
+                self.focus_set()
+            except Exception:
+                pass
         self._draw()
 
     def _destroy_popup(self) -> None:
@@ -3284,6 +3415,15 @@ class CapsuleCombo(tk.Canvas):
     def _on_destroy(self, event=None) -> None:
         if event is not None and getattr(event, "widget", None) is not self:
             return
+        self._open = False
+        self._cancel_blur_after()
+        try:
+            root = self._click_away_root or self._root()
+            if getattr(root, "_active_capsule_combo", None) is self:
+                root._active_capsule_combo = None
+        except Exception:
+            pass
+        self._click_away_root = None
         self._destroy_popup()
         try:
             self._var.trace_remove("write", self._trace)
@@ -8472,6 +8612,10 @@ class _AiConnectWindow:
         canvas.configure(yscrollcommand=vs.set)
         vs.pack(side="right", fill="y")
         canvas.pack(side="left", fill="both", expand=True)
+        #: 顶层统一接滚轮：事件从任意子控件冒泡到 Toplevel 的 bindtag，所以
+        #: 鼠标停在标题、卡片或空白处都能滚（展开“更多设置”后尤其需要）。
+        #: 下拉框 / 文本框自己要滚时会先消费掉事件，不会被这里抢走。
+        self.top.bind("<MouseWheel>", self._on_connect_wheel, add="+")
         wrap = ttk.Frame(canvas, padding=(12, 10))
         win_id = canvas.create_window((0, 0), window=wrap, anchor="nw")
         wrap.bind("<Configure>",
@@ -8553,6 +8697,29 @@ class _AiConnectWindow:
             set_dark_title_bar(self.top)
         except Exception:
             pass
+
+    def _on_connect_wheel(self, event) -> str:
+        """
+        连接窗口的滚轮：内容装得下时不动，装不下时按 1 行/格滚动。
+
+        为什么不用 `bind_all`：连接窗口和主窗口可能同时开着；只有一个窗口
+        的 Toplevel bindtag 能保证“鼠标在哪个窗口，就滚哪个窗口”。
+        """
+        try:
+            if not self.canvas.winfo_exists():
+                return ""
+            delta = int(getattr(event, "delta", 0) or 0)
+            if not delta:
+                return ""
+            first, last = self.canvas.yview()
+            if first <= 0.0 and last >= 1.0:
+                return ""                      # 内容没超出：别假装能滚
+            step = -1 if delta > 0 else 1
+            repeats = max(1, abs(delta) // 120)
+            self.canvas.yview_scroll(step * repeats, "units")
+            return "break"
+        except Exception:
+            return ""
 
     def _card(self, parent, title: str, kind: str):
         """中性分组卡：统一 surface + line，只在标题/状态文字上保留栏目色。"""
@@ -9833,12 +10000,20 @@ class WinMonApp:
                 self.retranslate()
             except Exception:
                 pass
-        # 读完设置再刷一次媒体应用清单：这样"上次选的那个应用"也在下拉框的值里
-        # （否则界面上显示的是一个不在清单里的项，点确定会被重置成"自动"）。
-        self._reload_media_app_list()
+        # 媒体应用清单要扫开始菜单 + 进程表（约 20–100ms）。窗口先画出来，
+        # 70ms 后再填下拉框；用户在这之前点开播放器时，`_edit_media_app_multi`
+        # 会同步补一次，不会看到空列表。
+        self._media_app_list_ready = False
+        try:
+            self.root.after(70, self._load_media_apps_deferred)
+        except Exception:
+            self._load_media_apps_deferred()
         # 操作历史日志按设置里的保留天数清一次（默认 30 天）——
-        # 放在启动时做，用户不用记着去点"清理"。
-        self._prune_history_on_start()
+        # 放在首帧之后做，不挡窗口出现；用户不用记着去点"清理"。
+        try:
+            self.root.after(600, self._prune_history_on_start)
+        except Exception:
+            self._prune_history_on_start()
         # 起**常驻**媒体会话助手：它每 3 秒把快照写进文件，之后刷新媒体那一行只是读文件
         # （实测读快照 0.05 ms，而"每次起一个 PowerShell"要约 290 ms）。
         # 失败不影响启动：`collect_media_sessions()` 会自动退回一次性调用。
@@ -10286,7 +10461,10 @@ class WinMonApp:
         ent.bind("<KP_Enter>", self._on_search_submit)
         ent.bind("<Down>", self._on_search_down)
         ent.bind("<Escape>", self._on_search_escape)
-        ent.bind("<FocusIn>", self._on_search_focus)
+        #: 必须 add="+"：SearchField 自己的 `<FocusIn>` 负责收起占位文字、
+        #: 画强调色描边。这里若直接替换，会把它的绑定整条覆盖掉 —— 点进
+        #: 搜索框后占位文字仍盖在输入框上，看起来就像“点不开”（2026-10-22 修）。
+        ent.bind("<FocusIn>", self._on_search_focus, add="+")
 
         # ---- 媒体 + AI 合成一条中性状态带（左右两栏，避免两条全宽横条右侧全空）----
         self._build_status_band()
@@ -10686,8 +10864,9 @@ class WinMonApp:
         for sequence in ("<Button-1>", "<Down>", "<Alt-Down>", "<F4>",
                          "<space>", "<Return>"):
             self.media_app_combo.bind(sequence, self._open_media_app_picker)
-        # 清单要等控件建好才能填（`_reload_media_app_list` 会 configure 这个下拉框）
-        self._reload_media_app_list()
+        #: 清单扫描要遍历开始菜单 / 进程表，放到首帧之后再填（见 `__init__`）；
+        #: 这里先只给「自动」一项，避免窗口还没画出来就先卡一下。
+        self._media_app_list_ready = False
 
     def _apply_video_visibility(self) -> None:
         """按设置开关显示/收起主界面的视频联动行（不动媒体行）。"""
@@ -10802,9 +10981,18 @@ class WinMonApp:
         """
         existing = getattr(self, "_media_picker_pop", None)
         if existing is not None and existing.winfo_exists():
-            existing.lift()
-            existing.focus_force()
+            #: 再点一次播放器下拉就收起（等价于点外面 / 取消），不逼用户选。
+            closer = getattr(self, "_media_picker_close", None)
+            if callable(closer):
+                closer()
+            else:
+                existing.lift()
+                existing.focus_force()
             return
+        #: 启动时媒体清单是“先画窗口、稍后再扫”的；用户若在扫描前就点开，
+        #: 这里同步补一次，不能让他看到一个只剩「自动」的空面板。
+        if not getattr(self, "_media_app_list_ready", False):
+            self._reload_media_app_list()
         labels = [v for v in self.media_app_combo.cget("values")
                   if v != MEDIA_APP_ANY]
         current_labels = list(self._picked_media_labels())
@@ -10827,16 +11015,87 @@ class WinMonApp:
         row = ttk.Frame(outer)
         row.pack(fill="x", pady=(6, 0))
 
-        def close() -> None:
+        closed = {"done": False}
+        root_bind_id = {"id": ""}
+        focus_after = {"id": None}
+
+        def close(*, restore_focus: bool = True) -> None:
+            if closed["done"]:
+                return
+            closed["done"] = True
             self._media_picker_pop = None
+            self._media_picker_close = None
+            if focus_after["id"]:
+                try:
+                    pop.after_cancel(focus_after["id"])
+                except Exception:
+                    pass
+                focus_after["id"] = None
+            if root_bind_id["id"]:
+                try:
+                    self.root.unbind("<Button-1>", root_bind_id["id"])
+                except Exception:
+                    pass
+                root_bind_id["id"] = ""
+            try:
+                pop.grab_release()
+            except Exception:
+                pass
             try:
                 pop.destroy()
             except tk.TclError:
                 pass
+            if restore_focus:
+                try:
+                    self.media_app_combo.focus_set()
+                except tk.TclError:
+                    pass
+
+        self._media_picker_close = close
+
+        def _inside_picker(event) -> bool:
             try:
-                self.media_app_combo.focus_set()
-            except tk.TclError:
-                pass
+                x = int(getattr(event, "x_root", -1))
+                y = int(getattr(event, "y_root", -1))
+                px, py = int(pop.winfo_rootx()), int(pop.winfo_rooty())
+                return (px <= x < px + int(pop.winfo_width())
+                        and py <= y < py + int(pop.winfo_height()))
+            except Exception:
+                return False
+
+        def _click_away(event) -> None:
+            #: grab 生效时，面板外的点击会被系统重定向到 pop；没 grab 时则由
+            #: 主窗口的这条绑定接住。两种情况都按“取消/关闭”处理，绝不逼用户
+            #: 先勾一项，也不偷偷把改动写进设置。
+            if not closed["done"] and not _inside_picker(event):
+                close(restore_focus=False)
+
+        def _focus_left(_event=None) -> str:
+            if closed["done"]:
+                return ""
+            if focus_after["id"]:
+                try:
+                    pop.after_cancel(focus_after["id"])
+                except Exception:
+                    pass
+            focus_after["id"] = pop.after(120, _close_if_focus_outside)
+            return ""
+
+        def _close_if_focus_outside() -> None:
+            focus_after["id"] = None
+            if closed["done"]:
+                return
+            try:
+                focus = pop.focus_get()
+            except Exception:
+                focus = None
+            if focus is not None:
+                try:
+                    if str(focus).startswith(str(pop)):
+                        return
+                except Exception:
+                    pass
+            close(restore_focus=False)
 
         def apply() -> None:
             picked = [lbl for lbl, v in vars_.items()
@@ -10850,6 +11109,8 @@ class WinMonApp:
         ttk.Button(row, text="取消", width=8, command=close).pack(
             side="right", padx=(0, 6))
         pop.bind("<Escape>", lambda _e: close())
+        pop.bind("<Button-1>", _click_away, add="+")
+        pop.bind("<FocusOut>", _focus_left, add="+")
         # 弹在下拉框正下方（跟系统下拉的位置一致）
         self.root.update_idletasks()
         pop.update_idletasks()
@@ -10857,10 +11118,24 @@ class WinMonApp:
         y = self.media_app_combo.winfo_rooty() + self.media_app_combo.winfo_height()
         pop.geometry(f"+{x}+{y}")
         try:
-            pop.grab_set()                      # 点别处不会误操作
+            root_bind_id["id"] = self.root.bind(
+                "<Button-1>", _click_away, add="+")
+        except Exception:
+            root_bind_id["id"] = ""
+        try:
+            pop.grab_set()                      # 浮层内操作不被下层窗口抢走
         except tk.TclError:
             pass
         pop.focus_force()
+
+    def _load_media_apps_deferred(self) -> None:
+        """首帧之后补填媒体下拉；只成功填一次，失败下次打开面板再试。"""
+        if getattr(self, "_media_app_list_ready", False):
+            return
+        try:
+            self._reload_media_app_list()
+        except Exception as exc:
+            self._set_status(f"读取媒体应用清单失败：{type(exc).__name__}: {exc}")
 
     def _reload_media_app_list(self) -> None:
         """
@@ -10883,8 +11158,12 @@ class WinMonApp:
         会话集合一变就会回头调本函数（见 `_apply_media_result`）—— 于是
         "新开一个播放器"会自动出现在清单里，而**不必为此多起一次 PowerShell**。
         """
+        #: 一次启动/刷新只取这一份进程表。以前 `build_media_app_entries`
+        #: 对每个候选 exe 调一次 `media_app_path()`，而它内部又整表枚举一次，
+        #: 十来个候选就是十几次（实测量到启动时 28 次、约 170ms）。
+        processes = core.snapshot_processes()
         running = {(info.get("name") or "").lower()
-                   for info in core.snapshot_processes().values()}
+                   for info in processes.values()}
         if not hasattr(self, "media_app_combo"):
             # 手工搭 app / 还没建控件时被调用：只算清单，不碰控件
             self._media_apps = {MEDIA_APP_ANY: None}
@@ -10893,10 +11172,24 @@ class WinMonApp:
             found = core.installed_media_apps()
         except Exception:
             found = []
+        path_cache: dict[str, bool] = {}
+
+        def _available(exe: str) -> bool:
+            low = str(exe or "").lower()
+            if not low:
+                return False
+            if low in running:
+                return True
+            if low not in path_cache:
+                path_cache[low] = bool(core.media_app_path(
+                    exe, processes=processes))
+            return path_cache[low]
+
         labels, mapping = build_media_app_entries(
-            running, lambda exe: bool(core.media_app_path(exe)), found,
+            running, _available, found,
             sessions=getattr(self, "_media_session_apps", ()))
         self._media_apps = mapping
+        self._media_app_list_ready = True
         try:
             self.media_app_combo.configure(values=labels)
         except Exception:
@@ -11803,10 +12096,15 @@ class WinMonApp:
         return "break"
 
     def _on_search_focus(self, _event=None) -> None:
-        """聚焦搜索框时先把目录索引拉起来，避免第一次输入长时间没结果。"""
+        """
+        聚焦搜索框：先把目录索引拉起来，并立即摊开“运行中”候选。
+
+        用户 2026-10-22 的反馈是「搜索程序点都点不开」。除了焦点绑定被覆盖，
+        空输入时什么都不弹也会让点击看起来没有发生 —— 现在点进来至少能看到
+        当前运行中的窗口，继续输入时再换成窗口 + 程序目录的合并结果。
+        """
         self._ensure_catalog_for_search()
-        if self.search_text.get().strip():
-            self._show_search_results()
+        self._show_search_results(include_initial=True)
 
     def _on_search_text_changed(self, event=None, *_trace_args) -> None:
         """输入防抖：窗口列表和程序目录结果一起刷新。"""
@@ -12049,6 +12347,15 @@ class WinMonApp:
             x = entry.winfo_rootx()
             y = entry.winfo_rooty() + entry.winfo_height() + 2
             width = max(540, entry.winfo_width() + 240)
+            #: 搜索框贴右时，固定右伸会把建议浮层甩到窗口外面（截图里
+            #: 一半浮层落在主窗口外）。优先整体留在主窗口内，再按屏幕兜底。
+            try:
+                main_x = self.root.winfo_rootx()
+                main_right = main_x + self.root.winfo_width() - 10
+                if x + width > main_right:
+                    x = max(main_x + 10, main_right - width)
+            except Exception:
+                pass
             row_h = tkfont.Font(root=self.root, font=UI_FONT).metrics("linespace") + 8
             height = max(row_h + 8, min(8, max(1, rows)) * row_h + 8)
             sw, sh = self.root.winfo_screenwidth(), self.root.winfo_screenheight()
@@ -12058,16 +12365,39 @@ class WinMonApp:
         except Exception:
             pass
 
-    def _show_search_results(self) -> None:
+    def _initial_search_results(self) -> list:
+        """
+        空输入时给一批“运行中”的候选（最多 8 条）。
+
+        为什么不让空搜索框弹空白：用户点搜索是想找东西，不是想先猜这里能不能点。
+        这里只列**已经在运行**的窗口，不扫目录、不伪造未运行的程序；继续输入后
+        会换成正常的窗口 + 程序目录合并结果。
+        """
+        hits = []
+        for wi in getattr(self, "windows", []) or []:
+            if getattr(wi, "is_hidden_surface", False) and not self.show_hidden.get():
+                continue
+            hits.append(wi)
+        hits.sort(key=lambda w: (w.hwnd != getattr(self, "_fg_hwnd", 0),
+                                 bool(getattr(w, "iconic", False)),
+                                 str(getattr(w, "title", "")).lower()))
+        return [("window", wi) for wi in hits[:8]]
+
+    def _show_search_results(self, *, include_initial: bool = False) -> None:
         query = self.search_text.get().strip()
         if not query:
-            self._hide_search_popup()
-            return
-        results = self._search_results_for_query(query)
+            if not include_initial:
+                self._hide_search_popup()
+                return
+            results = self._initial_search_results()
+        else:
+            results = self._search_results_for_query(query)
         self._search_results_current = results
         if not results:
             self._hide_search_popup()
-            if not getattr(self.catalog, "items", None) and \
+            if not query:
+                self._set_status("输入程序名、窗口标题或 exe 名即可搜索")
+            elif not getattr(self.catalog, "items", None) and \
                     getattr(self, "_catalog_search_loading", False):
                 self._set_status("正在读取程序目录；窗口标题仍可直接搜索…")
             else:
@@ -12122,8 +12452,15 @@ class WinMonApp:
 
     def _on_root_click_hide_search(self, event=None) -> None:
         widget = getattr(event, "widget", None)
-        if widget is getattr(self, "search_entry", None):
-            return
+        #: 搜索框是一个 Canvas + 覆盖其上的占位 Label + Entry。只比较 entry 的话，
+        #: 点占位文字会先聚焦、又被这一下“点别处”立刻收起，表现仍是“点不开”。
+        try:
+            field = getattr(self, "search_field", None)
+            if field is not None and (widget is field or str(widget).startswith(
+                    str(field) + ".")):
+                return
+        except Exception:
+            pass
         if self._search_popup_contains(widget):
             return
         self._hide_search_popup()
@@ -12134,7 +12471,7 @@ class WinMonApp:
         pop = self._ensure_search_popup()
         if not self._search_results_current:
             return
-        self._show_search_results()
+        self._show_search_results(include_initial=True)
         lb = getattr(self, "_search_list", None)
         if lb is None:
             return
@@ -12151,13 +12488,17 @@ class WinMonApp:
 
     def _on_search_down(self, _event=None):
         self._ensure_catalog_for_search()
-        self._show_search_results()
+        self._show_search_results(include_initial=True)
         if self._search_results_current:
             self._focus_search_results()
             return "break"
 
     def _on_search_submit(self, _event=None):
         self._cancel_search_debounce()
+        if not self.search_text.get().strip():
+            #: 空输入时展开的“运行中”候选只是导览；回车不该擅自打开第一个窗口。
+            self._hide_search_popup()
+            return "break"
         self._apply_search_ui()
         results = getattr(self, "_search_results_current", [])
         if not results:

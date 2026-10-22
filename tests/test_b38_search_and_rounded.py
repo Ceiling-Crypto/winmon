@@ -210,15 +210,33 @@ class TestUnifiedSearchUi(unittest.TestCase):
         self.app.search_entry.focus_force()
         self.root.update()
         self.assertIs(self.root.focus_get(), self.app.search_entry)
-        #: FocusIn 事件在部分无窗口管理器的测试会话里不会自动派发，
-        #: 这里直接走画布自己的焦点回调，只验证描边确实会变成强调色。
-        self.app.search_field._on_focus()
+        #: 这里**不再手工调** SearchField._on_focus()：要证明应用层加上的
+        #: FocusIn 绑定没有把控件自己的焦点回调覆盖掉（2026-10-22 的真 bug：
+        #: 占位文字一直盖在输入框上，看起来就是“点不开”）。
+        self.app.search_field._focused = False
+        self.app.search_entry.event_generate("<FocusIn>")
+        self.root.update()
         self.assertTrue(self.app.search_field._focused)
+        self.assertFalse(self.app.search_field._placeholder_label.winfo_ismapped())
         outline = [str(self.app.search_field.itemcget(i, "outline")).lower()
                    for i in self.app.search_field.find_all()
                    if "polygon" in str(self.app.search_field.type(i))]
         self.assertIn(self.winmon.UI_ACCENT.lower(), outline)
         self.app.search_field._on_blur()
+        self.app._hide_search_popup()
+
+    def test_empty_search_focus_opens_running_windows(self):
+        """点搜索框就该有反应：空输入先给运行中的窗口，而不是一片空白。"""
+        self.app.catalog.items = [core.ProgramItem("占位", r"C:\NoSuch\x.exe")]
+        self._set_windows([self._win()])
+        self.app.search_text.set("")
+        self.app._on_search_focus()
+        self.root.update()
+        self.assertEqual(len(self.app._search_results_current), 1)
+        self.assertEqual(self.app._search_results_current[0][0], "window")
+        self.assertIsNotNone(self.app._search_popup)
+        self.assertTrue(self.app._search_list.size() >= 1)
+        self.app._hide_search_popup()
 
     def test_media_keys_order_and_symbols(self):
         self.assertEqual(self.app.media_prev_btn.cget("text"), "⏮")
