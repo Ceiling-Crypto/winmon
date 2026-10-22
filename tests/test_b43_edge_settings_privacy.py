@@ -69,13 +69,14 @@ class TestEdgeSettings(unittest.TestCase):
 
     def test_sidebar_and_cards_replace_the_old_capsule_tabs(self):
         dlg = self._open()
-        self.assertEqual(list(dlg._nav_items), ["general", "ai", "guide"])
+        self.assertEqual(list(dlg._nav_items),
+                         ["general", "ai", "guide", "about"])
         self.assertTrue(dlg.settings_search.winfo_exists())
         self.assertFalse(hasattr(dlg, "tab_strip"),
                          "Edge 式设置不再使用顶部胶囊标签")
         self.assertEqual([dlg.nb.tab(i, "text")
                           for i in range(len(dlg.nb.tabs()))],
-                         ["常规", "AI 用量", "使用说明"])
+                         ["常规", "AI 用量", "使用说明", "关于"])
         # 常规页是卡片流：有多个分组标题和可滚动 canvas。
         labels = texts(dlg._general_canvas)
         for section in ("外观", "窗口列表", "主界面内容", "启动与关闭", "维护"):
@@ -95,9 +96,29 @@ class TestEdgeSettings(unittest.TestCase):
         dlg._settings_search_text.set("")
         dlg._filter_nav()
         self.root.update()
-        for section in ("general", "ai", "guide"):
+        for section in ("general", "ai", "guide", "about"):
             self.assertEqual(dlg._nav_items[section]["frame"].winfo_manager(),
                              "pack")
+
+    def test_about_page_declares_license_contact_and_pet_credit(self):
+        dlg = self._open()
+        dlg.select("about")
+        self.root.update()
+        self.assertEqual(dlg.nb.index("current"),
+                         dlg._section_tabs["about"])
+        joined = "\n".join(texts(dlg.about.frame))
+        self.assertIn("关于 winmon1.0", joined)
+        self.assertIn("MIT", joined)
+        self.assertIn("3688068026", joined)
+        self.assertIn("3688068026@qq.com", joined)
+        self.assertIn("非商业", joined)
+        self.assertIn("DeepSeek", joined)
+        self.assertEqual(dlg.about.links["dsh_pet"],
+                         "https://github.com/PC2005-cloud/dsh-pet")
+        self.assertEqual(dlg.about.links["issues"],
+                         "https://github.com/Ceiling-Crypto/winmon/issues")
+        self.assertEqual(dlg.about.links["repo"],
+                         "https://github.com/Ceiling-Crypto/winmon")
 
     def test_all_toggles_are_large_edge_blue_switches(self):
         dlg = self._open()

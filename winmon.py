@@ -53,6 +53,7 @@ import textwrap
 import threading
 import time
 import tkinter as tk
+import webbrowser
 import zlib
 from tkinter import filedialog, font as tkfont, messagebox, simpledialog, ttk
 
@@ -6456,10 +6457,10 @@ class _PetActionDrawer:
 
 class _SettingsWindow:
     """
-    **设置**：常规设置 + AI 用量 + 使用说明，全部收在同一个窗口。
+    **设置**：常规设置 + AI 用量 + 使用说明 + 关于，全部收在同一个窗口。
 
     用户 2026-10-20 的要求：主界面只保留一个「设置…」入口；AI 用量和说明
-    本来就是设置的一部分，不该各占一个独立窗口。这里用标签页承载三块内容，
+    本来就是设置的一部分，不该各占一个独立窗口。这里用标签页承载四块内容，
     窗口标题始终是「设置」，不再出现「AI 用量」/「使用说明」两个并列入口。
 
     常规页仍负责有副作用的动作：
@@ -6553,7 +6554,7 @@ class _SettingsWindow:
             "<Return>", lambda _e: self._activate_first_nav(), add="+")
         self._nav_holder = tk.Frame(sidebar, bg=UI_SURFACE)
         self._nav_holder.pack(fill="x")
-        self._nav_order = ("general", "ai", "guide")
+        self._nav_order = ("general", "ai", "guide", "about")
         self._nav_items: dict[str, dict] = {}
 
         tk.Frame(shell, bg=UI_LINE, width=1).pack(side="left", fill="y")
@@ -6570,7 +6571,7 @@ class _SettingsWindow:
                              borderwidth=0)
         except tk.TclError:
             pass
-        self._section_tabs = {"general": 0, "ai": 1, "guide": 2}
+        self._section_tabs = {"general": 0, "ai": 1, "guide": 2, "about": 3}
         self.nb.pack(fill="both", expand=True, padx=(24, 18), pady=(16, 4))
 
         general_tab = ttk.Frame(self.nb)
@@ -6601,6 +6602,8 @@ class _SettingsWindow:
         self.nb.add(self.usage.frame, text=i18n.pick("AI 用量", "AI usage"))
         self.guide = _GuidePanel(self.nb, app, "main")
         self.nb.add(self.guide.frame, text=i18n.pick("使用说明", "Guide"))
+        self.about = _AboutPanel(self.nb, app, max(360, win_w - 350))
+        self.nb.add(self.about.frame, text=i18n.pick("关于", "About"))
         self._build_nav()
         # 鼠标点内容区、或者程序调用 select() 切页时，左侧高亮都跟着走。
         self.nb.bind("<<NotebookTabChanged>>", self._on_nav_tab_changed, add="+")
@@ -6744,8 +6747,10 @@ class _SettingsWindow:
             "general": i18n.pick("常规", "General"),
             "ai": i18n.pick("AI 用量", "AI usage"),
             "guide": i18n.pick("使用说明", "Guide"),
+            "about": i18n.pick("关于", "About"),
         }
-        icons = {"general": "sliders", "ai": "spark", "guide": "info"}
+        icons = {"general": "sliders", "ai": "spark", "guide": "info",
+                 "about": "heart"}
         nav_h = max(36, int(round(36 * self._scale)))
         for section in self._nav_order:
             frame = tk.Canvas(self._nav_holder, bg=UI_SURFACE,
@@ -6766,6 +6771,8 @@ class _SettingsWindow:
                                     "刷新 视频 闲置 启动 关闭 维护 历史 清理"),
                         "ai": "AI 用量 预算 token 直连 key 模型 用量",
                         "guide": "使用说明 帮助 快捷键 媒体 隐私",
+                        "about": ("关于 开源 许可 协议 MIT 联系 QQ 邮箱 反馈 "
+                                  "致谢 桌宠 素材 dsh-pet 版本"),
                     }[section]}
             self._nav_items[section] = item
 
@@ -6823,6 +6830,11 @@ class _SettingsWindow:
                 canvas.create_polygon(
                     9, 1, 11, 7, 17, 9, 11, 11, 9, 17, 7, 11, 1, 9, 7, 7,
                     fill=color, outline="")
+            elif kind == "heart":
+                canvas.create_oval(2, 3, 9, 10, fill=color, outline="")
+                canvas.create_oval(7, 3, 14, 10, fill=color, outline="")
+                canvas.create_polygon(2, 7, 14, 7, 8, 16,
+                                      fill=color, outline="")
             else:
                 canvas.create_oval(2, 2, 16, 16, outline=color, width=1.5)
                 canvas.create_line(9, 8, 9, 13, fill=color, width=2,
@@ -9215,6 +9227,307 @@ class _GuidePanel:
     def close(self) -> None:
         """面板本身没有独立窗口；保留这个方法让设置统一收尾。"""
         return
+
+
+class _AboutPanel:
+    """
+    设置里的「关于」页：版本、许可、桌宠致谢、联系方式与隐私。
+
+    这里只写 WinMon 自己的声明；AI 服务商与 dsh-pet 的条款分别链接到各自页面。
+    所有链接都只在点击时打开，不自动联网。
+    """
+
+    REPO = "https://github.com/Ceiling-Crypto/winmon"
+    ISSUES = REPO + "/issues"
+    DSH_PET = "https://github.com/PC2005-cloud/dsh-pet"
+    RYANFFY = "https://github.com/RYANFFY/deepseek-dafeiyu-pet"
+    QQ = "3688068026"
+    EMAIL = "3688068026@qq.com"
+
+    def __init__(self, parent: tk.Misc, app, wrap_width: int = 620) -> None:
+        self.app = app
+        self.frame = ttk.Frame(parent)
+        #: 这里用固定换行宽度，不跟 <Configure> 动态改：卡片在带滚动条的
+        #: Canvas 里，文字换行会改变内容高度，滚动条随之出现/消失，再反过来
+        #: 改可用宽度 —— 会形成几何自激循环（实测 update_idletasks 卡死）。
+        self._wrap_width = max(360, int(wrap_width))
+        #: 给测试/文档留一份可读的链接表；界面只显示短名字。
+        self.links = {
+            "repo": self.REPO,
+            "issues": self.ISSUES,
+            "dsh_pet": self.DSH_PET,
+            "ryanffy": self.RYANFFY,
+        }
+        self.copy_note = tk.StringVar(value="")
+        self._build()
+
+    # ---- 构建 -------------------------------------------------------
+
+    def _root_path(self, *parts: str) -> str:
+        base = os.path.dirname(os.path.abspath(__file__))
+        return os.path.join(base, *parts)
+
+    def _build(self) -> None:
+        self.frame.rowconfigure(0, weight=1)
+        self.frame.columnconfigure(0, weight=1)
+        self.canvas = tk.Canvas(self.frame, bg=UI_BG, highlightthickness=0)
+        scroll = EdgeScrollbar(self.frame, command=self.canvas.yview,
+                               bg=UI_BG)
+        self.canvas.configure(yscrollcommand=scroll.set)
+        self.canvas.grid(row=0, column=0, sticky="nsew")
+        scroll.grid(row=0, column=1, sticky="ns")
+        wrap = tk.Frame(self.canvas, bg=UI_BG)
+        win_id = self.canvas.create_window((0, 0), window=wrap, anchor="nw")
+        wrap.bind("<Configure>",
+                  lambda _e: self.canvas.configure(
+                      scrollregion=self.canvas.bbox("all")))
+        self.canvas.bind("<Configure>",
+                         lambda e: self.canvas.itemconfigure(win_id,
+                                                            width=e.width))
+        self.canvas.bind("<Enter>",
+                         lambda _e: self.canvas.bind_all("<MouseWheel>",
+                                                         self._wheel))
+        self.canvas.bind("<Leave>",
+                         lambda _e: self.canvas.unbind_all("<MouseWheel>"))
+
+        self._build_header(wrap)
+        self._build_project(wrap)
+        self._build_contact(wrap)
+        self._build_pet(wrap)
+        self._build_privacy(wrap)
+        self._build_footer(wrap)
+        tk.Frame(wrap, bg=UI_BG, height=12).pack(fill="x")
+
+    def _wheel(self, event) -> None:
+        try:
+            self.canvas.yview_scroll(int(-event.delta / 120), "units")
+        except Exception:
+            pass
+
+    def _build_header(self, wrap) -> None:
+        head = tk.Frame(wrap, bg=UI_BG)
+        head.pack(fill="x", pady=(0, 2))
+        tk.Label(head, text=f"{i18n.pick('关于', 'About')} {APP_RELEASE}",
+                 font=(UI_FONT_FAMILY, UI_FONT_SIZE + 10, "bold"),
+                 bg=UI_BG, fg=UI_INK, anchor="w").pack(side="left")
+        tk.Label(head, text=f"v{APP_VER}", font=SMALL_FONT, bg=UI_BG,
+                 fg=UI_MUTED, anchor="w").pack(side="left", padx=(10, 0),
+                                               pady=(6, 0))
+        tk.Label(wrap,
+                 text=i18n.pick(f"{APP_RELEASE} · 免费 · 开源 · 本地优先",
+                                f"{APP_RELEASE} · free · open source · local-first"),
+                 font=SMALL_FONT, bg=UI_BG, fg=UI_MUTED, anchor="w",
+                 justify="left").pack(fill="x", pady=(0, 2))
+
+    def _section(self, parent, text: str, *, first: bool = False) -> None:
+        tk.Label(parent, text=text,
+                 font=(UI_FONT_FAMILY, UI_FONT_SIZE + 2, "bold"),
+                 bg=UI_BG, fg=UI_INK, anchor="w").pack(
+            fill="x", pady=(0 if first else 18, 6))
+
+    def _card(self, parent):
+        panel = SoftPanel(parent, UI_SURFACE, radius=9, shadow=1, pad=3,
+                          border=UI_LINE)
+        panel.pack(fill="x")
+        body = tk.Frame(panel.content, bg=UI_SURFACE)
+        body.pack(fill="x")
+        return body
+
+    def _row(self, parent, title: str, value: str, *, first: bool = False,
+             link: str = "", action=None, copy_text: str = "") -> None:
+        if not first:
+            tk.Frame(parent, bg=UI_LINE, height=1).pack(fill="x", padx=14)
+        row = tk.Frame(parent, bg=UI_SURFACE)
+        row.pack(fill="x", padx=14, pady=8)
+        tk.Label(row, text=title, font=SMALL_FONT, bg=UI_SURFACE,
+                 fg=UI_MUTED, width=12, anchor="w").pack(side="left")
+        if action is not None:
+            label, command = action
+            act = tk.Label(row, text=label, font=SMALL_FONT, bg=UI_SURFACE,
+                           fg=UI_ACCENT, cursor="hand2", anchor="e")
+            act.pack(side="right")
+            act.bind("<Button-1>", lambda _e: command(), add="+")
+        if copy_text:
+            RoundedButton(
+                row, text=i18n.pick("复制", "Copy"), kind="ghost",
+                bg=UI_SURFACE, height=24, radius=12, padx=10,
+                font=SMALL_FONT,
+                command=lambda t=copy_text: self._copy(t),
+            ).pack(side="right", padx=(8, 0))
+        text = tk.Label(row, text=value, font=UI_FONT, bg=UI_SURFACE,
+                        fg=UI_ACCENT if link else UI_INK, anchor="w",
+                        cursor="hand2" if link else "")
+        text.pack(side="left", fill="x", expand=True)
+        if link:
+            text.bind("<Button-1>", lambda _e: self._open_url(link), add="+")
+
+    def _para(self, parent, text: str, *, fg: str = UI_MUTED,
+              font=None, pady=(0, 10)) -> tk.Label:
+        label = tk.Label(parent, text=text, font=font or SMALL_FONT,
+                         bg=UI_SURFACE, fg=fg, anchor="w", justify="left",
+                         wraplength=self._wrap_width)
+        label.pack(fill="x", padx=14, pady=pady)
+        return label
+
+    def _bullet(self, parent, text: str) -> None:
+        row = tk.Frame(parent, bg=UI_SURFACE)
+        row.pack(fill="x", padx=14, pady=(0, 6))
+        tk.Label(row, text="•", font=SMALL_FONT, bg=UI_SURFACE,
+                 fg=UI_ACCENT, anchor="n").pack(side="left", padx=(0, 6))
+        label = tk.Label(row, text=text, font=SMALL_FONT, bg=UI_SURFACE,
+                         fg=UI_MUTED, anchor="w", justify="left",
+                         wraplength=max(240, self._wrap_width - 20))
+        label.pack(side="left", fill="x", expand=True)
+
+    def _build_project(self, wrap) -> None:
+        self._section(wrap, i18n.pick("项目", "Project"), first=True)
+        card = self._card(wrap)
+        self._row(card, i18n.pick("版本", "Version"),
+                  f"v{APP_VER}", first=True)
+        self._row(card, i18n.pick("代码许可", "Code license"), "MIT",
+                  action=(i18n.pick("查看 LICENSE", "View LICENSE"),
+                          lambda: self._open_path(self._root_path("LICENSE"))))
+        self._row(card, i18n.pick("项目仓库", "Repository"),
+                  "github.com/Ceiling-Crypto/winmon", link=self.REPO)
+        self._row(card, i18n.pick("问题反馈", "Issues"), "GitHub Issues",
+                  link=self.ISSUES)
+        self._row(card, i18n.pick("桌宠完整版", "Full pet"), "dsh-pet",
+                  link=self.DSH_PET)
+
+    def _build_pet(self, wrap) -> None:
+        self._section(wrap, i18n.pick("桌宠与致谢", "Pet & credits"))
+        card = self._card(wrap)
+        self._row(card, i18n.pick("形象", "Character"),
+                  i18n.pick("社区二创「蓝色大肥鱼」",
+                            "Community fan art “Big Blue Fish”"),
+                  first=True, link=self.RYANFFY)
+        self._row(card, i18n.pick("动作", "Animations"),
+                  i18n.pick("dsh-pet（21 段，待接入）",
+                            "dsh-pet (21 clips, pending)"),
+                  link=self.DSH_PET)
+        self._para(card, i18n.pick(
+            "动作播放器接入后，WinMon 只保留 21 段常用动作，"
+            "并做裁切、降采样和透明化。",
+            "Once the player lands, WinMon will keep only 21 common clips "
+            "and crop/downscale them."))
+        self._para(card, i18n.pick(
+            "动作素材按原作者条款仅用于非商业用途；WinMon 本体免费，"
+            "不对素材收费。",
+            "The animations are used for non-commercial purposes only under "
+            "the original author's terms; WinMon itself is free and does "
+            "not charge for them."))
+        btn_row = tk.Frame(card, bg=UI_SURFACE)
+        btn_row.pack(fill="x", padx=14, pady=(0, 10))
+        RoundedButton(
+            btn_row,
+            text=i18n.pick("获取完整大肥鱼桌宠 →", "Get the full pet →"),
+            kind="accent", bg=UI_SURFACE, height=32, radius=16, padx=14,
+            command=lambda: self._open_url(self.DSH_PET),
+        ).pack(side="left")
+        tk.Label(btn_row, text=i18n.pick("一百余段动作、换装和更多互动",
+                                         "100+ clips, outfits and more"),
+                 font=SMALL_FONT, bg=UI_SURFACE, fg=UI_MUTED,
+                 anchor="w").pack(side="left", padx=(10, 0))
+        self._para(card, i18n.pick(
+            "「蓝色大肥鱼」是 DeepSeek 社区二创形象，非官方；"
+            "WinMon 与 DeepSeek、dsh-pet 均无隶属关系。",
+            "“Big Blue Fish” is community fan art, not an official DeepSeek "
+            "character. WinMon is not affiliated with DeepSeek or dsh-pet."),
+            pady=(0, 10))
+
+    def _build_contact(self, wrap) -> None:
+        self._section(wrap, i18n.pick("联系", "Contact"))
+        card = self._card(wrap)
+        self._row(card, "QQ", self.QQ, first=True, copy_text=self.QQ)
+        self._row(card, i18n.pick("邮箱", "Email"), self.EMAIL,
+                  copy_text=self.EMAIL)
+        self._row(card, i18n.pick("反馈", "Issues"), "GitHub Issues",
+                  link=self.ISSUES)
+        tk.Label(card, textvariable=self.copy_note, font=SMALL_FONT,
+                 bg=UI_SURFACE, fg=UI_ACCENT, anchor="w").pack(
+            fill="x", padx=14, pady=(0, 2))
+        self._para(card, i18n.pick(
+            "反馈请附版本、Windows 版本和复现步骤；"
+            "AI 服务本身的问题请联系对应服务商。",
+            "When reporting a bug, include the version, Windows version and "
+            "steps to reproduce. For issues with an AI service itself, "
+            "contact that provider."))
+
+    def _build_privacy(self, wrap) -> None:
+        self._section(wrap, i18n.pick("隐私", "Privacy"))
+        card = self._card(wrap)
+        self._bullet(card, i18n.pick(
+            "没有账号，也没有自建服务器；直连请求直接发给你配置的 AI 服务商。",
+            "There is no account and no WinMon server; direct API requests go "
+            "straight to the provider you configured."))
+        self._bullet(card, i18n.pick(
+            "桌宠只读取窗口元数据（标题、应用类型、媒体、时间），"
+            "不读取截图、聊天或文件内容。",
+            "The pet reads window metadata only (title, app type, media, "
+            "time). It does not read screenshots, chats or files."))
+        self._bullet(card, i18n.pick(
+            "设置、日志和人设都只保存在本机。",
+            "Settings, logs and personas stay on this machine."))
+        self._row(card, i18n.pick("第三方声明", "Notices"),
+                  "THIRD_PARTY_NOTICES.md",
+                  action=(i18n.pick("查看", "View"),
+                          lambda: self._open_path(
+                              self._root_path("THIRD_PARTY_NOTICES.md"))))
+
+    def _build_footer(self, wrap) -> None:
+        foot = tk.Frame(wrap, bg=UI_BG)
+        foot.pack(fill="x", pady=(14, 0))
+        tk.Label(foot, text=i18n.pick(
+            "如果 winmon1.0 帮到你，欢迎在 GitHub 点个 Star。",
+            "If winmon1.0 helps you, a GitHub star is appreciated."),
+            font=SMALL_FONT, bg=UI_BG, fg=UI_MUTED, anchor="w").pack(
+            side="left")
+        log = tk.Label(foot, text=i18n.pick("更新日志", "Changelog"),
+                       font=SMALL_FONT, bg=UI_BG, fg=UI_ACCENT,
+                       cursor="hand2", anchor="w")
+        log.pack(side="left", padx=(10, 0))
+        log.bind("<Button-1>",
+                 lambda _e: self._open_path(self._root_path("CHANGELOG.md")),
+                 add="+")
+        star = tk.Label(foot, text="GitHub", font=SMALL_FONT, bg=UI_BG,
+                        fg=UI_ACCENT, cursor="hand2", anchor="w")
+        star.pack(side="left", padx=(10, 0))
+        star.bind("<Button-1>", lambda _e: self._open_url(self.REPO), add="+")
+
+    # ---- 动作 -------------------------------------------------------
+
+    def _copy(self, text: str) -> None:
+        try:
+            self.frame.clipboard_clear()
+            self.frame.clipboard_append(text)
+            self.frame.update_idletasks()
+            self.copy_note.set(i18n.pick("已复制到剪贴板", "Copied to clipboard"))
+            try:
+                self.frame.after(1800, self._clear_copy_note)
+            except tk.TclError:
+                pass
+        except tk.TclError:
+            self.copy_note.set(i18n.pick("复制失败", "Copy failed"))
+
+    def _clear_copy_note(self) -> None:
+        try:
+            self.copy_note.set("")
+        except Exception:
+            pass
+
+    def _open_url(self, url: str) -> None:
+        try:
+            webbrowser.open(url, new=2)
+        except Exception:
+            pass
+
+    def _open_path(self, path: str) -> None:
+        try:
+            if not os.path.exists(path):
+                return
+            os.startfile(path)  # type: ignore[attr-defined]
+        except Exception:
+            pass
 
 
 class _AiConnectWindow:

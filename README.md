@@ -1,7 +1,9 @@
 # winmon1.0
 
-> **许可：[MIT](LICENSE)**（Copyright © 2026 Ceiling-Crypto）—— 可自由使用、修改、
+> **代码许可：[MIT](LICENSE)**（Copyright © 2026 Ceiling-Crypto）—— 代码可自由使用、修改、
 > 商用、再分发，只需保留版权声明与许可证原文；软件按"现状"提供，不承担任何责任。
+> **桌宠动作素材另有条款**：来自 [dsh-pet](https://github.com/PC2005-cloud/dsh-pet)，
+> 仅限非商业使用，详见 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)。
 >
 > **正式发布名：`winmon1.0`**（`APP_NAME` / `APP_RELEASE`；`APP_VER = "1.0"`）。这是把之前分散的两份副本合并、
 > 核对并统一测试基线之后的第一个**正式命名版本**，版本号从这里重新起算。
@@ -31,7 +33,7 @@
 | [`CHANGELOG.md`](CHANGELOG.md) | **改了什么**：按版本记功能与修复（含版本号怎么变的） | 想知道这版和上版的差别、某个改动是哪一版进的 |
 | [`HANDOFF.md`](HANDOFF.md) | **为什么是这样**：开发交接文档，2800 行，踩过的坑编号到 120+。**含内部设计讨论**（哪些方案试过、为什么放弃） | **改代码之前**（尤其别重复踩坑）；接手这个项目 |
 | [`MCP.md`](MCP.md) | 让 AI 客户端通过 **MCP** 接入 WinMon 的**方案**（**阶段 1.5–8 已实现**：只读工具 / 预算 / 直连 / 本地 HTTP / 跟随式助手 / 角色记忆）；§十 是 2026-10-19 的「AI 工作伴侣」修订 | 想用 AI 操作/观察这台机器上的窗口与进程 |
-| [`tests/`](tests) | 可重复运行的验证用例（1092 个，纯标准库） | 改完代码跑一遍；想知道某条规矩被谁钉住 |
+| [`tests/`](tests) | 可重复运行的验证用例（1093 个，纯标准库） | 改完代码跑一遍；想知道某条规矩被谁钉住 |
 | [`LICENSE`](LICENSE) | MIT 许可证 | 想用 / 改 / 分发这份代码 |
 
 一句话：**用**看 README，**对比**看 CHANGELOG，**改**看 HANDOFF，**接 AI** 看 MCP。
@@ -104,7 +106,7 @@
 **克隆下来之后，三步就能跑起来**（不需要安装、不写注册表、不装任何第三方包）：
 
 ```bat
-git clone https://github.com/<你的用户名>/winmon.git
+git clone https://github.com/Ceiling-Crypto/winmon.git
 cd winmon
 py winmon.py                          :: 直接开图形界面
 ```
@@ -193,7 +195,7 @@ py winmon.py
 ### 跑测试（可选，纯标准库）
 
 ```bat
-py tests\run_tests.py            :: 全部用例（1092 个，约 113–120 秒）
+py tests\run_tests.py            :: 全部用例（1093 个，约 113–120 秒）
 py tests\run_tests.py --fast     :: 跳过真窗口/抓屏慢用例（1033 个，约 57–62 秒）
 py tests\run_tests.py -v         :: 详细输出
 py tests\run_tests.py -k capture :: 只跑名字里含 capture 的用例
@@ -727,6 +729,11 @@ python winmon.py --idle --idle-minutes 5   :: 换个阈值（调试用）
   本仓库只做了尺寸整理、alpha 二值化、左向镜像和闭眼帧；授权与改动说明见
   [`desktop pet/NOTICE.md`](<desktop pet/NOTICE.md>)。这是社区形象，**不是 DeepSeek 官方品牌**，
   WinMon 与 DeepSeek 官方没有隶属或背书关系。
+- **动作出处**：已选定 21 段常用动作，来自
+  [dsh-pet](https://github.com/PC2005-cloud/dsh-pet)（作者 PC2005-cloud）；
+  动作播放器随后接入。其素材条款为「允许开源使用、禁止商用」，所以这些动作只随
+  **免费、非商业**的 WinMon 提供；完整的一百余段动作、换装与更多互动，请直接安装 dsh-pet。
+  授权范围与改动说明见 [`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)。
 - **目录约定**：桌宠的代码、素材、截图、说明全部在
   [`desktop pet/`](<desktop pet/README.md>)；Agent/动作包/全屏漫游的设计稿在
   [`desktop pet/AGENT.md`](<desktop pet/AGENT.md>)（本地行为已实现，动作包/Agent 仍是设计）。
@@ -1322,7 +1329,7 @@ Windows 11 上主窗口和二级窗口的外框由 DWM 统一裁圆角（Win10 �
 
 ## 九、测试
 
-`tests/` 下是一套**可重复运行的验证用例**（1092 个），只用 Python 标准库
+`tests/` 下是一套**可重复运行的验证用例**（1093 个），只用 Python 标准库
 （`unittest`），与本体一样零依赖。它们把开发过程中一次性做过的验证固化了下来，
 以后改代码可以直接跑，不用重新手工试一遍。
 
@@ -1515,14 +1522,37 @@ py tests\lint_check.py             :: 代码复检（新增问题才退出码 1�
 
 ## 十二、许可
 
-**MIT License** —— 完整条款见 [`LICENSE`](LICENSE)。
+### 代码：MIT License
+
+完整条款见 [`LICENSE`](LICENSE)。
 
 ```
 Copyright (c) 2026 Ceiling-Crypto
 ```
 
-一句话说明它意味着什么：**你可以随便用、改、商用、再分发**，唯一的要求是
+一句话说明它意味着什么：**代码可以随便用、改、商用、再分发**，唯一的要求是
 保留版权声明与许可证原文；软件按"现状"提供，作者不承担任何责任。
+
+### 桌宠动作素材：另有条款
+
+已选定 21 段桌宠动作，来自 [PC2005-cloud/dsh-pet](https://github.com/PC2005-cloud/dsh-pet)，
+按原作者 README 的素材条款：**允许开源使用，禁止商用**（动作播放器随后接入）。因此：
+
+- WinMon 本体免费、非商业，不对这些动作收费；
+- 含这些动作的仓库/安装包不能整体当作 MIT 拿去商用；
+- 任何介绍、展示、分发含这些动作的版本，都应附上 dsh-pet 作者链接。
+
+完整说明（含形象 MIT、动作来源、非官方声明）见
+[`THIRD_PARTY_NOTICES.md`](THIRD_PARTY_NOTICES.md)。
+
+### 联系
+
+- QQ：**3688068026**
+- 邮箱：**3688068026@qq.com**
+- 仓库 / Issues：<https://github.com/Ceiling-Crypto/winmon>
+- 设置 → **关于** 里也有同样的入口（只在点击时打开链接，不自动联网）。
+
+![设置 → 关于：代码许可、联系方式与桌宠动作致谢](docs/ui-8.37-about.png)
 
 > 这是个**试用性质的 demo**：拿它看窗口、关程序、切歌都欢迎；
 > 但别把它当成生产环境的运维工具 —— 它的边界（不模拟键盘鼠标、

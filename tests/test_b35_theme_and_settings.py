@@ -212,10 +212,10 @@ class TestSettingsMergedWindow(unittest.TestCase):
         self.addCleanup(dlg._cancel)
         return dlg
 
-    def test_one_settings_window_has_three_tabs(self):
+    def test_one_settings_window_has_four_tabs(self):
         dlg = self._open()
         labels = [dlg.nb.tab(i, "text") for i in range(len(dlg.nb.tabs()))]
-        self.assertEqual(labels, ["常规", "AI 用量", "使用说明"])
+        self.assertEqual(labels, ["常规", "AI 用量", "使用说明", "关于"])
         self.assertEqual(dlg.top.title(), "winmon1.0 设置")
         self.assertFalse(hasattr(self.winmon, "_AiUsageWindow"))
         self.assertFalse(hasattr(self.winmon, "_GuideWindow"))
