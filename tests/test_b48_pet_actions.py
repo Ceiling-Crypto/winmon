@@ -337,6 +337,28 @@ class TestPetIndependentSettings(unittest.TestCase):
             self.root.deiconify()
             self.root.update()
 
+    def test_pet_menu_reopens_after_close_and_has_media_controls(self):
+        """右键菜单是一次性 PopupMenu；第二次右键必须重建，不能直接 return。"""
+        self.root.after(
+            50, lambda: self.app._pet_menu._close()
+            if getattr(self.app, "_pet_menu", None) else None)
+        self.app.show_pet_menu(100, 100)
+        first = getattr(self.app, "_pet_menu", None)
+        self.assertIsNotNone(first)
+        self.assertFalse(first.winfo_exists(), "菜单关闭后应已销毁")
+        labels = [item.get("label") for item in first._items]
+        for label in ("⏮ 上一首", "⏭ 下一首"):
+            self.assertIn(label, labels)
+        self.assertTrue(any("播放" in str(label) for label in labels),
+                        "右键菜单应包含播放/暂停")
+        self.root.after(
+            50, lambda: self.app._pet_menu._close()
+            if getattr(self.app, "_pet_menu", None) else None)
+        self.app.show_pet_menu(100, 100)
+        second = getattr(self.app, "_pet_menu", None)
+        self.assertIsNotNone(second)
+        self.assertIsNot(second, first, "第二次右键必须创建新菜单")
+
     def test_action_drawer_stays_visible_and_runs_action(self):
         self.app.apply_pet_settings_live(True, "中", "标准")
         self.root.update()

@@ -3,7 +3,7 @@
 > 用途：在新的对话里快速恢复上下文。读这一份即可继续开发。
 > **正式发布名 `winmon1.0`**（`APP_VER = "1.0"`，查版本：`py winmon.py --version`）。
 > **先读 §一点五「WinMon 的定位与能力边界」** —— 输入注入已明确不再投入。
-> 代码状态：**1091 个测试用例全绿**（约 113–120 秒；`--fast` 1033 条约 57–62 秒；
+> 代码状态：**1092 个测试用例全绿**（约 113–120 秒；`--fast` 1033 条约 57–62 秒；
 > 跳过数按当前桌面/媒体环境在 3–7 之间变化）+
 > 代码复检 0 新增问题（基线为空）、
 > 自检 8/8、界面冒烟通过、
@@ -22,7 +22,7 @@
 
 | | |
 | --- | --- |
-| 测试 | **1091 用例全绿**（`py tests\run_tests.py`，约 113–120 秒；跳过数按环境 3–7）；`--fast` 1033 条约 57–62 秒 |
+| 测试 | **1092 用例全绿**（`py tests\run_tests.py`，约 113–120 秒；跳过数按环境 3–7）；`--fast` 1033 条约 57–62 秒 |
 | 代码复检 | `py tests\lint_check.py` → **新增问题 0**（基线已清空，见 §四） |
 | 自检 / 冒烟 | `py winmon.py --selftest` 8/8 通过；`--smoke` 通过 |
 | 规模 | `winmon_core.py` ~6950 行 / `winmon.py` ~18320 行 / `desktop pet/winmon_pet.py` ~1175 行 / 测试 62 个 .py（48 个测试模块） |
@@ -109,7 +109,7 @@
 | `winmon_ai_provider.py` | ~250 | **可选**直连模型 API（默认关；精确 usage；key 只从环境变量读） |
 | `desktop pet/` | ~1040 | **可选桌宠的全部运行文件**：`winmon_pet.py`、精灵（187/238/306 × 正/侧/左/背 + 闭眼）、头像、`LICENSE` / `NOTICE.md`、截图。`winmon_pet.py` 不 import `winmon.py` |
 | `media_session.ps1` | ~230 | 系统媒体会话（GSMTC）桥接脚本（PowerShell + Windows 自带 WinRT 投影；**必须纯 ASCII 无 BOM**） |
-| `tests/` | 62 个 .py | **可重复运行的测试**（1091 用例，纯 unittest） + `_marks.py` 慢用例标记 + 开发辅助工具 + `lint_check.py` / `lint_baseline.txt` |
+| `tests/` | 62 个 .py | **可重复运行的测试**（1092 用例，纯 unittest） + `_marks.py` 慢用例标记 + 开发辅助工具 + `lint_check.py` / `lint_baseline.txt` |
 | `启动WinMon.bat` | — | 菜单式启动器（纯 ASCII，避免批处理编码问题） |
 | `scan_windows.py` | — | 命令行窗口清单 |
 | `close_others.py` | — | 批量关闭除当前窗口外的窗口 |
@@ -162,7 +162,7 @@ python winmon.py --videos --open 3 --watch --close-window   :: 完整视频链�
 python winmon.py --version          :: 打印版本（winmon1.0）
 python winmon.py --idle             :: 列出"长期开着、没人用"的程序（只看，不关任何东西）
 python winmon.py --idle --idle-minutes 5   :: 换个闲置阈值（分钟）
-py tests\run_tests.py               :: 全部测试（1091 用例，约 113–120 秒）
+py tests\run_tests.py               :: 全部测试（1092 用例，约 113–120 秒）
 py tests\run_tests.py --fast        :: 快跑（1033 用例，约 58 秒；跳过真窗口/抓屏慢用例）
 ```
 
@@ -3282,6 +3282,27 @@ AI 深蓝卡可见；深色接入窗展开后目视无浅色卡残留。
   `--smoke` 退出 0，白底截图已目视确认。
 - 跳过数会随桌面是否有 Edge / 媒体会话变化。
 
+### 9.46 阶段 8.36：桌宠右键第二次无响应（2026-10-23）
+
+用户反馈：右键桌宠没反应。实测复现：
+- 第一次右键能弹菜单；关闭后第二次 `tk_popup()` 直接 return。
+- 根因是 `PopupMenu` 本身是**一次性**对象：`_close()` 会置
+  `_closing=True`；`show_pet_menu()` 却把菜单缓存进 `_pet_menu` 反复用。
+- 8.35 之前没暴露，是因为菜单用得少；这次用户连续右键就撞上了。
+
+修法：
+- `show_pet_menu()` **每次右键重建**菜单（先销毁旧对象）。菜单很小，
+  重建成本可忽略，还顺手让媒体标题/播放状态保持最新。
+- 右键菜单加媒体控制：当前歌名（只读）+ 上一首 / 播放暂停 / 下一首；
+  复用 `media_prev_next()` / `media_toggle_play()` 的后台命令与回读核对，
+  不额外开窗。
+- `test_b48` 新增 `test_pet_menu_reopens_after_close_and_has_media_controls`：
+  第二次右键必须是新菜单对象，且菜单里有三个媒体项。
+- 全量 **1092 用例**，失败 0 / 错误 0，跳过 7，**116.845 秒**；
+  `lint_check` 新增 0；`--smoke` 退出 0；`--selftest` 8/8；
+  `--mcp-selftest` 13/13。
+- 动作/眨眼这轮没动：先解决“右键点不开”，动作按下一步单独做。
+
 ### 9.45 阶段 8.35：直连对象收敛为常用 10 家，key 直接跟在下拉框下（2026-10-23）
 
 用户纠正：
@@ -4633,7 +4654,7 @@ README 的界面颜色一节也加了同样说明。
 ## 四、测试体系（**改代码后先跑这个**）
 
 ```bat
-py tests\run_tests.py            :: 1091 用例，约 113–120 秒（--fast 1033 条约 58 秒）
+py tests\run_tests.py            :: 1092 用例，约 113–120 秒（--fast 1033 条约 58 秒）
 py tests\run_tests.py -v         :: 逐个看
 py tests\run_tests.py -k capture :: 只跑关心的
 py tests\lint_check.py           :: 代码复检（退出码 1 = 有新增问题）
@@ -5317,7 +5338,7 @@ C 盘那份**保持原样、一字未改**（用户 2026-10-11 确认：暂不�
 
 > 继续开发 **winmon1.0** —— Windows 程序监控与终止工具，纯标准库，在 `项目根目录\`。
 > 请先读 `HANDOFF.md` 和 `README.md`，然后跑 `py tests\run_tests.py`
-> 确认基线是 **1091 用例全绿**（需要哔哩哔哩/UIA 页面的用例会按需 skip；
+> 确认基线是 **1092 用例全绿**（需要哔哩哔哩/UIA 页面的用例会按需 skip；
 > 日常改动用 `--fast` 跑 1033 条，提交前跑全量）、
 > `py tests\lint_check.py` 退出码 0（无新增问题）。
 > **版式要另眼验收**：测试进程没有开 DPI 感知，布局检查看不到"真实 DPI 下控件被挤没"，

@@ -16943,21 +16943,48 @@ class WinMonApp:
                 pass
 
     def show_pet_menu(self, x: int, y: int) -> None:
-        """桌宠右键菜单（复用主界面的自绘 PopupMenu，主题一致）。"""
-        menu = getattr(self, "_pet_menu", None)
-        if menu is None:
-            menu = PopupMenu(self.root, font=UI_FONT)
-            menu.add_command(label="打开 winmon1.0", command=self.restore_from_tray)
-            menu.add_command(label="看看在放什么", command=self.show_pet_bubble)
-            menu.add_command(label="动作抽屉…", command=self.show_pet_action_drawer)
-            menu.add_separator()
-            menu.add_command(label="桌宠设置…", command=self.show_pet_panel)
-            menu.add_command(label="完整设置…",
-                             command=lambda: self.action_settings("general"))
-            menu.add_separator()
-            menu.add_command(label="隐藏桌宠", command=self.hide_pet_from_menu)
-            menu.add_command(label="退出 winmon1.0", command=self.quit_app)
-            self._pet_menu = menu
+        """
+        桌宠右键菜单（复用主界面的自绘 PopupMenu，主题一致）。
+
+        `PopupMenu` 是**一次性**的：关闭时 `_closing=True`，缓存的菜单再次
+        `tk_popup()` 会直接 return。以前这里把菜单缓存进 `_pet_menu`，所以
+        第一次右键正常、第二次开始就“没反应”。现在每次右键都重建（菜单很小），
+        顺便让媒体标题/播放状态保持最新。
+        """
+        old = getattr(self, "_pet_menu", None)
+        if old is not None:
+            try:
+                old.destroy()
+            except Exception:
+                pass
+            self._pet_menu = None
+        menu = PopupMenu(self.root, font=UI_FONT)
+        playing = bool(getattr(self, "_media_playing", False))
+        title = str((getattr(self, "_media_last_pick", {}) or {}).get("title") or "").strip()
+        if len(title) > 28:
+            title = title[:27] + "…"
+        if title:
+            media_label = f"{'正在播放' if playing else '已暂停'}：{title}"
+        else:
+            media_label = "正在播放" if playing else "未在播放媒体"
+        menu.add_command(label="打开 winmon1.0", command=self.restore_from_tray)
+        menu.add_command(label="看看在放什么", command=self.show_pet_bubble)
+        menu.add_command(label=media_label, state="disabled")
+        menu.add_command(label="⏮ 上一首",
+                         command=lambda: self.media_prev_next("previous"))
+        menu.add_command(label=("⏸ 暂停" if playing else "▶ 播放"),
+                         command=self.media_toggle_play)
+        menu.add_command(label="⏭ 下一首",
+                         command=lambda: self.media_prev_next("next"))
+        menu.add_command(label="动作抽屉…", command=self.show_pet_action_drawer)
+        menu.add_separator()
+        menu.add_command(label="桌宠设置…", command=self.show_pet_panel)
+        menu.add_command(label="完整设置…",
+                         command=lambda: self.action_settings("general"))
+        menu.add_separator()
+        menu.add_command(label="隐藏桌宠", command=self.hide_pet_from_menu)
+        menu.add_command(label="退出 winmon1.0", command=self.quit_app)
+        self._pet_menu = menu
         try:
             menu.tk_popup(int(x), int(y))
         finally:
