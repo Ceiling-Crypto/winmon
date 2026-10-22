@@ -4153,6 +4153,8 @@ WM_CLOSE, WM_DESTROY = 0x0010, 0x0002
 IDM_TRAY_SHOW, IDM_TRAY_EXIT = 40001, 40002
 #: 托盘菜单里的「设置…」（AI 用量和使用说明都在设置里）
 IDM_TRAY_SETTINGS = 40003
+#: 托盘菜单里的「显示 / 隐藏桌宠」（桌宠被隐藏后还能从这里叫回来）
+IDM_TRAY_PET = 40004
 
 #: 窗口过程的原型（x64 上 LRESULT/WPARAM/LPARAM 都是 64 位；回调里拿到的是**无符号**值，
 #: 所以别把它原样再传给需要**有符号**参数的 API —— 会 OverflowError）
@@ -4242,6 +4244,7 @@ class TrayMessageWindow:
         try:
             hmenu = user32.CreatePopupMenu()
             user32.AppendMenuW(hmenu, 0x0000, IDM_TRAY_SHOW, "显示 winmon1.0")
+            user32.AppendMenuW(hmenu, 0x0000, IDM_TRAY_PET, "显示 / 隐藏桌宠")
             user32.AppendMenuW(hmenu, 0x0000, IDM_TRAY_SETTINGS, "设置…")
             user32.AppendMenuW(hmenu, 0x0800, 0, None)          # MF_SEPARATOR
             user32.AppendMenuW(hmenu, 0x0000, IDM_TRAY_EXIT, "退出")
