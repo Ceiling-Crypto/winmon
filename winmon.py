@@ -9602,6 +9602,15 @@ class _AboutPanel:
             "When reporting a bug, include the version, Windows version and "
             "steps to reproduce. For issues with an AI service itself, "
             "contact that provider."))
+        tk.Frame(card, bg=UI_LINE, height=1).pack(
+            fill="x", padx=14, pady=(2, 8))
+        self._para(card, i18n.pick(
+            "WinMon 还停在 1.0，欢迎志同道合的朋友一起把它做得更好；"
+            "不一定要会写代码，可以从 Issues 或邮箱开始。",
+            "WinMon is still 1.0. Like-minded friends are welcome to help "
+            "make it better — you don't have to write code; start with an "
+            "Issue or email."),
+            fg=UI_MUTED, pady=(0, 10))
 
     def _build_privacy(self, wrap) -> None:
         self._section(wrap, i18n.pick("隐私", "Privacy"))

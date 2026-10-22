@@ -113,6 +113,8 @@ class TestEdgeSettings(unittest.TestCase):
         self.assertIn("3688068026@qq.com", joined)
         self.assertIn("非商业", joined)
         self.assertIn("DeepSeek", joined)
+        self.assertIn("志同道合", joined)
+        self.assertIn("不一定要会写代码", joined)
         self.assertEqual(dlg.about.links["dsh_pet"],
                          "https://github.com/PC2005-cloud/dsh-pet")
         self.assertEqual(dlg.about.links["issues"],
