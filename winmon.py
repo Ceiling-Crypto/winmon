@@ -4800,9 +4800,9 @@ class ProgramCatalogPane:
         # 第二行：类别多选筛选 + 两个开关
         cats = ttk.Frame(self.frame)
         cats.grid(row=1, column=0, sticky="ew", padx=6, pady=(0, 2))
-        # 用按钮而不是 Combobox：Combobox 只能单选，而"同时看游戏和影音"很常见
-        self.btn_cats = ttk.Button(cats, text="类别：全部", width=16,
-                                   command=self.choose_categories)
+        #: 抽屉默认单选；要同时看「游戏娱乐 + 影音播放」走底部的「多选…」。
+        self.btn_cats = ttk.Button(cats, text="类别：全部  ▾", width=18,
+                                   command=self._open_category_drawer)
         self.btn_cats.pack(side="left", padx=(0, 6))
         self.only_favorites = tk.BooleanVar(value=False)
         ttk.Checkbutton(cats, text="只看收藏", variable=self.only_favorites,
@@ -5103,6 +5103,55 @@ class ProgramCatalogPane:
         head = "、".join(names[:2])
         return f"类别：{head} 等 {n} 类"
 
+    def _set_categories(self, picked) -> None:
+        """统一落点：写筛选集合、刷新列表、保存、更新按钮摘要。"""
+        self.selected_categories = set(picked or ())
+        self.btn_cats.configure(text=self._category_label() + "  ▾")
+        self.apply_filter()
+        self.app._save_settings_soon()
+        self.app._set_status(
+            "类别筛选：" + ("全部" if not self.selected_categories else
+                            "、".join(core.CATEGORY_LABELS[k] for k in
+                                      sorted(self.selected_categories,
+                                             key=core.CATEGORY_ORDER.index))))
+
+    def _category_menu(self) -> "PopupMenu":
+        """类别抽屉的内容（单选；保留「多选…」入口给同时看两类的人）。"""
+        menu = PopupMenu(self.btn_cats, font=UI_FONT)
+        none = not self.selected_categories
+        menu.add_command(
+            label=("✓ " if none else "　 ") + "全部",
+            command=lambda: self._set_categories(set()))
+        for key in core.CATEGORY_ORDER:
+            chosen = key in self.selected_categories
+            menu.add_command(
+                label=("✓ " if chosen else "　 ") + core.CATEGORY_LABELS[key],
+                command=lambda k=key: self._set_categories({k}))
+        menu.add_separator()
+        menu.add_command(
+            label="多选…",
+            command=lambda: self.app.root.after(10, self.choose_categories))
+        return menu
+
+    def _open_category_drawer(self) -> None:
+        """
+        点击「类别：…」从按钮下方展开抽屉。
+
+        菜单本身是 `PopupMenu`：全局 grab 下点外面/按 Esc 都会收起
+        （和标题栏右键的刷新菜单是同一套行为）。选一项立刻生效并关闭；
+        想同时看多个类别时用底部的「多选…」。
+        """
+        menu = self._category_menu()
+        try:
+            x = self.btn_cats.winfo_rootx()
+            y = self.btn_cats.winfo_rooty() + self.btn_cats.winfo_height() + 2
+            menu.tk_popup(x, y)
+        finally:
+            try:
+                menu.grab_release()
+            except Exception:
+                pass
+
     def choose_categories(self) -> None:
         """弹出多选面板挑类别（可同时选多个）。"""
         options = [(k, core.CATEGORY_LABELS[k]) for k in core.CATEGORY_ORDER]
@@ -5113,14 +5162,7 @@ class ProgramCatalogPane:
         picked = dlg.show()
         if picked is None:
             return
-        self.selected_categories = picked
-        self.btn_cats.configure(text=self._category_label())
-        self.apply_filter()
-        self.app._save_settings_soon()
-        self.app._set_status(
-            "类别筛选：" + ("全部" if not picked else
-                            "、".join(core.CATEGORY_LABELS[k] for k in
-                                      sorted(picked, key=core.CATEGORY_ORDER.index))))
+        self._set_categories(picked)
 
     def choose_recent(self) -> None:
         """弹出「最近使用」列表，选中一项可直接打开。"""
@@ -5206,7 +5248,7 @@ class ProgramCatalogPane:
             self.only_runnable.set(False)
         self.selected_categories = set()
         try:
-            self.btn_cats.configure(text=self._category_label())
+            self.btn_cats.configure(text=self._category_label() + "  ▾")
         except Exception:
             pass
         self.search_var.set(query or item.name)
@@ -6194,11 +6236,11 @@ class _SettingsWindow:
             toggle=variable, on_toggle=command,
             startup=startup, first=first)
 
-    def _combo(self, parent, variable, values, *, width: int = 18):
+    def _combo(self, parent, variable, values, *, width: int = 18, command=None):
         # 设置页统一用自绘胶囊下拉；值仍是普通 StringVar，保存逻辑不变。
         return CapsuleCombo(
             parent, variable, list(values), width=width, font=UI_FONT,
-            state="readonly", bg=UI_SURFACE,
+            state="readonly", bg=UI_SURFACE, command=command,
             height=max(30, int(round(30 * getattr(self, "_scale", 1.0)))))
 
     # ---- 左侧导航 ----------------------------------------------------
@@ -6537,23 +6579,43 @@ class _SettingsWindow:
         self.idle_snooze_choice = tk.StringVar(
             value=str(prefs.get("idle_snooze")
                       or core.idle_snooze_label(core.IDLE_SNOOZE_DEFAULT)))
+        #: 取消设置时要把运行态还原（下面三个值在切换时会立即生效）。
+        self._idle_before = (bool(self.idle_alert.get()),
+                             self.idle_choice.get(),
+                             self.idle_snooze_choice.get())
+        self._idle_dirty = False
         self._check_row(card, "闲置提醒", self.idle_alert,
                         desc=i18n.pick("只弹出候选清单，不会自动结束程序。",
-                                       "Shows a candidate list only; it never closes programs."))
+                                       "Shows a candidate list only; it never closes programs."),
+                        command=self._on_idle_settings_changed)
         self._row(card, "提醒阈值",
                   control=lambda row: self._combo(
                       row, self.idle_choice,
                       [label for label, _s in core.IDLE_CHECK_CHOICES],
-                      width=12))
+                      width=12, command=self._on_idle_settings_changed))
         self._row(card, "提醒间隔",
                   control=lambda row: self._combo(
                       row, self.idle_snooze_choice,
                       [label for label, _s in core.IDLE_SNOOZE_CHOICES],
-                      width=15))
+                      width=15, command=self._on_idle_settings_changed))
         self._row(card, "闲置提醒清单",
                   control=lambda row: ttk.Button(
                       row, text="打开清单", width=10,
                       command=self._open_idle_list))
+
+    def _on_idle_settings_changed(self, *_args) -> None:
+        """
+        闲置提醒开关/阈值/间隔一改就生效，不要求先点「保存」。
+
+        用户 2026-10-22 的原话：打开闲置提醒后点「打开清单」，必须直接能看，
+        不能因为“还没保存”而什么都不发生。这里只同步运行态，不写盘、不弹窗；
+        点设置里的「取消」会还原。
+        """
+        apply_live = getattr(self.app, "apply_idle_settings_live", None)
+        if callable(apply_live):
+            self._idle_dirty = True
+            apply_live(bool(self.idle_alert.get()),
+                       self.idle_choice.get(), self.idle_snooze_choice.get())
 
     def _build_startup_section(self, wrap, close_mode, tray_available,
                                start_minimized) -> None:
@@ -6800,6 +6862,14 @@ class _SettingsWindow:
             apply_opacity_to_windows(self._root, self._opacity_before)
         except Exception:
             pass
+        # 闲置提醒的开关/阈值也是即时生效的；取消同样要还原并停掉计时。
+        apply_live = getattr(self.app, "apply_idle_settings_live", None)
+        if (callable(apply_live) and getattr(self, "_idle_before", None)
+                and getattr(self, "_idle_dirty", False)):
+            try:
+                apply_live(*self._idle_before)
+            except Exception:
+                pass
         self._close_panels()
         try:
             self.top.destroy()
@@ -9524,24 +9594,35 @@ class _IdleDialog:
     """
 
     def __init__(self, parent: tk.Misc, rows: list[dict], threshold_label: str,
-                 auto_close: "tk.BooleanVar") -> None:
+                 auto_close: "tk.BooleanVar", enabled: bool = True) -> None:
         self.result: list[dict] | None = None
+        self.minimize_result = None
         self.auto_close_changed = False
         self._rows = list(rows)
+        self._enabled = bool(enabled)
         self._auto_close = auto_close
         self._before = bool(auto_close.get())
         self.top = tk.Toplevel(parent)
         top = self.top
-        top.title("闲置程序 — 开了很久但没人用")
+        if self._rows:
+            title = "闲置程序 — 开了很久但没人用"
+            head = f"这些程序连续 {threshold_label} 没有被使用，可以关掉省电"
+        elif self._enabled:
+            title = "闲置程序 — 正在计时"
+            head = f"已开启闲置提醒，正在计时：连续 {threshold_label} 没有被使用后会列在这里"
+        else:
+            title = "闲置程序 — 提醒未开启"
+            head = "闲置提醒当前关闭；在设置里打开后，WinMon 才开始计时"
+        top.title(title)
         top.configure(bg=UI_BG)
         top.attributes("-topmost", True)
         top.resizable(False, False)
 
         wrap = ttk.Frame(top, padding=18)
         wrap.pack(fill="both", expand=True)
-        tk.Label(wrap, text=f"这些程序连续 {threshold_label} 没有被使用，可以关掉省电",
-                 font=TITLE_FONT,
-                 bg=UI_BG, fg=UI_INK, anchor="w").pack(anchor="w")
+        tk.Label(wrap, text=head, font=TITLE_FONT,
+                 bg=UI_BG, fg=UI_INK, anchor="w",
+                 justify="left", wraplength=620).pack(anchor="w")
         tk.Label(wrap, text="判定依据：窗口不在前台、CPU 几乎为 0。\n"
                             "只会「优雅关闭」（等同于点它的关闭按钮）——有未保存的内容时"
                             "程序会自己问你要不要保存；\n它没退出也不会替你强杀。",
@@ -9551,6 +9632,13 @@ class _IdleDialog:
         body = tk.Frame(wrap, bg=UI_BG)
         body.pack(fill="both", expand=True)
         self.vars: dict[int, tk.BooleanVar] = {}
+        if not self._rows:
+            hint = ("开启后从零开始计时；达到阈值前，这里会保持为空。"
+                    if self._enabled else
+                    "先到「设置 → 主界面内容」打开「闲置提醒」；不需要额外动作。")
+            tk.Label(body, text=hint, font=UI_FONT, bg=UI_BG,
+                     fg=UI_MUTED, anchor="w", justify="left",
+                     wraplength=560).pack(anchor="w", pady=(2, 6))
         for row in self._rows:
             pid = int(row["pid"])
             var = tk.BooleanVar(value=True)          # 默认全勾：用户是奔着"收拾"来的
@@ -9569,20 +9657,28 @@ class _IdleDialog:
                      anchor="w", justify="left").pack(anchor="w", fill="x", pady=(0, 6))
 
         self._auto_var = tk.BooleanVar(value=self._before)
-        ttk.Checkbutton(wrap, text="以后到点自动关闭（不再询问）——只优雅关闭，不强杀",
-                        variable=self._auto_var).pack(
-            anchor="w", pady=(4, 0))
+        auto_btn = ttk.Checkbutton(
+            wrap, text="以后到点自动关闭（不再询问）——只优雅关闭，不强杀",
+            variable=self._auto_var)
+        auto_btn.pack(anchor="w", pady=(4, 0))
+        if not self._enabled:
+            auto_btn.configure(state="disabled")
 
         btns = ttk.Frame(wrap)
         btns.pack(fill="x", pady=(10, 0))
-        ttk.Button(btns, text="关闭选中的 (Enter)", width=18,
-                   command=self._ok).pack(side="right")
+        self.btn_close = ttk.Button(btns, text="关闭选中的 (Enter)", width=18,
+                                    command=self._ok)
+        self.btn_close.pack(side="right")
         # **一键最小化**（B.2）：不想关掉、只想先把桌面收干净时用这个。
         # 它比"关闭"温和得多：只是把窗口收起来，程序还在跑、随时能还原。
-        ttk.Button(btns, text="最小化选中的", width=14,
-                   command=self._minimize).pack(side="right", padx=(0, 8))
+        self.btn_minimize = ttk.Button(btns, text="最小化选中的", width=14,
+                                       command=self._minimize)
+        self.btn_minimize.pack(side="right", padx=(0, 8))
         ttk.Button(btns, text="稍后再说 (Esc)", width=14,
                    command=self._cancel).pack(side="right", padx=(0, 8))
+        if not self._rows:
+            for btn in (self.btn_close, self.btn_minimize):
+                btn.configure(state="disabled")
         top.bind("<Return>", lambda e: self._ok())
         top.bind("<KP_Enter>", lambda e: self._ok())
         top.bind("<Escape>", lambda e: self._cancel())
@@ -10572,8 +10668,8 @@ class WinMonApp:
 
         # ---- 右键菜单 ----
         self.menu = PopupMenu(self.root, font=UI_FONT)
-        #: 用户 2026-10-21：主界面不再有「刷新列表」按钮，改为右键窗口列表刷新。
-        self.menu.add_command(label="刷新列表", command=self.refresh_all)
+        #: 「刷新列表」只留给窗口列表**标题 / 空白处**（`_show_window_header_menu`）。
+        #: 程序行右键必须是窗口动作，不能再让刷新项占住第一行、看起来像被覆盖。
         self.menu.add_command(label="显示实时画面", command=self.action_show_preview)
         self.menu.add_command(label="加入实时总览", command=self.gallery_add_selected)
         self.menu.add_separator()
@@ -11880,7 +11976,8 @@ class WinMonApp:
                 if old in [core.CATEGORY_LABELS[k] for k in core.CATEGORY_ORDER]:
                     self.catalog.selected_categories = {
                         k for k, v in core.CATEGORY_LABELS.items() if v == old}
-            self.catalog.btn_cats.configure(text=self.catalog._category_label())
+            self.catalog.btn_cats.configure(
+                text=self.catalog._category_label() + "  ▾")
             self.catalog.only_favorites.set(bool(data.get("catalog_only_favorites", False)))
             self.catalog.only_recent.set(bool(data.get("catalog_only_recent", False)))
         except Exception as exc:
@@ -13898,6 +13995,27 @@ class WinMonApp:
     # 所以这里做成**两步**：到点先在状态栏提示 + 弹「闲置清单」让你勾选；
     # 只有你显式打开「自动关闭」开关，它才会自己动手（而且只优雅关闭，绝不强杀）。
 
+    def apply_idle_settings_live(self, enabled, threshold_label: str,
+                                 snooze_label: str) -> None:
+        """
+        设置窗口里的闲置项**即时生效**：只同步运行态，不写盘、不弹窗。
+
+        为什么单独拆出来：设置页的开关/阈值以前要等「保存」才落到主界面，
+        用户打开开关后马上点「打开清单」，主界面还以为功能没开。这里让开关、
+        阈值、间隔立刻参与计时；点「取消」时设置窗口会再调一次本方法还原。
+        """
+        self.idle_alert.set(bool(enabled))
+        self.idle_choice.set(str(threshold_label))
+        self.idle_snooze_choice.set(str(snooze_label))
+        self.idle_watch.reset()
+        self._idle_ticks = 0
+        try:
+            self.idle_watch.set_threshold(_idle_seconds_of(threshold_label))
+            self.idle_watch.set_snooze(
+                core.idle_snooze_seconds_of(snooze_label))
+        except Exception:
+            pass
+
     def _on_idle_toggle(self) -> None:
         """勾选框变化：开启时从零开始计时，关闭时把计时清零。"""
         self.idle_watch.reset()
@@ -13999,20 +14117,21 @@ class WinMonApp:
         threading.Thread(target=worker, daemon=True, name="WinMon-Idle").start()
 
     def action_idle_dialog(self) -> None:
-        """打开「闲置程序」清单（也可从右键菜单 / 「闲置清单」按钮进来）。"""
+        """
+        打开「闲置程序」清单（设置里的「打开清单」按钮 / 自动提醒都走这里）。
+
+        没有达到阈值的程序时**也打开**：窗口里明确写“正在计时 / 提醒未开启”，
+        这样按钮永远有反馈，不会看起来像坏了。自动提醒路径仍然只在
+        `candidates()` 非空时调用本方法（见 `_check_idle`）。
+        """
         rows = self.idle_watch.candidates()
-        if not rows:
-            self._set_status(
-                "现在没有闲置到阈值的程序"
-                if self.idle_alert.get() else
-                "请先勾选「闲置超时提醒」（默认关闭，本工具不会自己动手）")
-            return
         if self._idle_dialog_open:
             return
         self._idle_dialog_open = True
         try:
             dlg = _IdleDialog(self.root, rows, self.idle_choice.get(),
-                              auto_close=self.idle_auto_close)
+                              auto_close=self.idle_auto_close,
+                              enabled=bool(self.idle_alert.get()))
             chosen = dlg.show()
         finally:
             self._idle_dialog_open = False
@@ -14030,6 +14149,9 @@ class WinMonApp:
                             msg if not failed else f"{msg}｜失败：{'；'.join(failed[:3])}")
             return
         if chosen is None:
+            if not rows:
+                self._set_status("闲置清单已关闭；计时仍在后台继续")
+                return
             # 「稍后再说」：把这些程序的闲置时长清零，它们会重新计时、重新提醒
             self.idle_watch.reset([r["pid"] for r in rows])
             self._set_status("已稍后再提醒（计时已重新开始）")
@@ -15765,7 +15887,8 @@ class WinMonApp:
                 self.catalog.selected_categories = set(cat_state[0])
                 self.catalog.only_favorites.set(cat_state[1])
                 self.catalog.only_recent.set(cat_state[2])
-                self.catalog.btn_cats.configure(text=self.catalog._category_label())
+                self.catalog.btn_cats.configure(
+                    text=self.catalog._category_label() + "  ▾")
             except Exception:
                 pass
         for hwnd, title in gallery_state:

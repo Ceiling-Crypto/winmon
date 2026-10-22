@@ -15,6 +15,8 @@ import os
 import sys
 import tempfile
 import unittest
+from types import SimpleNamespace
+from unittest import mock
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
@@ -89,8 +91,17 @@ class TestMainWindowRefinement(unittest.TestCase):
         self.root.update()
         self.assertEqual(bar.winfo_manager(), "")
 
-    def test_right_click_menu_has_refresh(self):
-        self.assertEqual(self.app.menu.entrycget(0, "label"), "刷新列表")
+    def test_row_menu_is_window_actions_and_blank_still_refreshes(self):
+        """刷新只属于标题/空白处；程序行右键不能再被刷新项占住第一行。"""
+        labels = [self.app.menu.entrycget(i, "label")
+                  for i in range((self.app.menu.index("end") or 0) + 1)]
+        self.assertNotIn("刷新列表", labels)
+        self.assertIn("显示实时画面", labels)
+        self.assertIn("强制结束整树", labels)
+        with mock.patch.object(self.app, "_show_window_header_menu") as header:
+            self.app._on_right_click(
+                SimpleNamespace(y=100000, x_root=0, y_root=0))
+            header.assert_called_once()
 
     def test_preview_and_overview_have_distinct_glyphs(self):
         self.assertTrue(self.app.tab_strip._display_label(0).startswith("▷"))

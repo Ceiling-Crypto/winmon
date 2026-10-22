@@ -3,7 +3,7 @@
 > 用途：在新的对话里快速恢复上下文。读这一份即可继续开发。
 > **正式发布名 `winmon1.0`**（`APP_VER = "1.0"`，查版本：`py winmon.py --version`）。
 > **先读 §一点五「WinMon 的定位与能力边界」** —— 输入注入已明确不再投入。
-> 代码状态：**1048 个测试用例全绿**（约 110–120 秒；`--fast` 991 条约 52–56 秒；
+> 代码状态：**1056 个测试用例全绿**（约 110–120 秒；`--fast` 999 条约 52–56 秒；
 > 跳过数按当前桌面/媒体环境在 3–7 之间变化）+
 > 代码复检 0 新增问题（基线为空）、
 > 自检 8/8、界面冒烟通过、
@@ -22,10 +22,10 @@
 
 | | |
 | --- | --- |
-| 测试 | **1048 用例全绿**（`py tests\run_tests.py`，约 110–120 秒；跳过数按环境 3–7）；`--fast` 991 条约 52–56 秒 |
+| 测试 | **1056 用例全绿**（`py tests\run_tests.py`，约 110–120 秒；跳过数按环境 3–7）；`--fast` 999 条约 52–56 秒 |
 | 代码复检 | `py tests\lint_check.py` → **新增问题 0**（基线已清空，见 §四） |
 | 自检 / 冒烟 | `py winmon.py --selftest` 8/8 通过；`--smoke` 通过 |
-| 规模 | `winmon_core.py` ~6900 行 / `winmon.py` ~17100 行 / 测试 58 个 .py（44 个测试模块） |
+| 规模 | `winmon_core.py` ~6900 行 / `winmon.py` ~17200 行 / 测试 59 个 .py（45 个测试模块） |
 | 运行方式 | `py winmon.py`（GUI）或双击「winmon1.0」快捷方式；**单实例**：第二个实例会把已有窗口带到前台后自己退出 |
 | 窗口尺寸 | 设计稿 **1160×730**，开窗时**按 DPI 缩放**（本机 150% → 1740×1095；见 §9.15 第 14 条） |
 | 数据文件 | `winmon_settings.json`（界面偏好/收藏）、`winmon_history.log`（操作留痕）、`winmon_catalog.json`（程序目录缓存）、`winmon_media.jsonl`（媒体快照缓存，可删） |
@@ -107,7 +107,7 @@
 | `winmon_mcp.py` | ~800 | **MCP 服务器**：双时代 stdio + 本地 HTTP + 四个只读工具 |
 | `winmon_ai_provider.py` | ~250 | **可选**直连模型 API（默认关；精确 usage；key 只从环境变量读） |
 | `media_session.ps1` | ~230 | 系统媒体会话（GSMTC）桥接脚本（PowerShell + Windows 自带 WinRT 投影；**必须纯 ASCII 无 BOM**） |
-| `tests/` | 58 个 .py | **可重复运行的测试**（1048 用例，纯 unittest） + `_marks.py` 慢用例标记 + 开发辅助工具 + `lint_check.py` / `lint_baseline.txt` |
+| `tests/` | 59 个 .py | **可重复运行的测试**（1056 用例，纯 unittest） + `_marks.py` 慢用例标记 + 开发辅助工具 + `lint_check.py` / `lint_baseline.txt` |
 | `启动WinMon.bat` | — | 菜单式启动器（纯 ASCII，避免批处理编码问题） |
 | `scan_windows.py` | — | 命令行窗口清单 |
 | `close_others.py` | — | 批量关闭除当前窗口外的窗口 |
@@ -160,8 +160,8 @@ python winmon.py --videos --open 3 --watch --close-window   :: 完整视频链�
 python winmon.py --version          :: 打印版本（winmon1.0）
 python winmon.py --idle             :: 列出"长期开着、没人用"的程序（只看，不关任何东西）
 python winmon.py --idle --idle-minutes 5   :: 换个闲置阈值（分钟）
-py tests\run_tests.py               :: 全部测试（1048 用例，约 110 秒）
-py tests\run_tests.py --fast        :: 快跑（991 用例，约 52 秒；跳过真窗口/抓屏慢用例）
+py tests\run_tests.py               :: 全部测试（1056 用例，约 110 秒）
+py tests\run_tests.py --fast        :: 快跑（999 用例，约 52 秒；跳过真窗口/抓屏慢用例）
 ```
 
 ---
@@ -3280,6 +3280,51 @@ AI 深蓝卡可见；深色接入窗展开后目视无浅色卡残留。
   `--smoke` 退出 0，白底截图已目视确认。
 - 跳过数会随桌面是否有 Edge / 媒体会话变化。
 
+### 9.38 阶段 8.28：闲置即时生效、右键菜单归位、类别抽屉（2026-10-22）
+
+用户这一轮 4 条：闲置提醒打开后直接响应、闲置清单按钮打不开、程序行右键
+被空白处刷新菜单覆盖、程序目录类别改为抽屉且菜单外可关。
+
+1. **闲置提醒即时生效**：
+   - 设置页的 `idle_alert / idle_choice / idle_snooze_choice` 原来只写进
+     `_SettingsWindow` 自己的变量，主界面的 `app.idle_alert` 要等 Save 才变；
+     用户打开开关马上点「打开清单」，主界面仍认为功能关闭。
+   - 新增 `WinMonApp.apply_idle_settings_live(enabled, threshold, snooze)`：
+     只同步运行态、重置计时、设置阈值/间隔，不写盘、不弹窗、不发状态。
+   - 开关 + 两个下拉都接 `_on_idle_settings_changed` 调它；
+     `_SettingsWindow._cancel` 用 `_idle_before` 还原，避免“取消后还在计时”。
+2. **「打开清单」永远打开窗口**：
+   - `action_idle_dialog` 去掉“无候选就 return”。现在没有达到阈值的程序也
+     打开 `_IdleDialog`，写清“正在计时：连续 X 没有被使用后会列在这里”
+     （提醒未开启时写“提醒未开启”），不再只在状态栏飘一句。
+   - 空清单里关闭/最小化按钮置灰；自动关闭开关只在提醒未开启时禁用。
+3. **程序行右键归位**：
+   - 8.20 把「刷新列表」加进整个 `self.menu`，程序行右键也看到了它，且它
+     占据第一项；用户描述为“右键程序出现的菜单被覆盖”。
+   - 从 `self.menu` 删除「刷新列表」，只保留在 `window_header` 和列表空白处
+     的 `_show_window_header_menu`（原生 tk.Menu，点外面自然关闭）。
+   - 程序行右键重新是：显示画面 / 加入总览 / 切到前台 / 最小化还原 /
+     批量最小化 / 批量还原 / 关闭 / 强制结束 / 结束整树 / 打开位置 / 复制…
+4. **程序目录类别抽屉**：
+   - `btn_cats` 的 command 从 `choose_categories` 改为 `_open_category_drawer`；
+     按钮文字带 `▾`，在按钮下方用 `PopupMenu` 展开：
+     `✓ 全部 / 游戏娱乐 / 影音播放 / … / 多选…`。
+   - 单选立即 `_set_categories({key})`：更新按钮摘要、`apply_filter`、保存；
+     `全部` 清空 = 不筛选。
+   - 底部「多选…」保留原 `_MultiSelectDialog`（同时看两类），
+     用 `after(10, …)` 等抽屉关闭后再开，避免两个模态抢 grab。
+   - `PopupMenu` 本身有全局 grab + `_on_toplevel_click`，点抽屉外/按 Esc 收起；
+     新增测试直接用它验证“菜单外点击会 `_closing`”。
+5. **测试**：
+   - `test_b41` 改为：程序行菜单没有刷新、空白处仍触发刷新；
+   - 新增 `test_b45`（8 条）：空清单仍打开、空态标题/按钮禁用、设置即时
+     生效、取消还原、清单按钮到达主界面、类别抽屉内容/单选/外点关闭；
+   - 全量 **1056 用例**，失败 0 / 错误 0，跳过 7，**106.664 秒**；
+     `--fast` **999 条**，失败 0 / 错误 0，跳过 6，**50.825 秒**；
+     lint 新增 0；`--selftest` 8/8；`--mcp-selftest` 13/13；`--smoke` 0。
+6. **截图**：`docs/ui-8.28-catalog-category.png`、
+   `docs/ui-8.28-idle-empty.png`。
+
 ### 9.37 阶段 8.27：搜索点得开、下拉点外收起、AI 设置可滚、启动提速（2026-10-22）
 
 用户这一轮 4 条：右上角搜索点不开、接入 AI 的「更多设置」不能滚、
@@ -4297,7 +4342,7 @@ README 的界面颜色一节也加了同样说明。
 ## 四、测试体系（**改代码后先跑这个**）
 
 ```bat
-py tests\run_tests.py            :: 1048 用例，约 110 秒（--fast 991 条约 52 秒）
+py tests\run_tests.py            :: 1056 用例，约 110 秒（--fast 999 条约 52 秒）
 py tests\run_tests.py -v         :: 逐个看
 py tests\run_tests.py -k capture :: 只跑关心的
 py tests\lint_check.py           :: 代码复检（退出码 1 = 有新增问题）
@@ -4981,8 +5026,8 @@ C 盘那份**保持原样、一字未改**（用户 2026-10-11 确认：暂不�
 
 > 继续开发 **winmon1.0** —— Windows 程序监控与终止工具，纯标准库，在 `项目根目录\`。
 > 请先读 `HANDOFF.md` 和 `README.md`，然后跑 `py tests\run_tests.py`
-> 确认基线是 **1048 用例全绿**（需要哔哩哔哩/UIA 页面的用例会按需 skip；
-> 日常改动用 `--fast` 跑 991 条，提交前跑全量）、
+> 确认基线是 **1056 用例全绿**（需要哔哩哔哩/UIA 页面的用例会按需 skip；
+> 日常改动用 `--fast` 跑 999 条，提交前跑全量）、
 > `py tests\lint_check.py` 退出码 0（无新增问题）。
 > **版式要另眼验收**：测试进程没有开 DPI 感知，布局检查看不到"真实 DPI 下控件被挤没"，
 > 所以改动界面后还要跑一次 `py winmon.py --smoke` 看截图（见 §9.15 第 14 条）。
