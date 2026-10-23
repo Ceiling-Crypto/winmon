@@ -200,7 +200,7 @@ class TestMainWindowLayout(unittest.TestCase):
         pane = self.app.preview
         pane.set_title("WinMon 1.0 继续开发 — 一个很长很长的窗口标题")
         pane.set_meta("DeepSeek Harness.exe · PID 12396 · 1941×1243 · 运行中 · "
-                      "C:\\Users\\ceiling\\AppData\\Local\\Programs\\DeepSeek Harness.exe")
+                      r"C:\Users\example\AppData\Local\Programs\DeepSeek Harness.exe")
         pane.set_stats("实时 · 10 FPS · 后台省电")
         self.root.update()
         right_edge = pane.frame.winfo_rootx() + pane.frame.winfo_width()
