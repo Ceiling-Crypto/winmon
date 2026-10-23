@@ -1123,6 +1123,43 @@ def format_usage_text(status: dict) -> str:
     return "\n".join(lines)
 
 
+#: 「最近调用过 MCP」的时间窗。超过它就不再提这件事，只当历史。
+MCP_FRESH_SECONDS = 900
+
+
+def classify_mcp(last_mcp: dict | None, live: dict | None,
+                 now: float | None = None) -> dict:
+    """
+    判断 MCP 接入到底是「现在在线」「最近调用过」还是「没有」。
+
+    为什么不能只看时间戳（2026-10-24 用户实测提出）：客户端删掉配置重启后，
+    服务器进程已经没了，但「最后一次调用」还留在用量文件里；只看 15 分钟窗口
+    会让界面一直显示「已接入 · MCP」，而事实是已经断开。所以真实的判据是
+    **服务器进程还活着**（`live` 来自 winmon_mcp 写的存活登记，pid 存活才算），
+    时间戳只用来解释「上次是哪会儿」。
+
+    返回：
+      · state   live / stale / none
+      · client  客户端名（在线登记优先，其次历史记录）
+      · ts      最后一次调用的时间串（可能为空）
+      · age     距最后一次调用多少秒（没有记录就是一个很大的数）
+    """
+    now = time.time() if now is None else float(now)
+    last = last_mcp or {}
+    live = live or {}
+    try:
+        age = now - float(last.get("t", 0) or 0)
+    except (TypeError, ValueError):
+        age = 10 ** 9
+    client = str(live.get("client") or last.get("client") or "")
+    ts = str(last.get("ts") or "")
+    if live.get("pid"):
+        return {"state": "live", "client": client, "ts": ts, "age": age}
+    if last and age <= MCP_FRESH_SECONDS:
+        return {"state": "stale", "client": client, "ts": ts, "age": age}
+    return {"state": "none", "client": client, "ts": ts, "age": age}
+
+
 def format_ai_summary(primary: dict | None, status: dict | None,
                       provider_info: dict | None = None,
                       connection: dict | None = None,
@@ -1172,8 +1209,16 @@ def format_ai_summary(primary: dict | None, status: dict | None,
     status_kind = "local"
     if kind == "mcp":
         client = str(connection.get("client") or p("MCP 客户端", "MCP client"))[:18]
-        connection_text = p(f"已接入 · MCP（{client}）", f"Connected · MCP ({client})")
-        status_kind = "mcp"
+        if connection.get("stale"):
+            # 服务器进程已经没了：不能再说「已接入」，只能如实说「上次」。
+            stamp = str(connection.get("ts") or "")[11:16]
+            when = f" {stamp}" if stamp else ""
+            connection_text = p(f"未接入 · 上次 MCP（{client}{when}）",
+                                f"Not connected · last MCP ({client}{when})")
+            status_kind = "local"
+        else:
+            connection_text = p(f"已接入 · MCP（{client}）", f"Connected · MCP ({client})")
+            status_kind = "mcp"
     elif kind == "direct":
         ai_name = str(connection.get("ai") or "")
         details = []

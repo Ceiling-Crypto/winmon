@@ -9091,7 +9091,9 @@ _GUIDE_CONTENT = {
             ("p", "高亮的「AI」显示 WinMon 识别到的外部 AI；右边只写接入状态："
                   "`已接入 · MCP（客户端）`、`已接入 · API（AI）`，"
                   "或 `未接入 · 纯本地`。"),
-            ("p", "已接入 MCP：最近 15 分钟有桌面 AI 客户端真的调用过 WinMon 的只读工具。"),
+            ("p", "已接入 MCP：**现在**有一个 WinMon 的 MCP 服务器进程在跑（界面按 pid 判活）。"
+                  "客户端删掉配置或退出后，状态会变成「未接入 · 上次 MCP（时间）」，"
+                  "不会继续显示「已接入」。"),
             ("p", "已接入 API：当前 AI 的直连 key 可用；"
                   "只有「主动 AI」模式才真的会调用，平时仍可不花 token。"),
             ("p", "未接入纯本地：没有 MCP、也没有可用 API。WinMon 只做本地识别和界面操作，"
@@ -10253,9 +10255,16 @@ class _AiConnectWindow:
         except Exception:
             conn = {}
         kind = str(conn.get("kind") or "")
-        if kind == "mcp":
+        stale = bool(conn.get("stale"))
+        stamp = str(conn.get("ts") or "")[11:16]
+        if kind == "mcp" and not stale:
             text = i18n.pick(f"已接入 · MCP（{conn.get('client')}）",
                              f"Connected · MCP ({conn.get('client')})")
+        elif kind == "mcp":
+            # 进程没了就别再说「已接入」：只如实说上次是哪会儿。
+            when = f" {stamp}" if stamp else ""
+            text = i18n.pick(f"未接入 · 上次 MCP（{conn.get('client')}{when}）",
+                             f"Not connected · last MCP ({conn.get('client')}{when})")
         elif kind == "direct":
             label = str(conn.get("ai") or "API")
             text = i18n.pick(
@@ -10269,12 +10278,12 @@ class _AiConnectWindow:
         #: 状态色条：绿色=真接上了，蓝色=直连就绪，琥珀=还没接上。
         status_colors = UI_CARDS["connect"]
         mcp = UI_CARDS["mcp"]
-        if kind in ("mcp", "direct"):
+        if kind == "direct" or (kind == "mcp" and not stale):
             self.status_label.configure(fg=status_colors["ok_fg"])
         else:
             self.status_label.configure(fg=status_colors["warn_fg"])
         if hasattr(self, "mcp_state_text"):
-            if kind == "mcp":
+            if kind == "mcp" and not stale:
                 self.mcp_state_text.set(i18n.pick(
                     f"● 已接入：{conn.get('client')}",
                     f"● Connected: {conn.get('client')}"))
@@ -14212,19 +14221,31 @@ class WinMonApp:
         """
         "AI 到底有没有接上 WinMon"的唯一判据（界面必须直接写出来）。
 
-        优先级：最近 15 分钟有 MCP 调用（真实接入）> 当前 AI 直连 API 可用
-        > 未接入（纯本地）。没有“剪贴板接入”这个状态：主界面的「复制现场」
-        按钮已按用户要求删除，避免把一句说明误当成按键。
+        优先级：**MCP 服务器进程还活着**（在线）> 当前 AI 直连 API 可用
+        > 未接入（纯本地）。
+
+        为什么不能只看「最近 15 分钟有没有调用」（2026-10-24 用户实测提出）：
+        删掉客户端配置重启后，服务器进程已经没了，但用量文件里的时间戳还在，
+        界面就会一直显示「已接入 · MCP」，与事实不符。现在只有存活登记
+        （`winmon_mcp.live_marker()`，pid 活着才算）才叫「已接入」；
+        时间戳只用来解释「上次是哪会儿」，那叫 `stale`。
         """
         status = self._ai_status_snapshot()
         last = status.get("last_mcp") or {}
         try:
-            age = time.time() - float(last.get("t", 0) or 0)
-        except (TypeError, ValueError):
-            age = 10 ** 9
-        if last and age <= 900:
-            return {"kind": "mcp", "client": str(last.get("client") or "MCP 客户端"),
-                    "ts": str(last.get("ts") or ""), "calls": int(status.get("mcp_calls", 0) or 0)}
+            live = mcp.live_marker()
+        except Exception:
+            live = {}
+        state = ai.classify_mcp(last, live)
+        calls = int(status.get("mcp_calls", 0) or 0)
+        if state["state"] == "live":
+            return {"kind": "mcp", "live": True,
+                    "client": state["client"] or "MCP 客户端",
+                    "ts": state["ts"], "calls": calls}
+        if state["state"] == "stale":
+            return {"kind": "mcp", "stale": True,
+                    "client": state["client"] or "MCP 客户端",
+                    "ts": state["ts"], "calls": calls}
         cfg, name = self._ai_direct_target()
         if cfg is not None and not cfg.validate():
             manual = bool(str((getattr(self, "_ai_assist", {}) or {}).get(
@@ -14234,9 +14255,11 @@ class WinMonApp:
         return {"kind": "local", "ai": name}
 
     def _ai_recent_mcp_client(self) -> str:
-        """最近 15 分钟有没有 AI 客户端真的通过 MCP 调过 WinMon。"""
+        """现在**真的连着**的 MCP 客户端名；只有「上次接入」不算。"""
         conn = self._ai_connection_snapshot()
-        return str(conn.get("client") or "") if conn.get("kind") == "mcp" else ""
+        if conn.get("kind") != "mcp" or conn.get("stale"):
+            return ""
+        return str(conn.get("client") or "")
 
     def _ai_provider_snapshot(self, force: bool = False) -> dict:
         """当前 AI 的直连状态（不读 key 内容，只读"key 在不在"）。"""
@@ -14622,11 +14645,18 @@ class WinMonApp:
         today = int(status.get("provider_tokens", 0) or 0)
         if kind == "mcp":
             stamp = str(conn.get("ts") or "")[11:16]
-            line1 = (f"Connected · MCP: {conn.get('client')}" if en else
-                     f"接入：已接入 · MCP（{conn.get('client')}）")
-            if stamp:
-                line1 += (f" (last {stamp}, today {conn.get('calls', 0)} calls)" if en
-                          else f"（最近 {stamp}，今日 {conn.get('calls', 0)} 次）")
+            if conn.get("stale"):
+                # 进程已经没了：只说「上次」，不说「已接入」。
+                line1 = (f"Not connected · last MCP: {conn.get('client')}" if en else
+                         f"接入：未接入 · 上次 MCP（{conn.get('client')}）")
+                if stamp:
+                    line1 += (f" at {stamp}" if en else f" · {stamp}")
+            else:
+                line1 = (f"Connected · MCP: {conn.get('client')}" if en else
+                         f"接入：已接入 · MCP（{conn.get('client')}）")
+                if stamp:
+                    line1 += (f" (last {stamp}, today {conn.get('calls', 0)} calls)" if en
+                              else f"（最近 {stamp}，今日 {conn.get('calls', 0)} 次）")
         elif kind == "direct":
             direct_name = str(conn.get("ai") or "API")
             line1 = (f"Connected · API: {direct_name}" if en else
@@ -18140,11 +18170,16 @@ def ai_usage_cli(as_json: bool = False) -> int:
     cfg = provider.resolve_for_ai(name) if name else None
     last = status.get("last_mcp") or {}
     try:
-        fresh_mcp = (time.time() - float(last.get("t", 0) or 0)) <= 900
-    except (TypeError, ValueError):
-        fresh_mcp = False
-    if last and fresh_mcp:
-        connection = f"已接入 · MCP（{last.get('client') or 'MCP 客户端'}）"
+        live = mcp.live_marker()
+    except Exception:
+        live = {}
+    state = ai.classify_mcp(last, live)
+    if state["state"] == "live":
+        connection = f"已接入 · MCP（{state['client'] or 'MCP 客户端'}）"
+    elif state["state"] == "stale":
+        stamp = state["ts"][11:16]
+        connection = (f"未接入 · 上次 MCP（{state['client'] or 'MCP 客户端'}"
+                      + (f" {stamp}" if stamp else "") + "）")
     elif cfg is not None and not cfg.validate():
         connection = f"已接入 · API（{name or '当前对象'}）"
     else:

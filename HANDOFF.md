@@ -3282,6 +3282,39 @@ AI 深蓝卡可见；深色接入窗展开后目视无浅色卡残留。
   `--smoke` 退出 0，白底截图已目视确认。
 - 跳过数会随桌面是否有 Edge / 媒体会话变化。
 
+### 9.51 阶段 8.41：把「已接入」从时间戳改成进程存活（2026-10-24）
+
+**症状**：用户删掉客户端的 MCP 配置、重启客户端后，WinMon 仍显示「已接入 · MCP」。
+
+**根因**：
+- 原来的判据是「最近 15 分钟有 MCP 调用」（用量文件里的 `last_mcp.t`），
+  这其实是**历史**，不是**连接**。
+- MCP 服务器是客户端 `CreateProcess` 起来的子进程；配置一删、客户端一重启，
+  进程就没了，但那个时间戳还留着，于是界面继续自称已接入。
+
+**修法**：
+- `winmon_mcp`：服务器启动写 `winmon_mcp_live.json`（pid + 客户端名），
+  `finally` 里删掉；`live_marker()` 用 `OpenProcess` +
+  `WaitForSingleObject(handle, 0)` 判 pid 存活，死 pid 一律当没接入。
+  stdio 与 HTTP 两条路径都登记（多客户端时后写覆盖先写，只回答"有没有"）。
+- `winmon_ai.classify_mcp(last_mcp, live)`：live / stale / none 三态。
+- 渲染口径统一：只有 live 写「已接入 · MCP」；stale 写
+  「未接入 · 上次 MCP（03:11）」并把状态色改回琥珀；涉及接入窗口、
+  助手标题、主界面状态行（`format_ai_summary`）、`--ai-usage`。
+- `_ai_recent_mcp_client()` 对 stale 返回空——否则交接提示还会跟 AI 说
+  「已通过 MCP 接入，可以直接读 WinMon 工具」。
+
+**踩到的小坑**：
+- lint 的「可能死代码」只豁免**直接**继承 `unittest.TestCase` 的类，
+  测试用公共基类（`class X(_DataDirCase)`）会被误报；改成模块级
+  `use_temp_data_dir(case)` 函数即可。
+- 集成用例要真起 `--mcp-stdio` 才能验证「退出后登记消失」，
+  用 `WINMON_DATA_DIR` 指到临时目录，避免污染真实数据。
+
+**验收**：新增 `test_b51_mcp_liveness.py` 13 条；全量 **1130 用例**，
+失败 0 / 错误 0，跳过 7，**120.451 秒**；`lint_check` 新增 0；
+`--mcp-selftest` 13/13；`--selftest` 8/8。
+
 ### 9.50 阶段 8.40：MCP 接入片段按客户端生成（2026-10-24）
 
 **症状**：用户把 `mcpServers` 片段贴进 DSH 的 `cordis.patch.yml`，AI 客户端里

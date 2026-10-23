@@ -33,6 +33,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import winmon_ai as ai
 import winmon_ai_provider as provider
+import winmon_core as core
 
 MODERN_VERSION = "2026-07-28"
 #: 支持协商的版本。旧版取最后一个带 initialize 的修订。
@@ -548,6 +549,90 @@ class _StderrProxy:
         return getattr(self._stream, name)
 
 
+# ---- 存活登记：界面靠它判断「现在到底有没有 MCP 服务器在跑」 ----------------
+
+#: 服务器启动时写、退出时删。界面只看用量文件里的时间戳是不够的：
+#: 客户端删掉配置重启后进程已经没了，时间戳还留着（2026-10-24 用户实测）。
+LIVE_FILE = "winmon_mcp_live.json"
+
+
+def live_marker_path() -> str:
+    return os.path.join(core.data_dir(), LIVE_FILE)
+
+
+def _pid_alive(pid: int) -> bool:
+    """`pid` 还活着吗？（Windows 用 OpenProcess + WaitForSingleObject(0)）"""
+    if pid <= 0:
+        return False
+    if os.name != "nt":
+        try:
+            os.kill(pid, 0)
+            return True
+        except OSError:
+            return False
+    try:
+        import ctypes
+
+        k32 = ctypes.windll.kernel32
+        # SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION
+        handle = k32.OpenProcess(0x00100000 | 0x1000, False, int(pid))
+        if not handle:
+            return False
+        try:
+            return k32.WaitForSingleObject(handle, 0) == 0x102      # WAIT_TIMEOUT
+        finally:
+            k32.CloseHandle(handle)
+    except Exception:
+        return False
+
+
+def write_live_marker(client: str = "") -> None:
+    """
+    登记「有一个 MCP 服务器正在跑」。
+
+    为什么需要它：客户端删掉配置或退出后，服务器进程就没了，但用量文件里
+    还留着「最后一次调用」的时间戳；只看那个时间戳，界面会一直显示
+    「已接入 · MCP」，与事实不符。pid 存活才是硬证据。
+    多个客户端同时接入时后写覆盖先写——这里只需要回答"有没有"，不追求精确。
+    """
+    try:
+        core.ensure_data_dir()
+        path = live_marker_path()
+        tmp = path + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump({"pid": os.getpid(), "t": time.time(),
+                       "client": str(client or "")}, fh, ensure_ascii=False)
+        os.replace(tmp, path)
+    except Exception:
+        pass
+
+
+def clear_live_marker() -> None:
+    try:
+        os.remove(live_marker_path())
+    except OSError:
+        pass
+
+
+def live_marker() -> dict:
+    """返回**仍然活着**的那份登记；pid 已经不在，就当没接入。"""
+    try:
+        with open(live_marker_path(), encoding="utf-8") as fh:
+            data = json.load(fh)
+    except Exception:
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    try:
+        pid = int(data.get("pid") or 0)
+    except (TypeError, ValueError):
+        return {}
+    if not _pid_alive(pid):
+        return {}
+    data["pid"] = pid
+    return data
+
+
 def stdio_main() -> int:
     """
     stdio 服务器主循环：读一行 → 处理 → 写一行；EOF 正常退出。
@@ -565,35 +650,42 @@ def stdio_main() -> int:
         return 2
     # 预算与客户端归因：整个连接共用一份（stdio 的生命周期就是一个客户端）
     state: dict = {"budget": ai.Budget()}
+    client_name = ""
     try:
         client = ai.detect_connected_client()
         if client:
-            state["client_label"] = client.get("name") or client.get("exe") or ""
+            client_name = client.get("name") or client.get("exe") or ""
+            state["client_label"] = client_name
     except Exception:
         pass
-    while True:
-        raw = stdin.readline()
-        if not raw:
-            return 0                               # EOF：按规范尽快退出
-        try:
-            line = raw.decode("utf-8", "replace").strip()
-        except Exception:
-            continue
-        if not line:
-            continue
-        if debug:
+    #: 登记存活，供界面判断「现在真的连着」。退出/EOF 时在 finally 里删掉。
+    write_live_marker(client_name)
+    try:
+        while True:
+            raw = stdin.readline()
+            if not raw:
+                return 0                           # EOF：按规范尽快退出
             try:
-                real_stderr.write("[winmon-mcp] << " + line[:2000] + "\n")
-                real_stderr.flush()
+                line = raw.decode("utf-8", "replace").strip()
             except Exception:
-                pass
-        reply = handle_line(line, state)
-        if reply:
-            try:
-                out.write(reply.encode("ascii") + b"\n")
-                out.flush()
-            except Exception:
-                return 1
+                continue
+            if not line:
+                continue
+            if debug:
+                try:
+                    real_stderr.write("[winmon-mcp] << " + line[:2000] + "\n")
+                    real_stderr.flush()
+                except Exception:
+                    pass
+            reply = handle_line(line, state)
+            if reply:
+                try:
+                    out.write(reply.encode("ascii") + b"\n")
+                    out.flush()
+                except Exception:
+                    return 1
+    finally:
+        clear_live_marker()
 
 
 # ============================================================================
@@ -718,16 +810,19 @@ def http_main(port: int = 8765, expire_minutes: int = 0) -> int:
     origins = os.environ.get("WINMON_MCP_ORIGINS", "")
     allowed = [o.strip() for o in origins.split(",") if o.strip()] or list(DEFAULT_HTTP_ORIGINS)
     state: dict = {"budget": ai.Budget()}
+    client_name = ""
     try:
         client = ai.detect_connected_client()
         if client:
-            state["client_label"] = client.get("name") or client.get("exe") or ""
+            client_name = client.get("name") or client.get("exe") or ""
+            state["client_label"] = client_name
     except Exception:
         pass
     server, token = make_http_server(
         "127.0.0.1", port, os.environ.get("WINMON_MCP_TOKEN", "").strip(),
         allowed, state,
         expire_minutes=expire_minutes)
+    write_live_marker(client_name)
     real = server.server_address
     try:
         sys.stderr.write(
@@ -744,6 +839,7 @@ def http_main(port: int = 8765, expire_minutes: int = 0) -> int:
         pass
     finally:
         server.server_close()
+        clear_live_marker()
     return 0
 
 
