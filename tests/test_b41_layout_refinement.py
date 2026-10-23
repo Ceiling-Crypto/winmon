@@ -103,6 +103,23 @@ class TestMainWindowRefinement(unittest.TestCase):
                 SimpleNamespace(y=100000, x_root=0, y_root=0))
             header.assert_called_once()
 
+    def test_row_menu_rebuilds_on_each_right_click(self):
+        """PopupMenu 一次性；第二次右键必须拿到新对象，不能直接 return。"""
+        app = self.app
+        with mock.patch.object(app.tree, "identify_row", return_value="row1"), \
+                mock.patch.object(app.tree, "selection_set"), \
+                mock.patch.object(app, "_on_select"), \
+                mock.patch.object(self.winmon.PopupMenu, "tk_popup",
+                                  lambda *a, **k: None):
+            first = app.menu
+            app._on_right_click(
+                SimpleNamespace(y=10, x_root=0, y_root=0))
+            second = app.menu
+            self.assertIsNot(first, second)
+            app._on_right_click(
+                SimpleNamespace(y=10, x_root=0, y_root=0))
+            self.assertIsNot(second, app.menu)
+
     def test_preview_and_overview_have_distinct_glyphs(self):
         self.assertTrue(self.app.tab_strip._display_label(0).startswith("▷"))
         self.assertTrue(self.app.tab_strip._display_label(1).startswith("▦"))

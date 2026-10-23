@@ -11741,34 +11741,52 @@ class WinMonApp:
         self.history_hint = tk.StringVar(value="")
 
         # ---- 右键菜单 ----
-        self.menu = PopupMenu(self.root, font=UI_FONT)
+        #: `PopupMenu` 是一次性对象（关闭后 `_closing=True`），不能缓存复用；
+        #: 每次右键在 `_on_right_click()` 里重建。这里先建一份，供测试/首帧使用。
+        self._build_window_menu()
+
+    def _build_window_menu(self) -> None:
+        """重建运行中窗口列表的右键菜单（每次都能弹，不重复 8.36 的坑）。"""
+        old = getattr(self, "menu", None)
+        if old is not None:
+            try:
+                old.destroy()
+            except Exception:
+                pass
+        menu = PopupMenu(self.root, font=UI_FONT)
         #: 「刷新列表」只留给窗口列表**标题 / 空白处**（`_show_window_header_menu`）。
         #: 程序行右键必须是窗口动作，不能再让刷新项占住第一行、看起来像被覆盖。
-        self.menu.add_command(label="显示实时画面", command=self.action_show_preview)
-        self.menu.add_command(label="加入实时总览", command=self.gallery_add_selected)
-        self.menu.add_separator()
+        menu.add_command(label="显示实时画面", command=self.action_show_preview)
+        menu.add_command(label="加入实时总览", command=self.gallery_add_selected)
+        menu.add_separator()
         #: 手势表（用户 2026-10-11 定）：单击只选中；双击最小化/还原；
         #: Enter / 中键 / 菜单切到最前。菜单里逐条写清楚，免得只能靠猜。
-        self.menu.add_command(label="切换到前台（Enter / 中键 / 双击预览区）",
-                              command=self.action_bring_front)
-        self.menu.add_command(label="最小化 / 还原（双击列表 或 M 键）",
-                              command=self.action_toggle_selected)
-        self.menu.add_command(label="最小化选中的全部（Shift+M）",
-                              command=self.action_minimize_selected)
-        self.menu.add_command(label="还原选中的全部",
-                              command=self.action_restore_selected)
-        self.menu.add_separator()
-        self.menu.add_command(label="请求关闭（先保存再退出）",
-                              command=self.action_close_window)
-        self.menu.add_command(label="强制结束（未保存会丢）", command=self.action_terminate)
-        self.menu.add_command(label="强制结束整树", command=self.action_terminate_tree)
-        self.menu.add_separator()
-        self.menu.add_command(label="打开文件所在位置", command=self.action_reveal)
-        self.menu.add_separator()
-        self.menu.add_command(label="复制 PID",
-                              command=lambda: self._copy(str(self.selected_pid or "")))
-        self.menu.add_command(label="复制窗口标题", command=self._copy_selected_title)
-        self.menu.add_command(label="复制程序路径", command=self._copy_selected_path)
+        menu.add_command(label="切换到前台（Enter / 中键 / 双击预览区）",
+                         command=self.action_bring_front)
+        menu.add_command(label="最小化 / 还原（双击列表 或 M 键）",
+                         command=self.action_toggle_selected)
+        menu.add_command(label="最小化选中的全部（Shift+M）",
+                         command=self.action_minimize_selected)
+        menu.add_command(label="还原选中的全部",
+                         command=self.action_restore_selected)
+        menu.add_separator()
+        menu.add_command(label="请求关闭（先保存再退出）",
+                         command=self.action_close_window)
+        menu.add_command(label="强制结束（未保存会丢）",
+                         command=self.action_terminate)
+        menu.add_command(label="强制结束整树", command=self.action_terminate_tree)
+        menu.add_separator()
+        menu.add_command(label="打开文件所在位置", command=self.action_reveal)
+        menu.add_separator()
+        menu.add_command(label="复制 PID",
+                         command=lambda: self._copy(str(self.selected_pid or "")))
+        menu.add_command(label="复制窗口标题", command=self._copy_selected_title)
+        menu.add_command(label="复制程序路径", command=self._copy_selected_path)
+        try:
+            i18n.translate_menu(menu)
+        except Exception:
+            pass
+        self.menu = menu
 
     def _build_left_pane(self, left: tk.Misc) -> None:
         """
@@ -16623,6 +16641,9 @@ class WinMonApp:
             if item not in self.tree.selection():
                 self.tree.selection_set(item)
             self._on_select()
+            # PopupMenu 是一次性对象：每次右键重建，否则第二次 tk_popup()
+            # 会因 `_closing=True` 直接 return（和 8.36 桌宠菜单同一个坑）。
+            self._build_window_menu()
             try:
                 self.menu.tk_popup(event.x_root, event.y_root)
             finally:
