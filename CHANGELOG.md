@@ -19,6 +19,33 @@
 以及跟随当前 AI 的助手**；阶段 6 补上 **多 profile 跟随 + 对话交接留痕**；
 阶段 8 按用户纠正把**休息提醒改由接入的 AI 说**，并拆出独立接入窗口、加入中英双语。
 
+### 阶段 8.40（2026-10-24）—— MCP 接入片段按客户端生成（DSH 的坑）
+
+用户在一次会话里把 Claude Desktop 的 `mcpServers` 片段原样写进 DSH 的
+`cordis.patch.yml`，接不上：DSH 只在 stderr 打一行
+`patch: entry "mcp-winmon" not found`，界面不弹、会话照开。
+
+根因不在服务器（`--mcp-selftest` 仍然 13/13）：DSH 的 patch 文件是
+**针对已有条目的操作列表**，顶层 `- id:` 等于"覆盖已有条目"，新增必须写
+`- insert:`。我们此前只给 `mcpServers` 一种写法，用户只能自己"翻译"，
+翻错还没有提示——这是我们的接入缺口。
+
+- `winmon_mcp.py` 新增 `claude_config()` / `dsh_patch()` / `client_config()` /
+  `client_configs()`：路径按当前机器填绝对路径，`pythonw.exe` 自动换成
+  `python.exe`；不认识的名字直接报错，不猜格式；
+- `winmon.py` 新增 `--mcp-config [claude|dsh|all]`，与 GUI「复制配置」**同源**；
+- 接入窗口的 MCP 卡片加「复制 DSH 配置」按钮，并就地说明粘到哪里；
+- `README.md` 与 `MCP.md`（新增 §1.9.1）写清两种写法的区别、`- insert:` 的必要性、
+  以及"只有 stderr 有提示"这个症状；
+- 新增 `test_b50_mcp_client_config.py`（15 条）：第一行有效内容必须是
+  `- insert:`、`- id:` 必须缩进、路径绝对且脚本存在、命令行三种用法、
+  GUI 片段与命令行同源；
+- 用 DSH 自己的加载器实测：把生成的片段放进临时 `DSH_HOME` 的 profile 跑
+  `--dump-config`，`mcp-winmon` 正常出现在组合后的配置里，stderr 无 not found；
+- 全量 **1117 用例**，失败 0 / 错误 0，跳过 4（环境无 B 站窗口/无媒体会话），
+  **133.091 秒**；`lint_check` 新增 0；`--selftest` 8/8；
+  `--mcp-selftest` 13/13；`--smoke` 退出 0。
+
 ### 阶段 8.39（2026-10-23）—— 修「运行中的窗口」右键第二次无响应
 
 用户反馈：主界面「运行中的窗口」列表右键，第一次能弹，后面又没反应。

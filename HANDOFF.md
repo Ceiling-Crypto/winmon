@@ -3282,6 +3282,45 @@ AI 深蓝卡可见；深色接入窗展开后目视无浅色卡残留。
   `--smoke` 退出 0，白底截图已目视确认。
 - 跳过数会随桌面是否有 Edge / 媒体会话变化。
 
+### 9.50 阶段 8.40：MCP 接入片段按客户端生成（2026-10-24）
+
+**症状**：用户把 `mcpServers` 片段贴进 DSH 的 `cordis.patch.yml`，AI 客户端里
+没有 WinMon 的任何工具；DSH 界面不报错、会话照开。stderr 只有一行
+`patch: entry "mcp-winmon" not found`。
+
+**根因**（不是服务器坏）：
+- DSH 的 patch 文件是**操作列表**，不是清单。顶层 `- id: xxx` = "覆盖已有的
+  xxx"；bundle 里没有这个 id 就整条丢弃，只在 stderr 留一句，静默跳过。
+- 新增条目必须写 `- insert:` 再嵌 `- id:`。
+- 我们此前只产出 `mcpServers`（Claude Desktop 形态），用户只能自己翻译；
+  翻错没有任何提示 —— 这是**接入缺口**，不是用户操作失误。
+
+**修法**：
+- `winmon_mcp.py`：`_client_paths()` / `claude_config()` / `dsh_patch()` /
+  `client_config()` / `client_configs()`；`dsh_patch()` 把 `- insert:` 写死，
+  并把 `cwd` / `PYTHONUTF8` / `PYTHONIOENCODING` / `toolCallTimeoutMs` 一起带上
+  （乱码与超时都是实测过的坑）。
+- `winmon.py`：`mcp_config_cli()` + `--mcp-config [claude|dsh|all]`；
+  GUI「复制配置」改为调用 `mcp.claude_config()`，与命令行同源。
+- 接入窗口 MCP 卡片加「复制 DSH 配置」，旁边一行小字说明粘到哪、要重启。
+- README / MCP.md §1.9.1 写清两种形态的区别与症状。
+
+**怎么验证"是服务器还是客户端"**（这次学到的分离法，下次照做）：
+1. 服务器侧：`py winmon.py --mcp-selftest` → 13/13，说明协议与四个工具都正常；
+2. 客户端配置侧：把片段放进临时 `DSH_HOME` 的某个 profile，跑
+   `DeepSeek Harness.exe --expose-internals <cli.js> --profile <p> --dump-config`，
+   看组合后的配置里有没有 `- id: mcp-winmon`、stderr 有没有 `not found`；
+3. 应用侧：重启客户端后直接调 `winmon_ai_sessions`，能返回才算真接上。
+
+**注意**：`--profile desktop` 由 Electron 应用独占，用 CLI dump 会被拒绝
+（`profile "desktop" is managed exclusively by the Electron application`），
+临时验证请用 `web` 这类 profile 名。另外 `--dump-config` 的输出在
+PowerShell 里用 `&` 捕获会得到 0 行，`Start-Process -RedirectStandardOutput`
+才拿得到全文。
+
+**验收**：全量 **1117 用例**，失败 0 / 错误 0，跳过 4，**133.091 秒**；
+新增 `test_b50` 15 条；`--selftest` 8/8；`--mcp-selftest` 13/13；`--smoke` 退出 0。
+
 ### 9.49 阶段 8.39：主窗口右键菜单第二次无响应（2026-10-23）
 
 用户反馈：主界面「运行中的窗口」右键，第一次能弹，后面又没反应。

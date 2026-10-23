@@ -1114,6 +1114,45 @@ py winmon.py --mcp-http         :: 本地 HTTP（默认 8765，只绑 127.0.0.1�
 {"mcpServers":{"winmon":{"command":"python","args":["D:\\winmon\\winmon.py","--mcp-stdio"]}}}
 ```
 
+**DeepSeek Harness（DSH）不认上面这段 `mcpServers`。** DSH 的
+`cordis.patch.yml` 是一串**针对已有条目的操作**，不是"清单"：顶层直接写
+`- id: winmon` 会被当成"覆盖 id 为 winmon 的那一条"，bundle 里没有这个 id，
+就只往启动进程的 **stderr** 打一行
+
+```
+patch: entry "winmon" not found
+```
+
+然后**静默跳过**——界面不弹、会话照开，看起来像"配置没生效"。新增条目必须
+显式写 `- insert:`（2026-10-24 实测确认）：
+
+```bat
+py winmon.py --mcp-config dsh     :: 打印下面这段，路径按本机填好
+```
+
+```yaml
+- insert:
+    - id: mcp-winmon
+      name: "@deepseek-ai/dsh-mcp-client"
+      config:
+        serverName: winmon
+        transport: stdio
+        command: 'C:\Users\you\AppData\Local\Programs\Python\Python314\python.exe'
+        args:
+          - 'D:\winmon\winmon.py'
+          - '--mcp-stdio'
+        cwd: 'D:\winmon'
+        toolCallTimeoutMs: 120000
+        env:
+          PYTHONUTF8: '1'
+          PYTHONIOENCODING: 'utf-8'
+```
+
+粘到 `%USERPROFILE%\.dsh\profiles\<profile>\cordis.patch.yml` 末尾，重启 DSH。
+`cwd`、`PYTHONUTF8` / `PYTHONIOENCODING`、`toolCallTimeoutMs` 这几项不是装饰：
+`cwd` 固定工作目录，中间两个防止中文 Windows 上工具结果变乱码，
+最后一个给 `winmon_ai_sessions` 这类要扫窗口的调用留时间。
+
 工具：`winmon_ai_sessions`、`winmon_incidents`、`winmon_playbooks`、
 `winmon_budget_status`。`winmon_ai_sessions` 额外返回 `companion`
 （当前时段、该不该由 AI 转达的提醒、`once_key`、角色说明、工作区建议）。

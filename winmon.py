@@ -9861,6 +9861,13 @@ class _AiConnectWindow:
         ttk.Button(row, text=i18n.t("connect.copy_config"),
                    command=lambda: self._copy(snippet, i18n.t("connect.copied"))
                    ).pack(side="left")
+        #: DSH 的写法和 `mcpServers` **不通用**：它要 `- insert:` 形式的 patch。
+        #: 用户照抄左边的配置会得到 `patch: entry ... not found`，而且只在 stderr ——
+        #: 所以按钮直接给正确的那一份，别让人自己改。
+        ttk.Button(row, text=i18n.pick("复制 DSH 配置", "Copy DSH config"),
+                   command=lambda: self._copy(mcp.dsh_patch(),
+                                              i18n.t("connect.copied"))
+                   ).pack(side="left", padx=(6, 0))
         ttk.Button(row, text=i18n.t("connect.open_doc"),
                    command=self.open_doc).pack(side="left", padx=6)
         self.mcp_disclosure = _Disclosure(
@@ -9881,6 +9888,17 @@ class _AiConnectWindow:
         self.config_text.pack(fill="x", pady=(4, 4))
         self.config_text.insert("1.0", snippet)
         self.config_text.configure(state="disabled")
+        tk.Label(self.mcp_disclosure.body,
+                 text=i18n.pick(
+                     "DeepSeek Harness（DSH）不认上面这段：点「复制 DSH 配置」，"
+                     "粘到 %USERPROFILE%\\.dsh\\profiles\\<profile>\\cordis.patch.yml 末尾，"
+                     "再重启 DSH。命令行等价写法：py winmon.py --mcp-config dsh",
+                     "DeepSeek Harness (DSH) does not accept the snippet above: click "
+                     "\"Copy DSH config\" and paste it at the end of "
+                     "%USERPROFILE%\\.dsh\\profiles\\<profile>\\cordis.patch.yml, then restart DSH. "
+                     "CLI equivalent: py winmon.py --mcp-config dsh"),
+                 font=SMALL_FONT, bg=colors["bg"], fg=colors["muted"], anchor="w",
+                 justify="left", wraplength=700).pack(fill="x", pady=(0, 2))
 
     def _build_key_card(self, wrap) -> None:
         """API key 卡片：琥珀色；先选直连对象，再填 key，长解释折叠。"""
@@ -10152,15 +10170,14 @@ class _AiConnectWindow:
 
     # ---- 数据 -------------------------------------------------------
     def _config_snippet(self) -> str:
-        """MCP 配置片段：用**当前解释器**，不假设系统 PATH 里有 `python`。"""
-        script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "winmon.py")
-        interpreter = sys.executable or "python"
-        if interpreter.lower().endswith("pythonw.exe"):
-            interpreter = interpreter[:-11] + "python.exe"
-        return json.dumps(
-            {"mcpServers": {"winmon": {"command": interpreter,
-                                       "args": [script, "--mcp-stdio"]}}},
-            ensure_ascii=False, indent=1)
+        """
+        Claude Desktop 风格的声明式片段（`mcpServers`）。
+
+        生成逻辑搬到了 `winmon_mcp.claude_config()`：命令行 `--mcp-config`
+        与这里必须**同源**，否则界面复制一套、命令行印另一套，
+        用户照着哪份配都可能对不上（2026-10-24 的 DSH 接入事故就是这么来的）。
+        """
+        return mcp.claude_config()
 
     def _selected_key_provider(self) -> str:
         """下拉框当前选的是占位、跟随，还是某个手动 profile。"""
@@ -18146,6 +18163,49 @@ def ai_usage_cli(as_json: bool = False) -> int:
     return 0
 
 
+def mcp_config_cli(kind: str = "all") -> int:
+    """
+    命令行：打印客户端的接入片段（路径按**当前机器**填好）。
+
+        --mcp-config              两份都打（先看自己用的是哪个客户端）
+        --mcp-config claude       Claude Desktop / Cursor 的 mcpServers JSON
+        --mcp-config dsh          DeepSeek Harness 的 cordis.patch.yml 片段
+
+    为什么要有这条命令（2026-10-24）：DSH 的 patch 文件不是"清单"而是"操作列表"，
+    照抄 `mcpServers` 会被当成"覆盖不存在的条目"，只往 stderr 打一行
+    `patch: entry ... not found` 然后静默跳过。给一份能直接粘的，比写一段
+    "请自行改写"的说明靠谱。
+    """
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+    key = str(kind or "all").strip().lower()
+    if key in ("", "all"):
+        kinds = list(mcp.CLIENT_KINDS)
+    elif key in mcp.CLIENT_KINDS:
+        kinds = [key]
+    else:
+        print(f"不认识的客户端：{kind}（可选：{' / '.join(mcp.CLIENT_KINDS)} / all）",
+              file=sys.stderr)
+        return 2
+    titles = {
+        "claude": "Claude Desktop / Cursor（mcpServers，JSON）",
+        "dsh": "DeepSeek Harness（cordis.patch.yml，YAML）",
+    }
+    for i, one in enumerate(kinds):
+        if len(kinds) > 1:
+            if i:
+                print()
+            print(f"===== {titles[one]} =====")
+        print(mcp.client_config(one))
+    if len(kinds) > 1:
+        print()
+        print("提示：只复制自己用的那一段（--mcp-config claude / --mcp-config dsh），"
+              "两种写法不能互换。")
+    return 0
+
+
 def ai_quip_cli(as_json: bool = False) -> int:
     """
     命令行：B 的本地兜底一句（0 token，不需要 key）。
@@ -18404,6 +18464,7 @@ AI / MCP（只读；直连 API 默认关闭）：
   --mcp-stdio           以 MCP 服务器身份跑在 stdio 上（给 AI 客户端挂）
   --mcp-selftest        MCP 协议与工具的自检（不需要客户端）
   --mcp-http            本地 HTTP MCP（只绑 127.0.0.1；给网页端/HTTP 客户端）
+  --mcp-config [client] 打印接入片段：claude / dsh / all（默认 all）
       --port N            端口（默认 8765）
       --expire-minutes N  token 过期分钟数（默认不过期；公网建议 30）
       WINMON_AI_PIN=名字  指定主 AI（环境变量）
@@ -18447,7 +18508,7 @@ def main() -> int:
              "--open", "--admin", "--help", "-h", "/?", "-?", "help",
              "--settings", "--clean-all",
              "--ai-sessions", "--incidents", "--mcp-stdio", "--mcp-selftest",
-             "--mcp-http", "--port", "--expire-minutes",
+             "--mcp-http", "--port", "--expire-minutes", "--mcp-config",
              "--ai-usage", "--ai-chat", "--ai-context", "--copy", "--ai-ask", "--ai-explain",
              "--ai-assist", "--ai-quip"}
 
@@ -18516,14 +18577,10 @@ def main() -> int:
         return mcp.selftest()
     if "--mcp-stdio" in args:
         return mcp.stdio_main()
-    if "--mcp-http" in args:
-        try:
-            port = int(_arg_value(args, "--port") or 8765)
-            expire = int(_arg_value(args, "--expire-minutes") or 0)
-        except ValueError:
-            print("--port / --expire-minutes 需要一个整数", file=sys.stderr)
-            return 2
-        return mcp.http_main(port=port, expire_minutes=max(0, expire))
+    if _has_flag("--mcp-http"):
+        return _mcp_http_from_args(args)
+    if _has_flag("--mcp-config"):
+        return mcp_config_cli(_mcp_config_kind(args))
     if _has_flag("--ai-sessions"):
         return ai_sessions_cli(as_json=("--json" in args))
     if _has_flag("--incidents"):
@@ -18626,6 +18683,30 @@ def _arg_value(args: list[str], flag: str) -> str:
         if a.startswith(flag + "="):
             return a.split("=", 1)[1]
     return ""
+
+
+def _mcp_config_kind(args: list[str]) -> str:
+    """
+    `--mcp-config` 后面跟的客户端名；没写（或紧跟另一个开关）时按 `all`。
+
+    为什么单独抽出来：`main()` 已经顶到 lint 的行数上限，而这段判断有两条边界
+    （`--mcp-config=值`、`--mcp-config --json`），塞回 `main()` 既超长又难读。
+    """
+    value = _arg_value(args, "--mcp-config")
+    if value.startswith("-"):
+        return "all"
+    return value.strip().lower() or "all"
+
+
+def _mcp_http_from_args(args: list[str]) -> int:
+    """`--mcp-http [--port N] [--expire-minutes N]`：解析参数并起服务器。"""
+    try:
+        port = int(_arg_value(args, "--port") or 8765)
+        expire = int(_arg_value(args, "--expire-minutes") or 0)
+    except ValueError:
+        print("--port / --expire-minutes 需要一个整数", file=sys.stderr)
+        return 2
+    return mcp.http_main(port=port, expire_minutes=max(0, expire))
 
 
 def list_catalog_cli(category: str = "", only_favorites: bool = False,

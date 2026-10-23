@@ -748,6 +748,106 @@ def http_main(port: int = 8765, expire_minutes: int = 0) -> int:
 
 
 # ============================================================================
+# 六点五、客户端接入片段（各客户端写法不同，别互相照抄）
+# ============================================================================
+
+#: 认识的客户端写法。`claude` 是声明式 `mcpServers`；`dsh` 是 cordis patch 的
+#: 「操作列表」——两者**不能互换**（2026-10-24 实测踩过，现象见 `dsh_patch()`）。
+CLIENT_KINDS = ("claude", "dsh")
+
+
+def _client_paths(script=None, interpreter=None) -> tuple[str, str]:
+    """
+    解释器与 `winmon.py` 的**绝对路径**。
+
+    为什么不写 `python`：用户的机器上 PATH 里未必有它；
+    为什么把 `pythonw.exe` 换成 `python.exe`：窗口版没有 stdout，
+    MCP 是靠 stdio 说话的，挂上去会立刻断（旧版本踩过）。
+    """
+    if not script:
+        script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "winmon.py")
+    script = os.path.abspath(script)
+    if not interpreter:
+        interpreter = sys.executable or "python"
+    if interpreter.lower().endswith("pythonw.exe"):
+        interpreter = interpreter[:-11] + "python.exe"
+    return script, interpreter
+
+
+def claude_config(script: str | None = None, interpreter: str | None = None) -> str:
+    """Claude Desktop / Cursor 那种声明式 `mcpServers` 片段（JSON）。"""
+    script, interpreter = _client_paths(script, interpreter)
+    return json.dumps(
+        {"mcpServers": {"winmon": {"command": interpreter,
+                                   "args": [script, "--mcp-stdio"]}}},
+        ensure_ascii=False, indent=1)
+
+
+def dsh_patch(script: str | None = None, interpreter: str | None = None) -> str:
+    """
+    DeepSeek Harness（DSH）的 profile 补丁片段（YAML）。
+
+    **为什么不能照抄上面那段 JSON**：DSH 的 `cordis.patch.yml` 不是"清单"，
+    而是一串**针对已有条目的操作**。顶层直接写
+
+        - id: mcp-winmon
+          name: "@deepseek-ai/dsh-mcp-client"
+
+    会被理解成"覆盖 id 为 mcp-winmon 的那一条"；bundle 里根本没有这个 id，
+    于是加载器丢掉整行，只在启动进程的 **stderr** 留一句
+
+        patch: entry "mcp-winmon" not found
+
+    界面不弹、会话照开——看起来像"配置没生效"，其实是被静默跳过了。
+    新增条目必须显式写 `- insert:`（2026-10-24 实测确认）。
+
+    另外三个字段不是装饰：`cwd` 固定工作目录；`PYTHONUTF8`/`PYTHONIOENCODING`
+    防止中文 Windows 上工具结果变成 GBK 乱码；`toolCallTimeoutMs` 给
+    `winmon_ai_sessions` 这类要扫窗口的调用留足时间。
+    """
+    script, interpreter = _client_paths(script, interpreter)
+    cwd = os.path.dirname(script)
+    lines = [
+        "# 追加到 %USERPROFILE%\\.dsh\\profiles\\<profile>\\cordis.patch.yml 的末尾，",
+        "# 然后重启 DSH。注意必须有 `- insert:`：顶层直接写 `- id:` 会被当成",
+        "# '覆盖已有条目'，找不到就只往 stderr 打一行 patch: entry ... not found。",
+        "- insert:",
+        "    - id: mcp-winmon",
+        '      name: "@deepseek-ai/dsh-mcp-client"',
+        "      config:",
+        "        serverName: winmon",
+        "        transport: stdio",
+        f"        command: '{interpreter}'",
+        "        args:",
+        f"          - '{script}'",
+        "          - '--mcp-stdio'",
+        f"        cwd: '{cwd}'",
+        "        toolCallTimeoutMs: 120000",
+        "        env:",
+        "          PYTHONUTF8: '1'",
+        "          PYTHONIOENCODING: 'utf-8'",
+    ]
+    return "\n".join(lines)
+
+
+def client_config(kind: str, script: str | None = None,
+                  interpreter: str | None = None) -> str:
+    """按客户端名取片段；名字不认识就报错，**不猜**（静默给错格式更害人）。"""
+    key = str(kind or "").strip().lower()
+    if key == "claude":
+        return claude_config(script, interpreter)
+    if key == "dsh":
+        return dsh_patch(script, interpreter)
+    raise ValueError(f"不认识的客户端：{kind!r}（可选：{' / '.join(CLIENT_KINDS)}）")
+
+
+def client_configs(script: str | None = None,
+                   interpreter: str | None = None) -> dict[str, str]:
+    """两种片段各来一份（`--mcp-config` 默认全打印）。"""
+    return {kind: client_config(kind, script, interpreter) for kind in CLIENT_KINDS}
+
+
+# ============================================================================
 # 七、自检（不需要 AI 客户端）
 # ============================================================================
 

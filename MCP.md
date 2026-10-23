@@ -298,6 +298,56 @@ Claude Desktop 的配置是 `%APPDATA%\Claude\claude_desktop_config.json`，
 - 真客户端的行为差异（支不支持 `image`、对 `_meta`/`initialize` 的取舍、
   一次 `tools/list` 之后会不会缓存）→ **需实测确认 #3**。
 
+#### 1.9.1 DSH（DeepSeek Harness）：patch 是"操作列表"，不是"清单"
+
+**这是 2026-10-24 一次真实接入事故的结论**，写在这里免得下一个人再踩：
+把 Claude Desktop 那套 `mcpServers` 原样贴进 DSH 的 `cordis.patch.yml`，
+装不上，而且**界面上没有任何提示**。
+
+DSH 的 profile 由多层 bundle 叠加而成，`cordis.patch.yml` 是**最后一层补丁**，
+里面每一项是一条**操作**：`- id: xxx` 表示"改已存在的 xxx"，`- insert:` 才是
+"新增"。于是照抄声明式清单会变成
+
+```yaml
+- id: mcp-winmon          # 被理解成「覆盖已有条目」，不是新增
+  name: "@deepseek-ai/dsh-mcp-client"
+  config: {...}
+```
+
+加载器去 bundle 里找 `mcp-winmon`，找不到就丢掉**整条**，只在启动进程的
+stderr 留一句 `patch: entry "mcp-winmon" not found`。它不是语法错误，
+YAML 完全合法，所以文件检查、编辑器都不会报红——这正是它难查的地方。
+
+正确写法（`py winmon.py --mcp-config dsh` 直接生成，路径按本机填好）：
+
+```yaml
+- insert:
+    - id: mcp-winmon
+      name: "@deepseek-ai/dsh-mcp-client"
+      config:
+        serverName: winmon
+        transport: stdio
+        command: 'C:\...\python.exe'
+        args:
+          - 'C:\...\winmon.py'
+          - '--mcp-stdio'
+        cwd: 'C:\...'
+        toolCallTimeoutMs: 120000
+        env:
+          PYTHONUTF8: '1'
+          PYTHONIOENCODING: 'utf-8'
+```
+
+文件位置：`%USERPROFILE%\.dsh\profiles\<profile>\cordis.patch.yml`
+（桌面版 profile 一般是 `desktop`），改完**重启 DSH**。
+验证顺序：先 `py winmon.py --mcp-selftest`（服务器侧 13/13），
+再看客户端能不能调到 `winmon_ai_sessions`——两边分开查，才分得清是
+"服务器没起来"还是"客户端没挂上"。
+
+> 一般规律：**声明式清单**（`mcpServers`）和**命令式补丁**（cordis patch）
+> 不能互抄。文档里给哪一种，取决于客户端属于哪一类；我们两种都生成，
+> 但默认只显示 Claude 那种——因为它是事实标准。
+
 ---
 
 ## 二、零依赖 vs MCP SDK：为什么必须手写
